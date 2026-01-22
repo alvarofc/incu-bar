@@ -4,6 +4,7 @@ mod traits;
 mod claude;
 mod codex;
 mod cursor;
+mod factory;
 pub mod copilot;
 mod zai;
 mod kimi_k2;
@@ -265,10 +266,11 @@ impl ProviderRegistry {
         ));
 
         // Factory (Droid)
-        providers.insert(ProviderId::Factory, Self::placeholder_state(
-            "Droid",
-            "Factory provider not implemented",
-        ));
+        providers.insert(ProviderId::Factory, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(factory::FactoryProvider::new()),
+        });
 
         // MiniMax
         providers.insert(ProviderId::Minimax, Self::placeholder_state(

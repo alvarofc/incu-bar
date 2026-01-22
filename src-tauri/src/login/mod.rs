@@ -183,6 +183,7 @@ pub async fn check_auth_status(provider_id: &str) -> AuthStatus {
         "claude" => check_claude_auth().await,
         "codex" => check_codex_auth().await,
         "cursor" => check_cursor_auth().await,
+        "factory" => check_factory_auth().await,
         "copilot" => check_copilot_auth().await,
         "gemini" => check_gemini_auth().await,
         "zai" => check_zai_auth().await,
@@ -318,6 +319,36 @@ async fn check_cursor_auth() -> AuthStatus {
     
     let session_path = data_dir.join("IncuBar").join("cursor-session.json");
     
+    if session_path.exists() {
+        AuthStatus {
+            authenticated: true,
+            method: Some("cookies".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: None,
+        }
+    }
+}
+
+async fn check_factory_auth() -> AuthStatus {
+    let data_dir = match dirs::data_dir() {
+        Some(d) => d,
+        None => return AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Could not find data directory".to_string()),
+        },
+    };
+
+    let session_path = data_dir.join("IncuBar").join("factory-session.json");
+
     if session_path.exists() {
         AuthStatus {
             authenticated: true,
@@ -558,6 +589,25 @@ pub async fn store_cursor_session(cookie_header: String) -> Result<(), anyhow::E
     tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
     
     tracing::info!("Saved Cursor session to {:?}", session_path);
+    Ok(())
+}
+
+/// Store Factory session cookies
+pub async fn store_factory_session(cookie_header: String) -> Result<(), anyhow::Error> {
+    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let session_dir = data_dir.join("IncuBar");
+
+    tokio::fs::create_dir_all(&session_dir).await?;
+
+    let session_path = session_dir.join("factory-session.json");
+    let content = serde_json::json!({
+        "cookieHeader": cookie_header,
+        "savedAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
+
+    tracing::info!("Saved Factory session to {:?}", session_path);
     Ok(())
 }
 

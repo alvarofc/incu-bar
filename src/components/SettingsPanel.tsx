@@ -47,6 +47,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [showCookieInput, setShowCookieInput] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
+  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory'>('cursor');
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
   const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
@@ -137,9 +138,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     
     try {
       if (providerId === 'cursor') {
+        setCookieProvider('cursor');
         setLoginMessage('Importing cookies from browser…');
         const importResult = await invoke<LoginResult>('import_cursor_browser_cookies');
-        
+
         if (importResult.success) {
           setLoginMessage(importResult.message);
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
@@ -148,9 +150,30 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           useUsageStore.getState().refreshProvider('cursor');
           setLoggingIn(null);
           return;
-        } else {
-          setLoginMessage('Could not import from browser. Opening login window…');
         }
+
+        setLoginMessage('Could not import from browser. Opening login window…');
+      }
+
+      if (providerId === 'factory') {
+        setCookieProvider('factory');
+        setLoginMessage('Importing cookies from browser…');
+        const importResult = await invoke<LoginResult>('import_factory_browser_cookies');
+
+        if (importResult.success) {
+          setLoginMessage(importResult.message);
+          const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+          setAuthStatus(status);
+          useSettingsStore.getState().enableProvider('factory');
+          useUsageStore.getState().refreshProvider('factory');
+          setLoggingIn(null);
+          return;
+        }
+
+        setLoginMessage('Could not import from browser. You can paste cookies manually below.');
+        setShowCookieInput(true);
+        setLoggingIn(null);
+        return;
       }
       
       if (providerId === 'copilot') {
@@ -164,18 +187,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       }
       
       const result = await invoke<LoginResult>('start_login', { providerId });
-      
+
       if (result.success) {
-        if (providerId === 'cursor') {
-          setLoginMessage('Login window opened. Login will be detected automatically.');
-          setCursorLoginOpen(true);
-        } else {
-          setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
-          const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-          setAuthStatus(status);
-          useSettingsStore.getState().enableProvider(providerId);
-          useUsageStore.getState().refreshProvider(providerId);
-        }
+        setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
+        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+        setAuthStatus(status);
+        useSettingsStore.getState().enableProvider(providerId);
+        useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
       }
@@ -192,19 +210,24 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       return;
     }
     
-    setLoggingIn('cursor');
+    setLoggingIn(cookieProvider);
     try {
-      const result = await invoke<LoginResult>('store_cursor_cookies', { cookieHeader: cookieInput });
+      const storeCommand = cookieProvider === 'factory'
+        ? 'store_factory_cookies'
+        : 'store_cursor_cookies';
+      const result = await invoke<LoginResult>(storeCommand, { cookieHeader: cookieInput });
       if (result.success) {
-        setLoginMessage('Cursor cookies saved!');
+        setLoginMessage(`${PROVIDERS[cookieProvider].name} cookies saved!`);
         setCookieInput('');
         setShowCookieInput(false);
-        setCursorLoginOpen(false);
-        await invoke('close_cursor_login');
+        if (cookieProvider === 'cursor') {
+          setCursorLoginOpen(false);
+          await invoke('close_cursor_login');
+        }
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider('cursor');
-        useUsageStore.getState().refreshProvider('cursor');
+        useSettingsStore.getState().enableProvider(cookieProvider);
+        useUsageStore.getState().refreshProvider(cookieProvider);
       } else {
         setLoginMessage(result.message);
       }
@@ -213,12 +236,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     } finally {
       setLoggingIn(null);
     }
-  }, [cookieInput]);
+  }, [cookieInput, cookieProvider]);
 
   const handleExtractCookies = useCallback(async () => {
+    setCookieProvider('cursor');
     setLoggingIn('cursor');
     setLoginMessage('Extracting cookies…');
-    
+
     try {
       const result = await invoke<LoginResult>('extract_cursor_cookies');
       if (result.success) {
@@ -241,19 +265,23 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, []);
 
   const handleImportBrowserCookies = useCallback(async () => {
-    setLoggingIn('cursor');
+    setLoggingIn(cookieProvider);
     setLoginMessage('Importing cookies from browser…');
-    
+
+    const importCommand = cookieProvider === 'factory'
+      ? 'import_factory_browser_cookies'
+      : 'import_cursor_browser_cookies';
+
     try {
-      const result = await invoke<LoginResult>('import_cursor_browser_cookies');
+      const result = await invoke<LoginResult>(importCommand);
       if (result.success) {
         setLoginMessage(result.message);
         setCursorLoginOpen(false);
         setShowCookieInput(false);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider('cursor');
-        useUsageStore.getState().refreshProvider('cursor');
+        useSettingsStore.getState().enableProvider(cookieProvider);
+        useUsageStore.getState().refreshProvider(cookieProvider);
       } else {
         setLoginMessage(result.message);
         setShowCookieInput(true);
@@ -264,7 +292,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     } finally {
       setLoggingIn(null);
     }
-  }, []);
+  }, [cookieProvider]);
 
   const handleCopyCopilotCode = useCallback(async () => {
     if (!copilotDeviceCode) return;

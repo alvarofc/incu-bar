@@ -30,6 +30,7 @@ use decrypt_cookies::safari::SafariBuilder;
 
 /// Domains to extract cookies for Cursor
 const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh", "workos.com"];
+const FACTORY_DOMAINS: &[&str] = &["factory.ai", "app.factory.ai"];
 
 /// Result of a browser cookie import
 #[derive(Debug)]
@@ -45,6 +46,11 @@ pub struct BrowserCookieResult {
 /// Returns the first successful result.
 pub async fn import_cursor_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(CURSOR_DOMAINS).await
+}
+
+/// Import Factory (Droid) cookies from system browsers
+pub async fn import_factory_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(FACTORY_DOMAINS).await
 }
 
 /// Import cookies for specified domains from system browsers
@@ -81,10 +87,11 @@ pub async fn import_cookies_for_domains(domains: &[&str]) -> Result<BrowserCooki
     }
     
     Err(anyhow::anyhow!(
-        "Could not find Cursor cookies in any browser. \
-        Make sure you're logged into cursor.com in Firefox, Chrome, or Safari, then try again. \
+        "Could not find cookies in any browser for domains: {:?}. \
+        Make sure you're logged in, then try again. \
         For Chrome: allow keychain access when prompted. \
-        For Safari: enable Full Disk Access in System Settings."
+        For Safari: enable Full Disk Access in System Settings.",
+        domains
     ))
 }
 
@@ -219,7 +226,7 @@ fn extract_chromium_cookies(
     
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
-            "No cookies found in {} for domains: {:?}. Make sure you're logged into cursor.com.",
+            "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
             browser_name,
             domains
         ));
@@ -275,7 +282,7 @@ fn extract_firefox_cookies(
     
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
-            "No cookies found in {} for domains: {:?}. Make sure you're logged into cursor.com.",
+            "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
             browser_name,
             domains
         ));
@@ -349,7 +356,7 @@ fn extract_safari_cookies(
     
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
-            "No cookies found in {} for domains: {:?}. Make sure you're logged into cursor.com.",
+            "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
             browser_name,
             domains
         ));
