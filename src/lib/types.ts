@@ -12,7 +12,7 @@ export type ProviderId =
   | 'kimi'
   | 'kimi_k2'
   | 'kiro'
-  | 'vertex'
+  | 'vertexai'
   | 'augment'
   | 'amp'
   | 'jetbrains'
@@ -78,6 +78,12 @@ export interface ProviderMetadata {
   icon: string;               // Lucide icon name
   accentColor: string;        // Tailwind color class
   authMethod: 'oauth' | 'cookies' | 'api_key' | 'cli' | 'local_config';
+  sessionLabel: string;
+  weeklyLabel: string;
+  opusLabel?: string | null;
+  supportsOpus: boolean;
+  supportsCredits: boolean;
+  implemented: boolean;
   statusPageUrl?: string;
 }
 

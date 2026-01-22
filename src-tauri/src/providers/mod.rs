@@ -13,6 +13,8 @@ mod gemini;
 pub use traits::*;
 
 use std::collections::HashMap;
+use anyhow::anyhow;
+use async_trait::async_trait;
 use tokio::sync::RwLock;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Emitter};
@@ -34,6 +36,7 @@ pub enum ProviderId {
     #[serde(rename = "kimi_k2")]
     KimiK2,
     Kiro,
+    #[serde(rename = "vertexai")]
     Vertex,
     Augment,
     Amp,
@@ -64,6 +67,32 @@ impl ProviderId {
             ProviderId::Opencode,
             ProviderId::Synthetic,
         ]
+    }
+}
+
+struct PlaceholderProvider {
+    name: &'static str,
+    description: &'static str,
+}
+
+impl PlaceholderProvider {
+    fn new(name: &'static str, description: &'static str) -> Self {
+        Self { name, description }
+    }
+}
+
+#[async_trait]
+impl ProviderFetcher for PlaceholderProvider {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn description(&self) -> &'static str {
+        self.description
+    }
+
+    async fn fetch(&self) -> Result<UsageSnapshot, anyhow::Error> {
+        Err(anyhow!("Provider not implemented"))
     }
 }
 
@@ -229,8 +258,76 @@ impl ProviderRegistry {
             fetcher: Box::new(gemini::GeminiProvider::new()),
         });
 
+        // Antigravity
+        providers.insert(ProviderId::Antigravity, Self::placeholder_state(
+            "Antigravity",
+            "Antigravity provider not implemented",
+        ));
+
+        // Factory (Droid)
+        providers.insert(ProviderId::Factory, Self::placeholder_state(
+            "Droid",
+            "Factory provider not implemented",
+        ));
+
+        // MiniMax
+        providers.insert(ProviderId::Minimax, Self::placeholder_state(
+            "MiniMax",
+            "MiniMax provider not implemented",
+        ));
+
+        // Kimi
+        providers.insert(ProviderId::Kimi, Self::placeholder_state(
+            "Kimi",
+            "Kimi provider not implemented",
+        ));
+
+        // Kiro
+        providers.insert(ProviderId::Kiro, Self::placeholder_state(
+            "Kiro",
+            "Kiro provider not implemented",
+        ));
+
+        // Vertex AI
+        providers.insert(ProviderId::Vertex, Self::placeholder_state(
+            "Vertex AI",
+            "Vertex AI provider not implemented",
+        ));
+
+        // Augment
+        providers.insert(ProviderId::Augment, Self::placeholder_state(
+            "Augment",
+            "Augment provider not implemented",
+        ));
+
+        // Amp
+        providers.insert(ProviderId::Amp, Self::placeholder_state(
+            "Amp",
+            "Amp provider not implemented",
+        ));
+
+        // JetBrains
+        providers.insert(ProviderId::Jetbrains, Self::placeholder_state(
+            "JetBrains AI",
+            "JetBrains provider not implemented",
+        ));
+
+        // OpenCode
+        providers.insert(ProviderId::Opencode, Self::placeholder_state(
+            "OpenCode",
+            "OpenCode provider not implemented",
+        ));
+
         Self {
             providers: RwLock::new(providers),
+        }
+    }
+
+    fn placeholder_state(name: &'static str, description: &'static str) -> ProviderState {
+        ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(PlaceholderProvider::new(name, description)),
         }
     }
 

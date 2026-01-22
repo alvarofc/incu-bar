@@ -169,7 +169,7 @@ export const ProviderIconMap: Record<ProviderId, React.ComponentType<IconProps>>
   copilot: CopilotIcon,
   gemini: GeminiIcon,
   jetbrains: JetbrainsIcon,
-  vertex: VertexIcon,
+  vertexai: VertexIcon,
   kiro: KiroIcon,
   opencode: OpencodeIcon,
   factory: FactoryIcon,

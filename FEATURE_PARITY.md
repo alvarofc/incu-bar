@@ -76,24 +76,24 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 
 | Provider | Usage | Reset | Auth | Popup Display | Settings | Notes |
 |----------|-------|-------|------|---------------|----------|-------|
-| Codex | Done | Done | Done | Done | Done | OAuth + CLI optional |
-| Claude | Done | Done | Done | Done | Done | OAuth + web cookies |
-| Cursor | Done | Done | Done | Done | Done | Browser cookies |
-| Copilot | Done | Done | Done | Done | Done | Device flow |
-| Gemini | Done | Done | Done | Done | Done | CLI OAuth |
-| z.ai | Done | Done | Done | Done | Done | API token |
-| Kimi K2 | Done | Done | Done | Done | Done | API token |
-| Synthetic | Done | Done | Done | Done | Done | API token |
-| Factory | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
-| Augment | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies + keepalive |
-| Kimi | Not Started | Not Started | Not Started | Not Started | Not Started | JWT cookie |
-| MiniMax | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies or API |
-| Amp | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
-| OpenCode | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
-| Kiro | Not Started | Not Started | Not Started | Not Started | Not Started | Status only |
-| JetBrains | Not Started | Not Started | Not Started | Not Started | Not Started | Local logs |
-| Vertex | Not Started | Not Started | Not Started | Not Started | Not Started | Google OAuth |
-| Antigravity | Not Started | Not Started | Not Started | Not Started | Not Started | Status only |
+| Codex | Done | Done | Done | Done | Done | OAuth + CLI optional (id: codex) |
+| Claude | Done | Done | Done | Done | Done | OAuth + web cookies (id: claude) |
+| Cursor | Done | Done | Done | Done | Done | Browser cookies (id: cursor) |
+| Copilot | Done | Done | Done | Done | Done | Device flow (id: copilot) |
+| Gemini | Done | Done | Done | Done | Done | CLI OAuth (id: gemini) |
+| z.ai | Done | Done | Done | Done | Done | API token (id: zai) |
+| Kimi K2 | Done | Done | Done | Done | Done | API token (id: kimi_k2) |
+| Synthetic | Done | Done | Done | Done | Done | API token (id: synthetic) |
+| Factory | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: factory, label: Droid) |
+| Augment | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies + keepalive (id: augment) |
+| Kimi | Not Started | Not Started | Not Started | Not Started | Not Started | JWT cookie (id: kimi) |
+| MiniMax | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies or API (id: minimax) |
+| Amp | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: amp) |
+| OpenCode | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: opencode) |
+| Kiro | Not Started | Not Started | Not Started | Not Started | Not Started | Status only (id: kiro) |
+| JetBrains | Not Started | Not Started | Not Started | Not Started | Not Started | Local logs (id: jetbrains) |
+| Vertex | Not Started | Not Started | Not Started | Not Started | Not Started | Google OAuth (id: vertexai) |
+| Antigravity | Not Started | Not Started | Not Started | Not Started | Not Started | Status only (id: antigravity) |
 
 ### App Parity Matrix
 

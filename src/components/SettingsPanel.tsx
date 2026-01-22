@@ -18,7 +18,7 @@ interface AuthStatus {
 interface LoginResult {
   success: boolean;
   message: string;
-  providerId: string;
+  providerId: ProviderId;
 }
 
 interface CopilotDeviceCode {
@@ -84,7 +84,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       }
     });
 
-    const unlistenCompleted = listen('login-completed', async (event: { payload: { providerId: string; success: boolean; message: string } }) => {
+    const unlistenCompleted = listen('login-completed', async (event: { payload: { providerId: ProviderId; success: boolean; message: string } }) => {
       const { providerId, success, message } = event.payload;
       if (success) {
         setLoginMessage(message);
@@ -131,7 +131,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     useSettingsStore.getState().resetToDefaults();
   }, []);
 
-  const handleLogin = useCallback(async (providerId: string) => {
+  const handleLogin = useCallback(async (providerId: ProviderId) => {
     setLoggingIn(providerId);
     setLoginMessage(null);
     
@@ -170,11 +170,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           setLoginMessage('Login window opened. Login will be detected automatically.');
           setCursorLoginOpen(true);
         } else {
-          setLoginMessage(`${PROVIDERS[providerId as ProviderId]?.name || providerId} connected!`);
+          setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           setAuthStatus(status);
-          useSettingsStore.getState().enableProvider(providerId as ProviderId);
-          useUsageStore.getState().refreshProvider(providerId as ProviderId);
+          useSettingsStore.getState().enableProvider(providerId);
+          useUsageStore.getState().refreshProvider(providerId);
         }
       } else {
         setLoginMessage(result.message);
@@ -322,9 +322,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     { label: '30m', value: 1800 },
   ];
 
-  const implementedProviders: ProviderId[] = ['cursor', 'copilot', 'claude', 'codex', 'gemini', 'zai', 'kimi_k2', 'synthetic'];
-  const upcomingProviders: ProviderId[] = (Object.keys(PROVIDERS) as ProviderId[]).filter(
-    (id) => !implementedProviders.includes(id)
+  const implementedProviders = (Object.keys(PROVIDERS) as ProviderId[]).filter(
+    (id) => PROVIDERS[id].implemented
+  );
+  const upcomingProviders = (Object.keys(PROVIDERS) as ProviderId[]).filter(
+    (id) => !PROVIDERS[id].implemented
   );
 
   const getAuthMethodLabel = (method: string) => {
