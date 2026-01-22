@@ -154,7 +154,7 @@ impl JetbrainsProvider {
 
     fn parse_credits_line(&self, line: &str) -> Option<CreditsUsage> {
         let lower = line.to_lowercase();
-        if !lower.contains("credit") || (!lower.contains("ai") && !lower.contains("assistant")) {
+        if !lower.contains("credit") || (!contains_word(&lower, "ai") && !contains_word(&lower, "assistant")) {
             return None;
         }
 
@@ -299,6 +299,26 @@ fn extract_numbers(text: &str) -> Vec<f64> {
     }
 
     numbers
+}
+
+fn contains_word(text: &str, word: &str) -> bool {
+    let mut start = 0usize;
+    while let Some(pos) = text[start..].find(word) {
+        let index = start + pos;
+        let before = index.checked_sub(1).and_then(|idx| text.as_bytes().get(idx));
+        let after = text.as_bytes().get(index + word.len());
+        let before_ok = before.map(|b| !is_word_char(*b)).unwrap_or(true);
+        let after_ok = after.map(|b| !is_word_char(*b)).unwrap_or(true);
+        if before_ok && after_ok {
+            return true;
+        }
+        start = index + word.len();
+    }
+    false
+}
+
+fn is_word_char(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 #[async_trait]

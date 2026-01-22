@@ -15,6 +15,7 @@ mod kimi;
 mod synthetic;
 mod gemini;
 mod jetbrains;
+mod opencode;
 
 pub use traits::*;
 
@@ -325,10 +326,11 @@ impl ProviderRegistry {
         });
 
         // OpenCode
-        providers.insert(ProviderId::Opencode, Self::placeholder_state(
-            "OpenCode",
-            "OpenCode provider not implemented",
-        ));
+        providers.insert(ProviderId::Opencode, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(opencode::OpencodeProvider::new()),
+        });
 
         Self {
             providers: RwLock::new(providers),

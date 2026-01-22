@@ -35,6 +35,7 @@ const AUGMENT_DOMAINS: &[&str] = &["augmentcode.com", "app.augmentcode.com"];
 const KIMI_DOMAINS: &[&str] = &["kimi.moonshot.cn", "kimi.com"];
 const MINIMAX_DOMAINS: &[&str] = &["minimax.chat", "platform.minimax.io"];
 const AMP_DOMAINS: &[&str] = &["ampcode.com", "www.ampcode.com"];
+const OPENCODE_DOMAINS: &[&str] = &["opencode.ai", "app.opencode.ai"];
 
 /// Result of a browser cookie import
 #[derive(Debug)]
@@ -75,6 +76,11 @@ pub async fn import_minimax_cookies_from_browser() -> Result<BrowserCookieResult
 /// Import Amp cookies from system browsers
 pub async fn import_amp_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(AMP_DOMAINS).await
+}
+
+/// Import OpenCode cookies from system browsers
+pub async fn import_opencode_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(OPENCODE_DOMAINS).await
 }
 
 /// Import cookies for specified domains from system browsers

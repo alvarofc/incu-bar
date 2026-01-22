@@ -35,6 +35,8 @@ url = "2"
 dirs = "6"
 glob = "0.3"
 cookie = "0.18"
+regex = "1"
+uuid = { version = "1", features = ["v4"] }
 # Browser cookie extraction (Chrome, Safari, Firefox, etc.)
 decrypt-cookies = { version = "0.10", features = ["Safari"] }
 # Window positioner for tray-relative positioning

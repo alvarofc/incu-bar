@@ -2357,6 +2357,7 @@ dependencies = [
  "glob",
  "keyring",
  "once_cell",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
@@ -2374,6 +2375,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "uuid",
 ]
 
 [[package]]
