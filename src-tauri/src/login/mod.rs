@@ -185,6 +185,9 @@ pub async fn check_auth_status(provider_id: &str) -> AuthStatus {
         "cursor" => check_cursor_auth().await,
         "copilot" => check_copilot_auth().await,
         "gemini" => check_gemini_auth().await,
+        "zai" => check_zai_auth().await,
+        "kimi_k2" => check_kimi_k2_auth().await,
+        "synthetic" => check_synthetic_auth().await,
         _ => AuthStatus {
             authenticated: false,
             method: None,
@@ -426,6 +429,65 @@ async fn check_gemini_auth() -> AuthStatus {
             method: None,
             email: None,
             error: None,
+        }
+    }
+}
+
+async fn check_zai_auth() -> AuthStatus {
+    // z.ai uses Z_AI_API_KEY environment variable
+    if std::env::var("Z_AI_API_KEY").is_ok() {
+        AuthStatus {
+            authenticated: true,
+            method: Some("api_key".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Set Z_AI_API_KEY environment variable".to_string()),
+        }
+    }
+}
+
+async fn check_kimi_k2_auth() -> AuthStatus {
+    // Kimi K2 uses KIMI_K2_API_KEY, KIMI_API_KEY, or KIMI_KEY environment variable
+    if std::env::var("KIMI_K2_API_KEY").is_ok() 
+        || std::env::var("KIMI_API_KEY").is_ok() 
+        || std::env::var("KIMI_KEY").is_ok() {
+        AuthStatus {
+            authenticated: true,
+            method: Some("api_key".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Set KIMI_K2_API_KEY environment variable".to_string()),
+        }
+    }
+}
+
+async fn check_synthetic_auth() -> AuthStatus {
+    // Synthetic uses SYNTHETIC_API_KEY environment variable
+    if std::env::var("SYNTHETIC_API_KEY").is_ok() {
+        AuthStatus {
+            authenticated: true,
+            method: Some("api_key".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Set SYNTHETIC_API_KEY environment variable".to_string()),
         }
     }
 }

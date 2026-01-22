@@ -16,7 +16,8 @@ export type ProviderId =
   | 'augment'
   | 'amp'
   | 'jetbrains'
-  | 'opencode';
+  | 'opencode'
+  | 'synthetic';
 
 // Rate window represents a usage period (session, weekly, etc.)
 export interface RateWindow {

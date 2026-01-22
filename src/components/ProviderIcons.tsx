@@ -152,6 +152,15 @@ export function AntigravityIcon({ className, 'aria-hidden': ariaHidden = true }:
   );
 }
 
+// Synthetic - Sparkle/star icon
+export function SyntheticIcon({ className, 'aria-hidden': ariaHidden = true }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden={ariaHidden}>
+      <path d="M12 2L9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2Z"/>
+    </svg>
+  );
+}
+
 // Map provider IDs to their icon components
 export const ProviderIconMap: Record<ProviderId, React.ComponentType<IconProps>> = {
   claude: ClaudeIcon,
@@ -171,6 +180,7 @@ export const ProviderIconMap: Record<ProviderId, React.ComponentType<IconProps>>
   kimi: KimiIcon,
   kimi_k2: KimiIcon,
   antigravity: AntigravityIcon,
+  synthetic: SyntheticIcon,
 };
 
 // Helper component that renders the appropriate icon for a provider

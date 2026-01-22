@@ -322,7 +322,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     { label: '30m', value: 1800 },
   ];
 
-  const implementedProviders: ProviderId[] = ['cursor', 'copilot', 'claude', 'codex', 'gemini'];
+  const implementedProviders: ProviderId[] = ['cursor', 'copilot', 'claude', 'codex', 'gemini', 'zai', 'kimi_k2', 'synthetic'];
   const upcomingProviders: ProviderId[] = (Object.keys(PROVIDERS) as ProviderId[]).filter(
     (id) => !implementedProviders.includes(id)
   );

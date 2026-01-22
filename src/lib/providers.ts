@@ -124,6 +124,13 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     accentColor: 'slate',
     authMethod: 'cookies',
   },
+  synthetic: {
+    id: 'synthetic',
+    name: 'Synthetic',
+    icon: 'Sparkle',
+    accentColor: 'emerald',
+    authMethod: 'api_key',
+  },
 };
 
 export const DEFAULT_ENABLED_PROVIDERS: ProviderId[] = [];

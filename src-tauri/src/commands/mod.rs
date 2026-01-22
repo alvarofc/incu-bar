@@ -207,7 +207,7 @@ pub async fn check_auth(provider_id: String) -> Result<AuthStatus, String> {
 /// Check authentication status for all providers
 #[command]
 pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthStatus>, String> {
-    let providers = vec!["claude", "codex", "cursor", "copilot", "gemini"];
+    let providers = vec!["claude", "codex", "cursor", "copilot", "gemini", "zai", "kimi_k2", "synthetic"];
     let mut results = std::collections::HashMap::new();
     
     for provider_id in providers {
