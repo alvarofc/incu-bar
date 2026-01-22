@@ -180,6 +180,13 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 provider_id: "factory".to_string(),
             });
         }
+        "augment" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "Augment uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                provider_id: "augment".to_string(),
+            });
+        }
         "copilot" => {
             login::run_copilot_login().await.map_err(|e| e.to_string())?
         }
@@ -219,6 +226,7 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "codex",
         "cursor",
         "factory",
+        "augment",
         "copilot",
         "gemini",
         "zai",
@@ -265,6 +273,23 @@ pub async fn store_factory_cookies(cookie_header: String) -> Result<LoginResult,
             success: false,
             message: format!("Failed to save Factory cookies: {}", e),
             provider_id: "factory".to_string(),
+        }),
+    }
+}
+
+/// Store Augment session cookies (for manual cookie paste)
+#[command]
+pub async fn store_augment_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    match login::store_augment_session(cookie_header).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "Augment cookies saved successfully".to_string(),
+            provider_id: "augment".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save Augment cookies: {}", e),
+            provider_id: "augment".to_string(),
         }),
     }
 }
@@ -383,6 +408,58 @@ pub async fn import_factory_browser_cookies(app: AppHandle) -> Result<LoginResul
                     e
                 ),
                 provider_id: "factory".to_string(),
+            })
+        }
+    }
+}
+
+/// Import Augment cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_augment_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing Augment cookies from system browsers");
+
+    match crate::browser_cookies::import_augment_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_augment_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "augment",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Augment is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "augment".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "augment".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Augment browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into app.augmentcode.com in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "augment".to_string(),
             })
         }
     }

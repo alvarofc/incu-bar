@@ -1,0 +1,329 @@
+tasks:
+  - title: define the complete feature-parity baseline against IncuBar (CodexBar)
+      and lock it into a living spec document
+    source: ../IncuBar/README.md, ../IncuBar/IMPLEMENTATION_SUMMARY.md,
+      ../IncuBar/docs, FEATURE_PARITY.md
+    completed: true
+  - title: map every IncuBar provider to a Tauri provider implementation with
+      matching IDs, labels, and capabilities
+    source: ../IncuBar/Sources/CodexBar/Providers, src-tauri/src/providers/mod.rs,
+      src/lib/providers.ts
+    completed: true
+  - title: implement Factory (Droid) provider with cookie auth, usage parsing, and
+      reset time handling
+    source: ../IncuBar/Sources/CodexBar/Providers/Factory, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: true
+  - title: implement Augment provider with cookie auth, credits tracking, and
+      keepalive session refresh
+    source: ../IncuBar/Sources/CodexBar/Providers/Augment, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: true
+  - title: implement Kimi provider with JWT cookie auth and usage parsing from
+      protobuf responses
+    source: ../IncuBar/Sources/CodexBar/Providers/Kimi, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: implement MiniMax provider with cookie auth and credit totals parsing
+    source: ../IncuBar/Sources/CodexBar/Providers/MiniMax, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: implement Amp provider with cookie auth and usage parsing
+    source: ../IncuBar/Sources/CodexBar/Providers/Amp, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: implement JetBrains AI provider with local IDE log parsing and monthly
+      credit tracking
+    source: ../IncuBar/Sources/CodexBar/Providers/JetBrains,
+      src-tauri/src/providers, src/lib/providers.ts
+    completed: false
+  - title: implement OpenCode provider with cookie auth and server usage endpoints
+    source: ../IncuBar/Sources/CodexBar/Providers/OpenCode, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: implement Vertex AI provider with Google OAuth and monitoring API usage
+    source: ../IncuBar/Sources/CodexBar/Providers/VertexAI, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: implement Antigravity provider status probe with incident detection
+    source: ../IncuBar/Sources/CodexBar/Providers/Antigravity,
+      src-tauri/src/providers, src/lib/providers.ts
+    completed: false
+  - title: implement Kiro provider status probe with incident detection
+    source: ../IncuBar/Sources/CodexBar/Providers/Kiro, src-tauri/src/providers,
+      src/lib/providers.ts
+    completed: false
+  - title: add cookie-source selection per provider
+      (chrome/safari/firefox/arc/edge/brave/opera)
+    source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,
+      ../IncuBar/Sources/CodexBar/ProviderCookieSourceUI.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: add manual cookie header input per provider and wire to runtime fetchers
+    source: ../IncuBar/Sources/CodexBar/CookieHeaderStore.swift,
+      ../IncuBar/Sources/CodexBar/ProviderCookieSourceUI.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts,
+      src-tauri/src/storage
+    completed: false
+  - title: implement provider-specific settings panes mirroring IncuBar detail views
+    source: ../IncuBar/Sources/CodexBar/PreferencesProviderDetailView.swift,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: add per-provider enable/disable toggles to settings with persistent order
+    source: ../IncuBar/Sources/CodexBar/ProviderToggleStore.swift,
+      ../IncuBar/Sources/CodexBar/ProviderRegistry.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts,
+      src-tauri/src/commands/mod.rs
+    completed: false
+  - title: implement provider ordering UI with drag-and-drop and persisted ordering
+    source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,
+      ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: add provider switcher buttons and merged icons mode parity
+    source: ../IncuBar/Sources/CodexBar/ProviderSwitcherButtons.swift,
+      ../IncuBar/Sources/CodexBar/StatusItemController+SwitcherViews.swift,
+      src/components/ProviderTabs.tsx, src/components/PopupWindow.tsx
+    completed: false
+  - title: implement merged icons mode with provider switcher menu and usage view swap
+    source: ../IncuBar/Sources/CodexBar/MenuDescriptor.swift,
+      ../IncuBar/Sources/CodexBar/StatusItemController+SwitcherViews.swift,
+      src/components/ProviderTabs.tsx, src/components/PopupWindow.tsx
+    completed: false
+  - title: implement menu bar display modes (session, weekly, pace) with switching
+    source: ../IncuBar/Sources/CodexBar/MenuBarDisplayMode.swift,
+      src/components/MenuCard.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: add "show highest usage" display mode with correct aggregation
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      src/stores/settingsStore.ts, src/components/MenuCard.tsx
+    completed: false
+  - title: implement usage bars as "used vs remaining" toggle
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      src/components/ProgressBar.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement reset time display toggle (absolute vs relative)
+    source: ../IncuBar/Sources/CodexBar/Date+RelativeDescription.swift,
+      ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      src/components/ResetCountdown.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement "show optional credits and extra usage" toggle
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      src/components/MenuCard.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement "show all token accounts in menu" toggle and UI
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
+      ../IncuBar/Sources/CodexBar/UsageStore+TokenAccounts.swift,
+      src/components/MenuCard.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: add launch-at-login support via tauri plugin and wire setting toggle
+    source: ../IncuBar/Sources/CodexBar/LaunchAtLoginManager.swift,
+      src-tauri/src/lib.rs, src-tauri/src/commands/mod.rs,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: add system sleep/wake handling to pause and resume refresh loop correctly
+    source: ../IncuBar/Sources/CodexBar/DisplayLink.swift,
+      ../IncuBar/Sources/CodexBar/UsageStore+Refresh.swift,
+      src-tauri/src/providers/mod.rs
+    completed: false
+  - title: implement crash recovery behavior with safe state restore
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+ConfigPersistence.swift,
+      src-tauri/src/commands/mod.rs, src-tauri/src/storage
+    completed: false
+  - title: implement dynamic tray icon rendering with usage rings and status badges
+    source: ../IncuBar/Sources/CodexBar/IconRenderer.swift,
+      ../IncuBar/Sources/CodexBar/IconView.swift, src-tauri/src/tray/mod.rs
+    completed: false
+  - title: add provider-specific tray icon styles (Codex face, Claude crab, Gemini
+      sparkle, Factory gear, generic ring)
+    source: ../IncuBar/Sources/CodexBar/IconRenderer.swift,
+      ../IncuBar/Sources/CodexBar/ProviderBrandIcon.swift,
+      src-tauri/src/tray/mod.rs, src/components/ProviderIcons.tsx
+    completed: false
+  - title: implement tray icon animation states (loading, error, stale, disabled,
+      blinking)
+    source: ../IncuBar/Sources/CodexBar/StatusItemController+Animation.swift,
+      ../IncuBar/Sources/CodexBar/LoadingPattern.swift,
+      src-tauri/src/tray/mod.rs
+    completed: false
+  - title: add dark/light adaptive tray icons and color tuning
+    source: ../IncuBar/Sources/CodexBar/IconRenderer.swift, src-tauri/src/tray/mod.rs
+    completed: false
+  - title: add tooltip text to tray icon with provider summary
+    source: ../IncuBar/Sources/CodexBar/StatusItemController.swift,
+      src-tauri/src/tray/mod.rs
+    completed: false
+  - title: implement status polling and incident badges in menu and icon overlay
+    source: ../IncuBar/Sources/CodexBar/UsageStore+Status.swift,
+      ../IncuBar/Sources/CodexBar/MenuContent.swift,
+      src-tauri/src/providers/mod.rs, src/components/MenuCard.tsx
+    completed: false
+  - title: implement optional Codex web dashboard extras via cookie auth
+    source: ../IncuBar/Sources/CodexBar/UsageStore+OpenAIWeb.swift,
+      src-tauri/src/providers/codex.rs
+    completed: false
+  - title: implement optional Claude web extras via cookie auth
+    source: ../IncuBar/Sources/CodexBar/Providers/Claude,
+      src-tauri/src/providers/claude.rs
+    completed: false
+  - title: implement cost usage scan for Codex and Claude (local logs, 30-day window)
+    source: ../IncuBar/Sources/CodexBar/UsageStore+TokenCost.swift,
+      src-tauri/src/providers
+    completed: false
+  - title: add usage breakdown view with charts (usage breakdown, cost history,
+      credits history)
+    source: ../IncuBar/Sources/CodexBar/UsageBreakdownChartMenuView.swift,
+      ../IncuBar/Sources/CodexBar/CostHistoryChartMenuView.swift,
+      ../IncuBar/Sources/CodexBar/CreditsHistoryChartMenuView.swift,
+      src/components/MenuCard.tsx
+    completed: false
+  - title: add usage pace text view and mirror IncuBar metrics
+    source: ../IncuBar/Sources/CodexBar/UsagePaceText.swift,
+      src/components/MenuCard.tsx
+    completed: false
+  - title: implement background refresh cadence presets (manual, 1m, 2m, 5m, 15m)
+    source: ../IncuBar/Sources/CodexBar/UsageStore+Refresh.swift,
+      src-tauri/src/providers/mod.rs, src/stores/settingsStore.ts
+    completed: false
+  - title: add manual refresh in menu and hotkey binding
+    source: ../IncuBar/Sources/CodexBar/MenuContent.swift,
+      ../IncuBar/Sources/CodexBar/KeyboardShortcuts+Names.swift,
+      src/components/PopupWindow.tsx
+    completed: false
+  - title: implement notifications for session quota thresholds
+    source: ../IncuBar/Sources/CodexBar/SessionQuotaNotifications.swift,
+      src-tauri/src/lib.rs
+    completed: false
+  - title: implement notifications for low credits thresholds
+    source: ../IncuBar/Sources/CodexBar/AppNotifications.swift, src-tauri/src/lib.rs
+    completed: false
+  - title: implement notifications for refresh failures and stale data
+    source: ../IncuBar/Sources/CodexBar/AppNotifications.swift, src-tauri/src/lib.rs
+    completed: false
+  - title: add notification preference toggles and test delivery
+    source: ../IncuBar/Sources/CodexBar/PreferencesGeneralPane.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement secure delete for stored tokens and cookies
+    source: ../IncuBar/Sources/CodexBar/KeychainMigration.swift,
+      ../IncuBar/Sources/CodexBar/CookieHeaderStore.swift, src-tauri/src/storage
+    completed: false
+  - title: implement keychain access prompts and allow-list guidance
+    source: ../IncuBar/Sources/CodexBar/KeychainPromptCoordinator.swift,
+      src-tauri/src/storage/keyring.rs
+    completed: false
+  - title: add debug menu with toggles (file logging, keep CLI sessions alive,
+      random blink)
+    source: ../IncuBar/Sources/CodexBar/PreferencesDebugPane.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement provider CLI PTY support (Codex, Claude, Gemini, Kiro)
+    source: ../IncuBar/Sources/CodexBar/CodexLoginRunner.swift,
+      ../IncuBar/Sources/CodexBar/ClaudeLoginRunner.swift,
+      ../IncuBar/Sources/CodexBar/GeminiLoginRunner.swift,
+      ../IncuBar/Sources/CodexBar/Providers/Kiro, src-tauri/src/login/mod.rs
+    completed: false
+  - title: add optional PTY fallback when OAuth token refresh fails
+    source: ../IncuBar/Sources/CodexBar/Providers/Shared, src-tauri/src/providers
+    completed: false
+  - title: implement provider status staleness detection and UI dimming rules
+    source: ../IncuBar/Sources/CodexBar/UsageStore+Status.swift,
+      ../IncuBar/Sources/CodexBar/MenuCardView.swift,
+      src/components/MenuCard.tsx
+    completed: false
+  - title: add "last updated" freshness timing and per-provider status line
+    source: ../IncuBar/Sources/CodexBar/MenuCardView.swift, src/components/MenuCard.tsx
+    completed: false
+  - title: implement provider error detail view with actionable copy
+    source: ../IncuBar/Sources/CodexBar/PreferencesProviderErrorView.swift,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: implement provider enable/disable onboarding empty state parity
+    source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,
+      src/components/SettingsPanel.tsx, src/components/ProviderTabs.tsx
+    completed: false
+  - title: add privacy-first toggles and messaging in settings
+    source: ../IncuBar/Sources/CodexBar/PreferencesAdvancedPane.swift,
+      ../IncuBar/Sources/CodexBar/PersonalInfoRedactor.swift,
+      src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement settings persistence migration to match IncuBar keys
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+ConfigPersistence.swift,
+      src-tauri/src/commands/mod.rs, src-tauri/src/storage
+    completed: false
+  - title: add config migration and defaults parity with IncuBar settings
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+Defaults.swift,
+      src/stores/settingsStore.ts, src-tauri/src/commands/mod.rs
+    completed: false
+  - title: add token account selection UI for providers that support multiple accounts
+    source: ../IncuBar/Sources/CodexBar/UsageStore+TokenAccounts.swift,
+      ../IncuBar/Sources/CodexBar/ProviderTokenAccountSelection.swift,
+      src/components/SettingsPanel.tsx, src/components/MenuCard.tsx
+    completed: false
+  - title: implement token cost tracking and historical storage
+    source: ../IncuBar/Sources/CodexBar/UsageStore+TokenCost.swift,
+      src-tauri/src/providers
+    completed: false
+  - title: implement widget snapshot pipeline (if supported) or parity alternative
+    source: ../IncuBar/Sources/CodexBar/UsageStore+WidgetSnapshot.swift,
+      ../IncuBar/Sources/CodexBarWidget, src-tauri/src/providers
+    completed: false
+  - title: implement bundled CLI (codexbar) parity with status and cost commands
+    source: ../IncuBar/Sources/CodexBarCLI, src-tauri/src/main.rs, src-tauri/src/lib.rs
+    completed: false
+  - title: add Linux CLI build pipeline parity (if supported by Tauri build system)
+    source: ../IncuBar/README.md, src-tauri/Cargo.toml
+    completed: false
+  - title: implement auto-update channel parity (Sparkle equivalent or Tauri updater)
+    source: ../IncuBar/Sources/CodexBar/UpdateChannel.swift,
+      ../IncuBar/docs/sparkle.md, src-tauri/tauri.conf.json
+    completed: false
+  - title: add release checklist automation and version stamping parity
+    source: ../IncuBar/docs/RELEASING.md, src-tauri/Cargo.toml, package.json
+    completed: false
+  - title: implement install origin tracking and display in About pane
+    source: ../IncuBar/Sources/CodexBar/InstallOrigin.swift,
+      ../IncuBar/Sources/CodexBar/PreferencesAboutPane.swift,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: implement About/Advanced/Debug/Display panes parity in settings
+    source: ../IncuBar/Sources/CodexBar/PreferencesAboutPane.swift,
+      ../IncuBar/Sources/CodexBar/PreferencesAdvancedPane.swift,
+      ../IncuBar/Sources/CodexBar/PreferencesDebugPane.swift,
+      ../IncuBar/Sources/CodexBar/PreferencesDisplayPane.swift,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: implement provider catalog and authoring guide parity
+    source: ../IncuBar/Sources/CodexBar/ProviderRegistry.swift,
+      ../IncuBar/docs/provider.md, src/lib/providers.ts
+    completed: false
+  - title: add provider status menu section with incident links
+    source: ../IncuBar/Sources/CodexBar/MenuContent.swift, src/components/MenuCard.tsx
+    completed: false
+  - title: implement personal info redaction option for logs and UI
+    source: ../IncuBar/Sources/CodexBar/PersonalInfoRedactor.swift,
+      src/stores/settingsStore.ts, src/components/SettingsPanel.tsx
+    completed: false
+  - title: add menu bar display text options and align with IncuBar behaviors
+    source: ../IncuBar/Sources/CodexBar/MenuBarDisplayText.swift,
+      src/components/MenuCard.tsx, src/stores/settingsStore.ts
+    completed: false
+  - title: implement provider toggle detection and auto-enable when auth found
+    source: ../IncuBar/Sources/CodexBar/SettingsStore+ProviderDetection.swift,
+      src-tauri/src/login/mod.rs, src/stores/settingsStore.ts
+    completed: false
+  - title: implement background refresh backoff and retry strategy parity
+    source: ../IncuBar/Sources/CodexBar/UsageStore+Refresh.swift,
+      src-tauri/src/providers/mod.rs
+    completed: false
+  - title: implement data export or diagnostics dump for support parity
+    source: ../IncuBar/Sources/CodexBar/PreferencesDebugPane.swift,
+      src/components/SettingsPanel.tsx
+    completed: false
+  - title: validate all provider API responses against IncuBar schema and edge cases
+    source: ../IncuBar/Sources/CodexBar/Providers/Shared,
+      src-tauri/src/providers/traits.rs
+    completed: false
+  - title: build exhaustive parity tests for providers, settings, and UI behavior
+    source: ../IncuBar/Tests, ../IncuBar/TestsLinux, src-tauri/src, src
+    completed: false

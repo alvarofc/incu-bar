@@ -47,7 +47,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [showCookieInput, setShowCookieInput] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
-  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory'>('cursor');
+  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment'>('cursor');
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
   const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
@@ -155,10 +155,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-      if (providerId === 'factory') {
-        setCookieProvider('factory');
-        setLoginMessage('Importing cookies from browser…');
-        const importResult = await invoke<LoginResult>('import_factory_browser_cookies');
+    if (providerId === 'factory') {
+      setCookieProvider('factory');
+      setLoginMessage('Importing cookies from browser…');
+      const importResult = await invoke<LoginResult>('import_factory_browser_cookies');
 
         if (importResult.success) {
           setLoginMessage(importResult.message);
@@ -171,10 +171,31 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         }
 
         setLoginMessage('Could not import from browser. You can paste cookies manually below.');
-        setShowCookieInput(true);
+      setShowCookieInput(true);
+      setLoggingIn(null);
+      return;
+    }
+
+    if (providerId === 'augment') {
+      setCookieProvider('augment');
+      setLoginMessage('Importing cookies from browser…');
+      const importResult = await invoke<LoginResult>('import_augment_browser_cookies');
+
+      if (importResult.success) {
+        setLoginMessage(importResult.message);
+        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+        setAuthStatus(status);
+        useSettingsStore.getState().enableProvider('augment');
+        useUsageStore.getState().refreshProvider('augment');
         setLoggingIn(null);
         return;
       }
+
+      setLoginMessage('Could not import from browser. You can paste cookies manually below.');
+      setShowCookieInput(true);
+      setLoggingIn(null);
+      return;
+    }
       
       if (providerId === 'copilot') {
         setLoginMessage('Requesting device code from GitHub…');
@@ -212,8 +233,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     
     setLoggingIn(cookieProvider);
     try {
-      const storeCommand = cookieProvider === 'factory'
-        ? 'store_factory_cookies'
+    const storeCommand = cookieProvider === 'factory'
+      ? 'store_factory_cookies'
+      : cookieProvider === 'augment'
+        ? 'store_augment_cookies'
         : 'store_cursor_cookies';
       const result = await invoke<LoginResult>(storeCommand, { cookieHeader: cookieInput });
       if (result.success) {
@@ -270,7 +293,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
     const importCommand = cookieProvider === 'factory'
       ? 'import_factory_browser_cookies'
-      : 'import_cursor_browser_cookies';
+      : cookieProvider === 'augment'
+        ? 'import_augment_browser_cookies'
+        : 'import_cursor_browser_cookies';
 
     try {
       const result = await invoke<LoginResult>(importCommand);

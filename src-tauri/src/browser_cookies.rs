@@ -31,6 +31,7 @@ use decrypt_cookies::safari::SafariBuilder;
 /// Domains to extract cookies for Cursor
 const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh", "workos.com"];
 const FACTORY_DOMAINS: &[&str] = &["factory.ai", "app.factory.ai"];
+const AUGMENT_DOMAINS: &[&str] = &["augmentcode.com", "app.augmentcode.com"];
 
 /// Result of a browser cookie import
 #[derive(Debug)]
@@ -51,6 +52,11 @@ pub async fn import_cursor_cookies_from_browser() -> Result<BrowserCookieResult>
 /// Import Factory (Droid) cookies from system browsers
 pub async fn import_factory_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(FACTORY_DOMAINS).await
+}
+
+/// Import Augment cookies from system browsers
+pub async fn import_augment_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(AUGMENT_DOMAINS).await
 }
 
 /// Import cookies for specified domains from system browsers

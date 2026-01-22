@@ -5,6 +5,7 @@ mod claude;
 mod codex;
 mod cursor;
 mod factory;
+mod augment;
 pub mod copilot;
 mod zai;
 mod kimi_k2;
@@ -297,10 +298,11 @@ impl ProviderRegistry {
         ));
 
         // Augment
-        providers.insert(ProviderId::Augment, Self::placeholder_state(
-            "Augment",
-            "Augment provider not implemented",
-        ));
+        providers.insert(ProviderId::Augment, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(augment::AugmentProvider::new()),
+        });
 
         // Amp
         providers.insert(ProviderId::Amp, Self::placeholder_state(
