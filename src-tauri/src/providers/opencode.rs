@@ -436,7 +436,7 @@ fn looks_signed_out(text: &str) -> bool {
     lower.contains("login") || lower.contains("sign in") || lower.contains("auth/authorize")
 }
 
-fn cookie_header_has_auth(cookie_header: &str) -> bool {
+pub fn cookie_header_has_auth(cookie_header: &str) -> bool {
     cookie_header.split(';').any(|part| {
         let trimmed = part.trim();
         trimmed.starts_with("auth=") || trimmed.starts_with("__Host-auth=")

@@ -897,6 +897,44 @@ pub async fn store_minimax_session(cookie_header: String) -> Result<(), anyhow::
     Ok(())
 }
 
+/// Store Amp session cookies
+pub async fn store_amp_session(cookie_header: String) -> Result<(), anyhow::Error> {
+    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let session_dir = data_dir.join("IncuBar");
+
+    tokio::fs::create_dir_all(&session_dir).await?;
+
+    let session_path = session_dir.join("amp-session.json");
+    let content = serde_json::json!({
+        "cookieHeader": cookie_header,
+        "savedAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
+
+    tracing::info!("Saved Amp session to {:?}", session_path);
+    Ok(())
+}
+
+/// Store OpenCode session cookies
+pub async fn store_opencode_session(cookie_header: String) -> Result<(), anyhow::Error> {
+    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let session_dir = data_dir.join("IncuBar");
+
+    tokio::fs::create_dir_all(&session_dir).await?;
+
+    let session_path = session_dir.join("opencode-session.json");
+    let content = serde_json::json!({
+        "cookieHeader": cookie_header,
+        "savedAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
+
+    tracing::info!("Saved OpenCode session to {:?}", session_path);
+    Ok(())
+}
+
 // ============== Copilot GitHub Device Flow ==============
 
 const COPILOT_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98"; // VS Code Client ID

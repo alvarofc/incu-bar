@@ -45,10 +45,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
   const [loggingIn, setLoggingIn] = useState<string | null>(null);
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  const [showCookieInput, setShowCookieInput] = useState(false);
-  const [cookieInput, setCookieInput] = useState('');
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
-  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment' | 'kimi' | 'minimax'>('cursor');
+  const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
+  const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
   const cookieSources = useSettingsStore((s) => s.cookieSources);
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
@@ -75,7 +74,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         if (result.success) {
           setLoginMessage(result.message);
           setCursorLoginOpen(false);
-          setShowCookieInput(false);
+          setManualCookiePanels((state) => ({ ...state, cursor: false }));
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           setAuthStatus(status);
           useSettingsStore.getState().enableProvider('cursor');
@@ -83,7 +82,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         }
       } catch (e) {
         setLoginMessage(`Cookie extraction error: ${e}`);
-        setShowCookieInput(true);
+        setManualCookiePanels((state) => ({ ...state, cursor: true }));
       }
     });
 
@@ -92,7 +91,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       if (success) {
         setLoginMessage(message);
         setCursorLoginOpen(false);
-        setShowCookieInput(false);
+        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
         useSettingsStore.getState().enableProvider(providerId as ProviderId);
@@ -140,7 +139,6 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     
     try {
       if (providerId === 'cursor') {
-        setCookieProvider('cursor');
         const cookieSource = useSettingsStore.getState().getCookieSource('cursor');
         setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
         const importResult = await invoke<LoginResult>('import_cursor_browser_cookies_from_source', {
@@ -160,17 +158,20 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-      if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax') {
-        setCookieProvider(providerId);
+      if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax' || providerId === 'amp' || providerId === 'opencode') {
         const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
         setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
-        const importCommand = providerId === 'factory'
-          ? 'import_factory_browser_cookies_from_source'
-          : providerId === 'augment'
-            ? 'import_augment_browser_cookies_from_source'
-            : providerId === 'minimax'
-              ? 'import_minimax_browser_cookies_from_source'
-              : 'import_kimi_browser_cookies_from_source';
+          const importCommand = providerId === 'factory'
+            ? 'import_factory_browser_cookies_from_source'
+            : providerId === 'augment'
+              ? 'import_augment_browser_cookies_from_source'
+              : providerId === 'minimax'
+                ? 'import_minimax_browser_cookies_from_source'
+                : providerId === 'amp'
+                  ? 'import_amp_browser_cookies_from_source'
+                  : providerId === 'opencode'
+                    ? 'import_opencode_browser_cookies_from_source'
+                    : 'import_kimi_browser_cookies_from_source';
         const importResult = await invoke<LoginResult>(importCommand, {
           source: { source: cookieSource },
         });
@@ -186,7 +187,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         }
 
         setLoginMessage('Could not import from browser. You can paste cookies manually below.');
-        setShowCookieInput(true);
+        setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
         setLoggingIn(null);
         return;
       }
@@ -225,36 +226,41 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     }
   }, []);
 
-  const handleSubmitCookies = useCallback(async () => {
-    if (!cookieInput.trim()) {
+  const handleSubmitCookies = useCallback(async (providerId: ProviderId) => {
+    const cookieHeader = manualCookieInputs[providerId]?.trim() ?? '';
+    if (!cookieHeader) {
       setLoginMessage('Please paste your cookies first');
       return;
     }
-    
-    setLoggingIn(cookieProvider);
+
+    setLoggingIn(providerId);
     try {
-      const storeCommand = cookieProvider === 'factory'
+      const storeCommand = providerId === 'factory'
         ? 'store_factory_cookies'
-        : cookieProvider === 'augment'
+        : providerId === 'augment'
           ? 'store_augment_cookies'
-          : cookieProvider === 'kimi'
+          : providerId === 'kimi'
             ? 'store_kimi_cookies'
-            : cookieProvider === 'minimax'
+            : providerId === 'minimax'
               ? 'store_minimax_cookies'
-              : 'store_cursor_cookies';
-      const result = await invoke<LoginResult>(storeCommand, { cookieHeader: cookieInput });
+              : providerId === 'amp'
+                ? 'store_amp_cookies'
+                : providerId === 'opencode'
+                  ? 'store_opencode_cookies'
+                  : 'store_cursor_cookies';
+      const result = await invoke<LoginResult>(storeCommand, { cookieHeader });
       if (result.success) {
-        setLoginMessage(`${PROVIDERS[cookieProvider].name} cookies saved!`);
-        setCookieInput('');
-        setShowCookieInput(false);
-        if (cookieProvider === 'cursor') {
+        setLoginMessage(`${PROVIDERS[providerId].name} cookies saved!`);
+        setManualCookieInputs((state) => ({ ...state, [providerId]: '' }));
+        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
+        if (providerId === 'cursor') {
           setCursorLoginOpen(false);
           await invoke('close_cursor_login');
         }
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(cookieProvider);
-        useUsageStore.getState().refreshProvider(cookieProvider);
+        useSettingsStore.getState().enableProvider(providerId);
+        useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
       }
@@ -263,10 +269,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     } finally {
       setLoggingIn(null);
     }
-  }, [cookieInput, cookieProvider]);
+  }, [manualCookieInputs]);
 
   const handleExtractCookies = useCallback(async () => {
-    setCookieProvider('cursor');
     setLoggingIn('cursor');
     setLoginMessage('Extracting cookies…');
 
@@ -275,36 +280,40 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       if (result.success) {
         setLoginMessage(result.message);
         setCursorLoginOpen(false);
-        setShowCookieInput(false);
+        setManualCookiePanels((state) => ({ ...state, cursor: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
         useUsageStore.getState().refreshProvider('cursor');
       } else {
         setLoginMessage(result.message);
-        setShowCookieInput(true);
+        setManualCookiePanels((state) => ({ ...state, cursor: true }));
       }
     } catch (e) {
       setLoginMessage(`Failed to extract cookies: ${e}`);
-      setShowCookieInput(true);
+      setManualCookiePanels((state) => ({ ...state, cursor: true }));
     } finally {
       setLoggingIn(null);
     }
   }, []);
 
-  const handleImportBrowserCookies = useCallback(async () => {
-    setLoggingIn(cookieProvider);
-    const cookieSource = useSettingsStore.getState().getCookieSource(cookieProvider);
+  const handleImportBrowserCookies = useCallback(async (providerId: ProviderId) => {
+    setLoggingIn(providerId);
+    const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
     setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
 
-    const importCommand = cookieProvider === 'factory'
+    const importCommand = providerId === 'factory'
       ? 'import_factory_browser_cookies_from_source'
-      : cookieProvider === 'augment'
+      : providerId === 'augment'
         ? 'import_augment_browser_cookies_from_source'
-        : cookieProvider === 'kimi'
+        : providerId === 'kimi'
           ? 'import_kimi_browser_cookies_from_source'
-          : cookieProvider === 'minimax'
+          : providerId === 'minimax'
             ? 'import_minimax_browser_cookies_from_source'
-            : 'import_cursor_browser_cookies_from_source';
+            : providerId === 'amp'
+              ? 'import_amp_browser_cookies_from_source'
+              : providerId === 'opencode'
+                ? 'import_opencode_browser_cookies_from_source'
+                : 'import_cursor_browser_cookies_from_source';
 
     try {
       const result = await invoke<LoginResult>(importCommand, {
@@ -313,22 +322,22 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       if (result.success) {
         setLoginMessage(result.message);
         setCursorLoginOpen(false);
-        setShowCookieInput(false);
+        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(cookieProvider);
-        useUsageStore.getState().refreshProvider(cookieProvider);
+        useSettingsStore.getState().enableProvider(providerId);
+        useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
-        setShowCookieInput(true);
+        setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
       }
     } catch (e) {
       setLoginMessage(`Failed to import cookies: ${e}`);
-      setShowCookieInput(true);
+      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
     } finally {
       setLoggingIn(null);
     }
-  }, [cookieProvider]);
+  }, []);
 
   const handleCookieSourceChange = useCallback((providerId: ProviderId, source: CookieSource) => {
     useSettingsStore.getState().setCookieSource(providerId, source);
@@ -543,7 +552,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                         </span>
                       )}
                       {usesCookies && cookieSource && (
-                        <div className="mt-2 flex items-center gap-2">
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
                           <label
                             htmlFor={`cookie-source-${id}`}
                             className="text-[11px] text-[var(--text-quaternary)]"
@@ -562,6 +571,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                               </option>
                             ))}
                           </select>
+                          <button
+                            type="button"
+                            onClick={() => setManualCookiePanels((state) => ({ ...state, [id]: !state[id] }))}
+                            className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                          >
+                            {manualCookiePanels[id] ? 'Hide manual' : 'Paste cookies'}
+                          </button>
                         </div>
                       )}
                     </div>
@@ -593,10 +609,44 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                       )}
                       <span>{isAuthenticated ? 'Reconnect' : 'Connect'}</span>
                     </button>
-                  </div>
                 </div>
-              );
-            })}
+                {usesCookies && manualCookiePanels[id] && (
+                  <div className="mt-2 p-3 rounded-lg bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
+                    <p className="text-[12px] text-[var(--text-tertiary)] mb-2">
+                      Manual fallback: Copy Cookie header from DevTools Network tab
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={manualCookieInputs[id] ?? ''}
+                        onChange={(event) => setManualCookieInputs((state) => ({
+                          ...state,
+                          [id]: event.target.value,
+                        }))}
+                        placeholder="Paste Cookie header…"
+                        aria-label={`Cookie header value for ${provider.name}`}
+                        className="flex-1 px-3 py-2 text-[13px] bg-[var(--bg-base)] rounded-md border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button
+                        onClick={() => handleSubmitCookies(id)}
+                        disabled={loggingIn === id}
+                        className="btn btn-primary focus-ring"
+                        aria-label={`Submit cookies for ${provider.name}`}
+                      >
+                        {loggingIn === id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
           </div>
           
           {/* Upcoming Providers */}
@@ -627,18 +677,18 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
           )}
           
-          {/* Cursor Login Helper */}
-          {cursorLoginOpen && (
-            <div className="mt-3 p-3 rounded-lg bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20">
-              <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
-                Login window open. Complete login in browser.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  onClick={handleImportBrowserCookies}
-                  disabled={loggingIn === 'cursor'}
-                  className="btn btn-primary focus-ring flex-1 text-[12px]"
-                >
+            {/* Cursor Login Helper */}
+            {cursorLoginOpen && (
+              <div className="mt-3 p-3 rounded-lg bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20">
+                <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
+                  Login window open. Complete login in browser.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleImportBrowserCookies('cursor')}
+                    disabled={loggingIn === 'cursor'}
+                    className="btn btn-primary focus-ring flex-1 text-[12px]"
+                  >
                   {loggingIn === 'cursor' ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
                   ) : (
@@ -654,42 +704,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                   <span>Extract from Window</span>
                 </button>
               </div>
-            </div>
-          )}
-          
-          {/* Manual Cookie Input */}
-          {showCookieInput && (
-            <div className="mt-3 p-3 rounded-lg bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
-              <p className="text-[12px] text-[var(--text-tertiary)] mb-2">
-                Manual fallback: Copy Cookie header from DevTools Network tab
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={cookieInput}
-                  onChange={(e) => setCookieInput(e.target.value)}
-                  placeholder="Paste Cookie header…"
-                  aria-label="Cookie header value"
-                  className="flex-1 px-3 py-2 text-[13px] bg-[var(--bg-base)] rounded-md border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-                <button
-                  onClick={handleSubmitCookies}
-                  disabled={loggingIn === 'cursor'}
-                  className="btn btn-primary focus-ring"
-                  aria-label="Submit cookies"
-                >
-                  {loggingIn === 'cursor' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
-                  )}
-                </button>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </section>
 
         <div className="divider mx-4" />
 

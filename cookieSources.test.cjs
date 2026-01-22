@@ -33,6 +33,10 @@ const requiredCommands = [
   'import_augment_browser_cookies_from_source',
   'import_kimi_browser_cookies_from_source',
   'import_minimax_browser_cookies_from_source',
+  'import_amp_browser_cookies_from_source',
+  'import_opencode_browser_cookies_from_source',
+  'store_amp_cookies',
+  'store_opencode_cookies',
 ];
 
 requiredCommands.forEach((command) => {

@@ -188,6 +188,13 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 provider_id: "augment".to_string(),
             });
         }
+        "amp" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "Amp uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                provider_id: "amp".to_string(),
+            });
+        }
         "kimi" => {
             return Ok(LoginResult {
                 success: true,
@@ -200,6 +207,13 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 success: true,
                 message: "MiniMax uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
                 provider_id: "minimax".to_string(),
+            });
+        }
+        "opencode" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "OpenCode uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                provider_id: "opencode".to_string(),
             });
         }
         "copilot" => {
@@ -242,12 +256,14 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "cursor",
         "factory",
         "augment",
+        "amp",
         "copilot",
         "gemini",
         "zai",
         "kimi",
         "kimi_k2",
         "minimax",
+        "opencode",
         "synthetic",
         "antigravity",
         "kiro",
@@ -347,6 +363,41 @@ pub async fn store_minimax_cookies(cookie_header: String) -> Result<LoginResult,
     }
 }
 
+/// Store Amp session cookies (for manual cookie paste)
+#[command]
+pub async fn store_amp_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    let session_cookie = extract_amp_session_cookie(&cookie_header)?;
+    match login::store_amp_session(session_cookie).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "Amp cookies saved successfully".to_string(),
+            provider_id: "amp".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save Amp cookies: {}", e),
+            provider_id: "amp".to_string(),
+        }),
+    }
+}
+
+/// Store OpenCode session cookies (for manual cookie paste)
+#[command]
+pub async fn store_opencode_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    match login::store_opencode_session(cookie_header).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "OpenCode cookies saved successfully".to_string(),
+            provider_id: "opencode".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save OpenCode cookies: {}", e),
+            provider_id: "opencode".to_string(),
+        }),
+    }
+}
+
 /// Open the Cursor login window (WebView-based login)
 #[command]
 pub async fn open_cursor_login(app: AppHandle) -> Result<(), String> {
@@ -430,6 +481,28 @@ fn parse_cookie_source(source: &str) -> Result<BrowserCookieSource, String> {
         "brave" => Ok(BrowserCookieSource::Brave),
         "opera" => Ok(BrowserCookieSource::Opera),
         _ => Err(format!("Unsupported cookie source: {}", source)),
+    }
+}
+
+fn extract_amp_session_cookie(cookie_header: &str) -> Result<String, String> {
+    let mut parts = Vec::new();
+
+    for part in cookie_header.split(';') {
+        let trimmed = part.trim();
+        if let Some((name, value)) = trimmed.split_once('=') {
+            if name.trim() == "session" {
+                let value = value.trim();
+                if !value.is_empty() {
+                    parts.push(format!("session={}", value));
+                }
+            }
+        }
+    }
+
+    if parts.is_empty() {
+        Err("No Amp session cookie found".to_string())
+    } else {
+        Ok(parts.join("; "))
     }
 }
 
@@ -921,6 +994,262 @@ pub async fn import_minimax_browser_cookies_from_source(
                     e
                 ),
                 provider_id: "minimax".to_string(),
+            })
+        }
+    }
+}
+
+/// Import Amp cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_amp_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing Amp cookies from system browsers");
+
+    match crate::browser_cookies::import_amp_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            let session_cookie = match extract_amp_session_cookie(&result.cookie_header) {
+                Ok(cookie) => cookie,
+                Err(e) => {
+                    return Ok(LoginResult {
+                        success: false,
+                        message: e,
+                        provider_id: "amp".to_string(),
+                    });
+                }
+            };
+
+            match login::store_amp_session(session_cookie).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "amp",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Amp is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "amp".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "amp".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Amp browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into ampcode.com in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "amp".to_string(),
+            })
+        }
+    }
+}
+
+#[command]
+pub async fn import_amp_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Amp cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_amp_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            let session_cookie = match extract_amp_session_cookie(&result.cookie_header) {
+                Ok(cookie) => cookie,
+                Err(e) => {
+                    return Ok(LoginResult {
+                        success: false,
+                        message: e,
+                        provider_id: "amp".to_string(),
+                    });
+                }
+            };
+
+            match login::store_amp_session(session_cookie).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "amp",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Amp is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "amp".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "amp".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Amp browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into ampcode.com and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "amp".to_string(),
+            })
+        }
+    }
+}
+
+/// Import OpenCode cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_opencode_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing OpenCode cookies from system browsers");
+
+    match crate::browser_cookies::import_opencode_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            if !crate::providers::opencode::cookie_header_has_auth(&result.cookie_header) {
+                return Ok(LoginResult {
+                    success: false,
+                    message: "Imported cookies did not include OpenCode auth cookie".to_string(),
+                    provider_id: "opencode".to_string(),
+                });
+            }
+
+            match login::store_opencode_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "opencode",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! OpenCode is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "opencode".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "opencode".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import OpenCode browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into opencode.ai in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "opencode".to_string(),
+            })
+        }
+    }
+}
+
+#[command]
+pub async fn import_opencode_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing OpenCode cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_opencode_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            if !crate::providers::opencode::cookie_header_has_auth(&result.cookie_header) {
+                return Ok(LoginResult {
+                    success: false,
+                    message: "Imported cookies did not include OpenCode auth cookie".to_string(),
+                    provider_id: "opencode".to_string(),
+                });
+            }
+
+            match login::store_opencode_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "opencode",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! OpenCode is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "opencode".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "opencode".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import OpenCode browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into opencode.ai and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "opencode".to_string(),
             })
         }
     }
