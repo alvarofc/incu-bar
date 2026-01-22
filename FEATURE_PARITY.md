@@ -64,7 +64,7 @@ This baseline defines the minimum complete state for IncuBar to be considered pa
 | JetBrains | Local log parsing | Not Started | Not Started |
 | OpenCode | Browser cookies | Not Started | Not Started |
 | Vertex | Google OAuth | Not Started | Not Started |
-| Antigravity | Status probe | Not Started | Not Started |
+| Antigravity | Status probe | Done | Done |
 
 ---
 
@@ -93,7 +93,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Kiro | Not Started | Not Started | Not Started | Not Started | Not Started | Status only (id: kiro) |
 | JetBrains | Not Started | Not Started | Not Started | Not Started | Not Started | Local logs (id: jetbrains) |
 | Vertex | Not Started | Not Started | Not Started | Not Started | Not Started | Google OAuth (id: vertexai) |
-| Antigravity | Not Started | Not Started | Not Started | Not Started | Not Started | Status only (id: antigravity) |
+| Antigravity | Done | Done | Done | Done | Done | Status only (id: antigravity) |
 
 ### App Parity Matrix
 

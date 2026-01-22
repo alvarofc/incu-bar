@@ -16,6 +16,7 @@ mod synthetic;
 mod gemini;
 mod jetbrains;
 mod opencode;
+mod antigravity;
 
 pub use traits::*;
 
@@ -266,10 +267,11 @@ impl ProviderRegistry {
         });
 
         // Antigravity
-        providers.insert(ProviderId::Antigravity, Self::placeholder_state(
-            "Antigravity",
-            "Antigravity provider not implemented",
-        ));
+        providers.insert(ProviderId::Antigravity, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(antigravity::AntigravityProvider::new()),
+        });
 
         // Factory (Droid)
         providers.insert(ProviderId::Factory, ProviderState {

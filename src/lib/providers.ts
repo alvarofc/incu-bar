@@ -81,7 +81,8 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     opusLabel: 'Gemini Flash',
     supportsOpus: true,
     supportsCredits: false,
-    implemented: false,
+    implemented: true,
+    statusPageUrl: 'https://www.google.com/appsstatus/dashboard/products/npdyhgECDJ6tB66MxXyo',
   },
   factory: {
     id: 'factory',

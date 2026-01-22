@@ -192,6 +192,7 @@ pub async fn check_auth_status(provider_id: &str) -> AuthStatus {
         "kimi_k2" => check_kimi_k2_auth().await,
         "minimax" => check_minimax_auth().await,
         "synthetic" => check_synthetic_auth().await,
+        "antigravity" => check_antigravity_auth().await,
         _ => AuthStatus {
             authenticated: false,
             method: None,
@@ -612,6 +613,37 @@ async fn check_synthetic_auth() -> AuthStatus {
             method: None,
             email: None,
             error: Some("Set SYNTHETIC_API_KEY environment variable".to_string()),
+        }
+    }
+}
+
+async fn check_antigravity_auth() -> AuthStatus {
+    let output = tokio::process::Command::new("/bin/ps")
+        .args(["-ax", "-o", "command="])
+        .output()
+        .await;
+
+    let stdout = match output {
+        Ok(result) => String::from_utf8_lossy(&result.stdout).to_string(),
+        Err(_) => String::new(),
+    };
+
+    if stdout
+        .lines()
+        .any(|line| line.to_lowercase().contains("language_server_macos"))
+    {
+        AuthStatus {
+            authenticated: true,
+            method: Some("local_probe".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Antigravity not running".to_string()),
         }
     }
 }
