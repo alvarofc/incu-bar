@@ -4,6 +4,41 @@ This document tracks feature parity between IncuBar (Tauri port) and the origina
 
 **Legend:** Done | Partial | Not Started | N/A
 
+## Living Spec Rules
+
+- This document is the single source of truth for parity with CodexBar.
+- A feature is "Done" only when its behavior matches CodexBar in the menu bar, popup, and notifications.
+- If a feature is intentionally divergent, mark it "N/A" and explain why.
+- New features or providers must be added here before implementation begins.
+
+## Feature Parity Baseline
+
+This baseline defines the minimum complete state for IncuBar to be considered parity-complete.
+
+### Baseline Scope
+
+- Provider support matches CodexBar for usage, resets, and auth flows.
+- Tray icon behavior matches CodexBar for states, animation, and theming.
+- Popup UI supports all CodexBar display modes and settings.
+- Settings persist, sync to the tray, and trigger background refreshes.
+- Notifications follow CodexBar rules for thresholds, failures, and resets.
+
+### Parity Rules
+
+- If CodexBar uses a fallback auth method, IncuBar must also expose it.
+- All providers must return normalized fields: plan/tier, used, limit, reset.
+- Errors must surface in the popup and log in debug mode.
+- Optional enhancements are listed explicitly and never counted toward parity.
+
+### Optional Enhancements (Not Required for Parity)
+
+- PTY-based CLI sessions for Claude and Codex.
+- Web dashboard scraping for Codex beyond usage.
+
+---
+
+## Parity Matrices
+
 ---
 
 ## Current Implementation Status
@@ -30,6 +65,78 @@ This document tracks feature parity between IncuBar (Tauri port) and the origina
 | OpenCode | Browser cookies | Not Started | Not Started |
 | Vertex | Google OAuth | Not Started | Not Started |
 | Antigravity | Status probe | Not Started | Not Started |
+
+---
+
+## Parity Matrices
+
+### Provider Parity Matrix
+
+Baseline expectation: usage, reset, and auth parity with CodexBar.
+
+| Provider | Usage | Reset | Auth | Popup Display | Settings | Notes |
+|----------|-------|-------|------|---------------|----------|-------|
+| Codex | Done | Done | Done | Done | Done | OAuth + CLI optional |
+| Claude | Done | Done | Done | Done | Done | OAuth + web cookies |
+| Cursor | Done | Done | Done | Done | Done | Browser cookies |
+| Copilot | Done | Done | Done | Done | Done | Device flow |
+| Gemini | Done | Done | Done | Done | Done | CLI OAuth |
+| z.ai | Done | Done | Done | Done | Done | API token |
+| Kimi K2 | Done | Done | Done | Done | Done | API token |
+| Synthetic | Done | Done | Done | Done | Done | API token |
+| Factory | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
+| Augment | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies + keepalive |
+| Kimi | Not Started | Not Started | Not Started | Not Started | Not Started | JWT cookie |
+| MiniMax | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies or API |
+| Amp | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
+| OpenCode | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies |
+| Kiro | Not Started | Not Started | Not Started | Not Started | Not Started | Status only |
+| JetBrains | Not Started | Not Started | Not Started | Not Started | Not Started | Local logs |
+| Vertex | Not Started | Not Started | Not Started | Not Started | Not Started | Google OAuth |
+| Antigravity | Not Started | Not Started | Not Started | Not Started | Not Started | Status only |
+
+### App Parity Matrix
+
+| Area | Feature | Status | Notes |
+|------|---------|--------|-------|
+| Core | Menu bar only | Done | Tauri config |
+| Core | Single instance | Done | Tauri default |
+| Core | Launch at login | Done | tauri-plugin-autostart |
+| Core | Background refresh | Done | Rust async loop |
+| Core | Sleep/wake handling | Not Started | Need system events |
+| Core | Crash recovery | Not Started | |
+| Core | Debug logging | Done | tracing crate |
+| Tray | Icon present | Done | |
+| Tray | Left click popup | Done | |
+| Tray | Click outside dismiss | Done | |
+| Tray | Escape closes | Done | |
+| Tray | Dynamic icon | Not Started | Canvas rendering |
+| Tray | Dark/light adaptive | Not Started | |
+| Tray | Tooltip | Not Started | |
+| Popup | Provider tabs | Done | |
+| Popup | Provider card | Done | |
+| Popup | Empty onboarding | Done | |
+| Popup | Loading states | Done | |
+| Popup | Error states | Done | |
+| Popup | Last updated | Done | |
+| Popup | Manual refresh | Done | |
+| Popup | Settings button | Done | |
+| Settings | Provider toggles | Done | |
+| Settings | Provider order | Not Started | |
+| Settings | Refresh interval | Done | |
+| Settings | Show credits | Done | |
+| Settings | Show cost | Done | |
+| Settings | Notifications | Partial | Toggle exists, not wired |
+| Settings | Launch at login | Partial | Toggle exists, not wired |
+| Settings | Reset defaults | Done | |
+| Settings | Version display | Done | |
+| Notifications | Usage threshold | Not Started | |
+| Notifications | Low credits | Not Started | |
+| Notifications | Refresh failure | Not Started | |
+| Storage | Keychain tokens | Done | keyring crate |
+| Storage | Cookie storage | Done | |
+| Storage | Settings persist | Done | tauri-plugin-store |
+| Storage | Secure delete | Not Started | |
 
 ---
 
@@ -589,78 +696,6 @@ interface Settings {
 ### Phase 5: Status-Only Providers
 
 20. **Antigravity** - Status page monitoring
-
----
-
-## Feature Checklist by Area
-
-### 1. Core App Shell - Partial
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Menu bar only (no dock) | Done | Tauri config |
-| Single instance | Done | Tauri default |
-| Launch at login | Done | tauri-plugin-autostart |
-| Background refresh | Done | Rust async loop |
-| Sleep/wake handling | Not Started | Need system events |
-| Crash recovery | Not Started | |
-| Debug logging | Done | tracing crate |
-
-### 2. Tray Behavior - Partial
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Tray icon present | Done | |
-| Left click popup | Done | |
-| Click outside dismiss | Done | |
-| Escape closes | Done | |
-| Dynamic icon | Not Started | Need canvas rendering |
-| Dark/light adaptive | Not Started | |
-| Tooltip | Not Started | |
-
-### 3. Popup UI - Partial
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Provider tabs | Done | |
-| Single provider card | Done | |
-| Empty onboarding | Done | |
-| Loading states | Done | |
-| Error states | Done | |
-| Last updated | Done | |
-| Manual refresh | Done | |
-| Settings button | Done | |
-
-### 4. Settings - Partial
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Provider toggles | Done | |
-| Provider order | Not Started | |
-| Refresh interval | Done | |
-| Show credits | Done | |
-| Show cost | Done | |
-| Notifications | Partial | Toggle exists, not wired |
-| Launch at login | Partial | Toggle exists, not wired |
-| Reset defaults | Done | |
-| Version display | Done | |
-
-### 5. Notifications - Not Started
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Usage threshold | Not Started | |
-| Low credits | Not Started | |
-| Refresh failure | Not Started | |
-
-### 6. Storage - Partial
-
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Keychain tokens | Done | keyring crate |
-| Cookie storage | Done | |
-| Settings persist | Done | tauri-plugin-store |
-| Secure delete | Not Started | |
 
 ---
 
