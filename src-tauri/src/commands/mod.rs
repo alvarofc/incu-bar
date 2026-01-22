@@ -194,6 +194,13 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 provider_id: "kimi".to_string(),
             });
         }
+        "minimax" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "MiniMax uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                provider_id: "minimax".to_string(),
+            });
+        }
         "copilot" => {
             login::run_copilot_login().await.map_err(|e| e.to_string())?
         }
@@ -239,6 +246,7 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "zai",
         "kimi",
         "kimi_k2",
+        "minimax",
         "synthetic",
     ];
     let mut results = std::collections::HashMap::new();
@@ -315,6 +323,23 @@ pub async fn store_kimi_cookies(cookie_header: String) -> Result<LoginResult, St
             success: false,
             message: format!("Failed to save Kimi cookies: {}", e),
             provider_id: "kimi".to_string(),
+        }),
+    }
+}
+
+/// Store MiniMax session cookies (for manual cookie paste)
+#[command]
+pub async fn store_minimax_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    match login::store_minimax_session(cookie_header).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "MiniMax cookies saved successfully".to_string(),
+            provider_id: "minimax".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save MiniMax cookies: {}", e),
+            provider_id: "minimax".to_string(),
         }),
     }
 }
@@ -537,6 +562,58 @@ pub async fn import_kimi_browser_cookies(app: AppHandle) -> Result<LoginResult, 
                     e
                 ),
                 provider_id: "kimi".to_string(),
+            })
+        }
+    }
+}
+
+/// Import MiniMax cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_minimax_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing MiniMax cookies from system browsers");
+
+    match crate::browser_cookies::import_minimax_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_minimax_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "minimax",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! MiniMax is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "minimax".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "minimax".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import MiniMax browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into platform.minimax.io in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "minimax".to_string(),
             })
         }
     }

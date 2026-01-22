@@ -119,8 +119,8 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     weeklyLabel: 'Window',
     opusLabel: null,
     supportsOpus: false,
-    supportsCredits: false,
-    implemented: false,
+    supportsCredits: true,
+    implemented: true,
   },
   kimi: {
     id: 'kimi',

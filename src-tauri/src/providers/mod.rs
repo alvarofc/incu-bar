@@ -6,6 +6,7 @@ mod codex;
 mod cursor;
 mod factory;
 mod augment;
+mod minimax;
 pub mod copilot;
 mod zai;
 mod kimi_k2;
@@ -275,10 +276,11 @@ impl ProviderRegistry {
         });
 
         // MiniMax
-        providers.insert(ProviderId::Minimax, Self::placeholder_state(
-            "MiniMax",
-            "MiniMax provider not implemented",
-        ));
+        providers.insert(ProviderId::Minimax, ProviderState {
+            enabled: false, // Requires browser cookies
+            cached_usage: None,
+            fetcher: Box::new(minimax::MinimaxProvider::new()),
+        });
 
         // Kimi
         providers.insert(ProviderId::Kimi, ProviderState {
