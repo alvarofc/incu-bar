@@ -86,7 +86,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Synthetic | Done | Done | Done | Done | Done | API token (id: synthetic) |
 | Factory | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: factory, label: Droid) |
 | Augment | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies + keepalive (id: augment) |
-| Kimi | Not Started | Not Started | Not Started | Not Started | Not Started | JWT cookie (id: kimi) |
+| Kimi | Done | Done | Done | Done | Done | JWT cookie (id: kimi) |
 | MiniMax | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies or API (id: minimax) |
 | Amp | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: amp) |
 | OpenCode | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: opencode) |

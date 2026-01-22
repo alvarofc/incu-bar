@@ -188,6 +188,7 @@ pub async fn check_auth_status(provider_id: &str) -> AuthStatus {
         "copilot" => check_copilot_auth().await,
         "gemini" => check_gemini_auth().await,
         "zai" => check_zai_auth().await,
+        "kimi" => check_kimi_auth().await,
         "kimi_k2" => check_kimi_k2_auth().await,
         "synthetic" => check_synthetic_auth().await,
         _ => AuthStatus {
@@ -379,6 +380,36 @@ async fn check_augment_auth() -> AuthStatus {
     };
 
     let session_path = data_dir.join("IncuBar").join("augment-session.json");
+
+    if session_path.exists() {
+        AuthStatus {
+            authenticated: true,
+            method: Some("cookies".to_string()),
+            email: None,
+            error: None,
+        }
+    } else {
+        AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: None,
+        }
+    }
+}
+
+async fn check_kimi_auth() -> AuthStatus {
+    let data_dir = match dirs::data_dir() {
+        Some(d) => d,
+        None => return AuthStatus {
+            authenticated: false,
+            method: None,
+            email: None,
+            error: Some("Could not find data directory".to_string()),
+        },
+    };
+
+    let session_path = data_dir.join("IncuBar").join("kimi-session.json");
 
     if session_path.exists() {
         AuthStatus {
@@ -658,6 +689,25 @@ pub async fn store_augment_session(cookie_header: String) -> Result<(), anyhow::
     tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
 
     tracing::info!("Saved Augment session to {:?}", session_path);
+    Ok(())
+}
+
+/// Store Kimi session cookies
+pub async fn store_kimi_session(cookie_header: String) -> Result<(), anyhow::Error> {
+    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let session_dir = data_dir.join("IncuBar");
+
+    tokio::fs::create_dir_all(&session_dir).await?;
+
+    let session_path = session_dir.join("kimi-session.json");
+    let content = serde_json::json!({
+        "cookieHeader": cookie_header,
+        "savedAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
+
+    tracing::info!("Saved Kimi session to {:?}", session_path);
     Ok(())
 }
 

@@ -32,6 +32,7 @@ use decrypt_cookies::safari::SafariBuilder;
 const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh", "workos.com"];
 const FACTORY_DOMAINS: &[&str] = &["factory.ai", "app.factory.ai"];
 const AUGMENT_DOMAINS: &[&str] = &["augmentcode.com", "app.augmentcode.com"];
+const KIMI_DOMAINS: &[&str] = &["kimi.moonshot.cn", "kimi.com"];
 
 /// Result of a browser cookie import
 #[derive(Debug)]
@@ -57,6 +58,11 @@ pub async fn import_factory_cookies_from_browser() -> Result<BrowserCookieResult
 /// Import Augment cookies from system browsers
 pub async fn import_augment_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(AUGMENT_DOMAINS).await
+}
+
+/// Import Kimi cookies from system browsers
+pub async fn import_kimi_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(KIMI_DOMAINS).await
 }
 
 /// Import cookies for specified domains from system browsers

@@ -357,9 +357,10 @@ mod tests {
         assert_eq!(credits_snapshot.remaining, 120.0);
         assert_eq!(credits_snapshot.total, Some(150.0));
         assert_eq!(credits_snapshot.unit, "credits");
-        assert_eq!(snapshot.identity.and_then(|i| i.plan), Some("Pro".to_string()));
-        assert_eq!(snapshot.identity.and_then(|i| i.email), Some("user@example.com".to_string()));
-        assert_eq!(snapshot.identity.and_then(|i| i.organization), Some("Acme".to_string()));
+        let identity = snapshot.identity.as_ref().expect("identity");
+        assert_eq!(identity.plan.as_deref(), Some("Pro"));
+        assert_eq!(identity.email.as_deref(), Some("user@example.com"));
+        assert_eq!(identity.organization.as_deref(), Some("Acme"));
     }
 
     #[test]

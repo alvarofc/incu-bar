@@ -187,6 +187,13 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 provider_id: "augment".to_string(),
             });
         }
+        "kimi" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "Kimi uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                provider_id: "kimi".to_string(),
+            });
+        }
         "copilot" => {
             login::run_copilot_login().await.map_err(|e| e.to_string())?
         }
@@ -230,6 +237,7 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "copilot",
         "gemini",
         "zai",
+        "kimi",
         "kimi_k2",
         "synthetic",
     ];
@@ -290,6 +298,23 @@ pub async fn store_augment_cookies(cookie_header: String) -> Result<LoginResult,
             success: false,
             message: format!("Failed to save Augment cookies: {}", e),
             provider_id: "augment".to_string(),
+        }),
+    }
+}
+
+/// Store Kimi session cookies (for manual cookie paste)
+#[command]
+pub async fn store_kimi_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    match login::store_kimi_session(cookie_header).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "Kimi cookies saved successfully".to_string(),
+            provider_id: "kimi".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save Kimi cookies: {}", e),
+            provider_id: "kimi".to_string(),
         }),
     }
 }
@@ -460,6 +485,58 @@ pub async fn import_augment_browser_cookies(app: AppHandle) -> Result<LoginResul
                     e
                 ),
                 provider_id: "augment".to_string(),
+            })
+        }
+    }
+}
+
+/// Import Kimi cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_kimi_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing Kimi cookies from system browsers");
+
+    match crate::browser_cookies::import_kimi_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_kimi_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "kimi",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Kimi is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "kimi".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "kimi".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Kimi browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into kimi.moonshot.cn in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "kimi".to_string(),
             })
         }
     }

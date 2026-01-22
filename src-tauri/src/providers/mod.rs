@@ -9,6 +9,7 @@ mod augment;
 pub mod copilot;
 mod zai;
 mod kimi_k2;
+mod kimi;
 mod synthetic;
 mod gemini;
 
@@ -280,10 +281,11 @@ impl ProviderRegistry {
         ));
 
         // Kimi
-        providers.insert(ProviderId::Kimi, Self::placeholder_state(
-            "Kimi",
-            "Kimi provider not implemented",
-        ));
+        providers.insert(ProviderId::Kimi, ProviderState {
+            enabled: false, // Requires browser cookies
+            cached_usage: None,
+            fetcher: Box::new(kimi::KimiProvider::new()),
+        });
 
         // Kiro
         providers.insert(ProviderId::Kiro, Self::placeholder_state(

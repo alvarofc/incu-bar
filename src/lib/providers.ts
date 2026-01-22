@@ -133,7 +133,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     opusLabel: null,
     supportsOpus: false,
     supportsCredits: false,
-    implemented: false,
+    implemented: true,
   },
   kimi_k2: {
     id: 'kimi_k2',

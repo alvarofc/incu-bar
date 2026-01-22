@@ -47,7 +47,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [showCookieInput, setShowCookieInput] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
-  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment'>('cursor');
+  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment' | 'kimi'>('cursor');
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
   const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
@@ -155,38 +155,23 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-    if (providerId === 'factory') {
-      setCookieProvider('factory');
+    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi') {
+      const importCommand = providerId === 'factory'
+        ? 'import_factory_browser_cookies'
+        : providerId === 'augment'
+          ? 'import_augment_browser_cookies'
+          : 'import_kimi_browser_cookies';
+
+      setCookieProvider(providerId);
       setLoginMessage('Importing cookies from browser…');
-      const importResult = await invoke<LoginResult>('import_factory_browser_cookies');
-
-        if (importResult.success) {
-          setLoginMessage(importResult.message);
-          const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-          setAuthStatus(status);
-          useSettingsStore.getState().enableProvider('factory');
-          useUsageStore.getState().refreshProvider('factory');
-          setLoggingIn(null);
-          return;
-        }
-
-        setLoginMessage('Could not import from browser. You can paste cookies manually below.');
-      setShowCookieInput(true);
-      setLoggingIn(null);
-      return;
-    }
-
-    if (providerId === 'augment') {
-      setCookieProvider('augment');
-      setLoginMessage('Importing cookies from browser…');
-      const importResult = await invoke<LoginResult>('import_augment_browser_cookies');
+      const importResult = await invoke<LoginResult>(importCommand);
 
       if (importResult.success) {
         setLoginMessage(importResult.message);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider('augment');
-        useUsageStore.getState().refreshProvider('augment');
+        useSettingsStore.getState().enableProvider(providerId);
+        useUsageStore.getState().refreshProvider(providerId);
         setLoggingIn(null);
         return;
       }
@@ -237,7 +222,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       ? 'store_factory_cookies'
       : cookieProvider === 'augment'
         ? 'store_augment_cookies'
-        : 'store_cursor_cookies';
+        : cookieProvider === 'kimi'
+          ? 'store_kimi_cookies'
+          : 'store_cursor_cookies';
       const result = await invoke<LoginResult>(storeCommand, { cookieHeader: cookieInput });
       if (result.success) {
         setLoginMessage(`${PROVIDERS[cookieProvider].name} cookies saved!`);
@@ -295,7 +282,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       ? 'import_factory_browser_cookies'
       : cookieProvider === 'augment'
         ? 'import_augment_browser_cookies'
-        : 'import_cursor_browser_cookies';
+        : cookieProvider === 'kimi'
+          ? 'import_kimi_browser_cookies'
+          : 'import_cursor_browser_cookies';
 
     try {
       const result = await invoke<LoginResult>(importCommand);
