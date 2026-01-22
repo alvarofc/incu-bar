@@ -210,8 +210,8 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     weeklyLabel: 'Refill',
     opusLabel: null,
     supportsOpus: false,
-    supportsCredits: false,
-    implemented: false,
+    supportsCredits: true,
+    implemented: true,
   },
   opencode: {
     id: 'opencode',

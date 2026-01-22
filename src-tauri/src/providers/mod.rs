@@ -14,6 +14,7 @@ mod kimi_k2;
 mod kimi;
 mod synthetic;
 mod gemini;
+mod jetbrains;
 
 pub use traits::*;
 
@@ -317,10 +318,11 @@ impl ProviderRegistry {
         });
 
         // JetBrains
-        providers.insert(ProviderId::Jetbrains, Self::placeholder_state(
-            "JetBrains AI",
-            "JetBrains provider not implemented",
-        ));
+        providers.insert(ProviderId::Jetbrains, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(jetbrains::JetbrainsProvider::new()),
+        });
 
         // OpenCode
         providers.insert(ProviderId::Opencode, Self::placeholder_state(
