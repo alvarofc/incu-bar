@@ -23,15 +23,15 @@ tasks:
       protobuf responses
     source: ../IncuBar/Sources/CodexBar/Providers/Kimi, src-tauri/src/providers,
       src/lib/providers.ts
-    completed: false
+    completed: true
   - title: implement MiniMax provider with cookie auth and credit totals parsing
     source: ../IncuBar/Sources/CodexBar/Providers/MiniMax, src-tauri/src/providers,
       src/lib/providers.ts
-    completed: false
+    completed: true
   - title: implement Amp provider with cookie auth and usage parsing
     source: ../IncuBar/Sources/CodexBar/Providers/Amp, src-tauri/src/providers,
       src/lib/providers.ts
-    completed: false
+    completed: true
   - title: implement JetBrains AI provider with local IDE log parsing and monthly
       credit tracking
     source: ../IncuBar/Sources/CodexBar/Providers/JetBrains,

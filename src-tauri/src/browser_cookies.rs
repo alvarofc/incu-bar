@@ -34,6 +34,7 @@ const FACTORY_DOMAINS: &[&str] = &["factory.ai", "app.factory.ai"];
 const AUGMENT_DOMAINS: &[&str] = &["augmentcode.com", "app.augmentcode.com"];
 const KIMI_DOMAINS: &[&str] = &["kimi.moonshot.cn", "kimi.com"];
 const MINIMAX_DOMAINS: &[&str] = &["minimax.chat", "platform.minimax.io"];
+const AMP_DOMAINS: &[&str] = &["ampcode.com", "www.ampcode.com"];
 
 /// Result of a browser cookie import
 #[derive(Debug)]
@@ -69,6 +70,11 @@ pub async fn import_kimi_cookies_from_browser() -> Result<BrowserCookieResult> {
 /// Import MiniMax cookies from system browsers
 pub async fn import_minimax_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(MINIMAX_DOMAINS).await
+}
+
+/// Import Amp cookies from system browsers
+pub async fn import_amp_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(AMP_DOMAINS).await
 }
 
 /// Import cookies for specified domains from system browsers

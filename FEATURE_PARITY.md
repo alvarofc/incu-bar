@@ -88,7 +88,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Augment | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies + keepalive (id: augment) |
 | Kimi | Done | Done | Done | Done | Done | JWT cookie (id: kimi) |
 | MiniMax | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies or API (id: minimax) |
-| Amp | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: amp) |
+| Amp | Done | Done | Done | Done | Done | Cookies (id: amp) |
 | OpenCode | Not Started | Not Started | Not Started | Not Started | Not Started | Cookies (id: opencode) |
 | Kiro | Not Started | Not Started | Not Started | Not Started | Not Started | Status only (id: kiro) |
 | JetBrains | Not Started | Not Started | Not Started | Not Started | Not Started | Local logs (id: jetbrains) |

@@ -7,6 +7,7 @@ mod cursor;
 mod factory;
 mod augment;
 mod minimax;
+mod amp;
 pub mod copilot;
 mod zai;
 mod kimi_k2;
@@ -309,10 +310,11 @@ impl ProviderRegistry {
         });
 
         // Amp
-        providers.insert(ProviderId::Amp, Self::placeholder_state(
-            "Amp",
-            "Amp provider not implemented",
-        ));
+        providers.insert(ProviderId::Amp, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(amp::AmpProvider::new()),
+        });
 
         // JetBrains
         providers.insert(ProviderId::Jetbrains, Self::placeholder_state(

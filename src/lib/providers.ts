@@ -198,7 +198,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     opusLabel: null,
     supportsOpus: false,
     supportsCredits: false,
-    implemented: false,
+    implemented: true,
   },
   jetbrains: {
     id: 'jetbrains',
