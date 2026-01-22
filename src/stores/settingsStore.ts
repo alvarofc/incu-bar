@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProviderId, AppSettings } from '../lib/types';
+import type { ProviderId, AppSettings, CookieSource } from '../lib/types';
+import { DEFAULT_COOKIE_SOURCE } from '../lib/cookieSources';
 import { DEFAULT_SETTINGS } from '../lib/providers';
 
 interface SettingsStore extends AppSettings {
@@ -16,6 +17,8 @@ interface SettingsStore extends AppSettings {
   setLaunchAtLogin: (launch: boolean) => void;
   setShowCredits: (show: boolean) => void;
   setShowCost: (show: boolean) => void;
+  setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
+  getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
   // Initialization
   initAutostart: () => Promise<void>;
@@ -23,7 +26,7 @@ interface SettingsStore extends AppSettings {
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       ...DEFAULT_SETTINGS,
 
       setRefreshInterval: (seconds) => set({ refreshIntervalSeconds: seconds }),
@@ -66,6 +69,17 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowCost: (show) => set({ showCost: show }),
 
+      setCookieSource: (providerId, source) =>
+        set((state) => ({
+          cookieSources: {
+            ...state.cookieSources,
+            [providerId]: source,
+          },
+        })),
+
+      getCookieSource: (providerId) =>
+        get().cookieSources[providerId] ?? DEFAULT_COOKIE_SOURCE,
+
       resetToDefaults: () => set(DEFAULT_SETTINGS),
 
       initAutostart: async () => {
@@ -90,3 +104,8 @@ export const useEnabledProviderIds = () =>
 
 export const useRefreshInterval = () =>
   useSettingsStore((state) => state.refreshIntervalSeconds);
+
+export const useCookieSource = (providerId: ProviderId) =>
+  useSettingsStore(
+    (state) => state.cookieSources[providerId] ?? DEFAULT_COOKIE_SOURCE
+  );

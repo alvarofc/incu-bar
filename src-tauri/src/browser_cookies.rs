@@ -53,9 +53,21 @@ pub async fn import_cursor_cookies_from_browser() -> Result<BrowserCookieResult>
     import_cookies_for_domains(CURSOR_DOMAINS).await
 }
 
+pub async fn import_cursor_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(CURSOR_DOMAINS, source).await
+}
+
 /// Import Factory (Droid) cookies from system browsers
 pub async fn import_factory_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(FACTORY_DOMAINS).await
+}
+
+pub async fn import_factory_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(FACTORY_DOMAINS, source).await
 }
 
 /// Import Augment cookies from system browsers
@@ -63,9 +75,21 @@ pub async fn import_augment_cookies_from_browser() -> Result<BrowserCookieResult
     import_cookies_for_domains(AUGMENT_DOMAINS).await
 }
 
+pub async fn import_augment_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(AUGMENT_DOMAINS, source).await
+}
+
 /// Import Kimi cookies from system browsers
 pub async fn import_kimi_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(KIMI_DOMAINS).await
+}
+
+pub async fn import_kimi_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(KIMI_DOMAINS, source).await
 }
 
 /// Import MiniMax cookies from system browsers
@@ -73,14 +97,32 @@ pub async fn import_minimax_cookies_from_browser() -> Result<BrowserCookieResult
     import_cookies_for_domains(MINIMAX_DOMAINS).await
 }
 
+pub async fn import_minimax_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(MINIMAX_DOMAINS, source).await
+}
+
 /// Import Amp cookies from system browsers
 pub async fn import_amp_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(AMP_DOMAINS).await
 }
 
+pub async fn import_amp_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(AMP_DOMAINS, source).await
+}
+
 /// Import OpenCode cookies from system browsers
 pub async fn import_opencode_cookies_from_browser() -> Result<BrowserCookieResult> {
     import_cookies_for_domains(OPENCODE_DOMAINS).await
+}
+
+pub async fn import_opencode_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(OPENCODE_DOMAINS, source).await
 }
 
 /// Import cookies for specified domains from system browsers
@@ -123,6 +165,51 @@ pub async fn import_cookies_for_domains(domains: &[&str]) -> Result<BrowserCooki
         For Safari: enable Full Disk Access in System Settings.",
         domains
     ))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum BrowserCookieSource {
+    Chrome,
+    Safari,
+    Firefox,
+    Arc,
+    Edge,
+    Brave,
+    Opera,
+}
+
+impl BrowserCookieSource {
+    pub fn as_label(&self) -> &'static str {
+        match self {
+            BrowserCookieSource::Chrome => "Chrome",
+            BrowserCookieSource::Safari => "Safari",
+            BrowserCookieSource::Firefox => "Firefox",
+            BrowserCookieSource::Arc => "Arc",
+            BrowserCookieSource::Edge => "Edge",
+            BrowserCookieSource::Brave => "Brave",
+            BrowserCookieSource::Opera => "Opera",
+        }
+    }
+}
+
+pub async fn import_cookies_for_domains_from_source(
+    domains: &[&str],
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    match source {
+        BrowserCookieSource::Firefox => try_firefox_cookies(domains).await,
+        BrowserCookieSource::Chrome => try_chrome_cookies(domains).await,
+        #[cfg(target_os = "macos")]
+        BrowserCookieSource::Safari => try_safari_cookies(domains).await,
+        #[cfg(not(target_os = "macos"))]
+        BrowserCookieSource::Safari => Err(anyhow::anyhow!(
+            "Safari cookies are only supported on macOS."
+        )),
+        BrowserCookieSource::Edge => try_edge_cookies(domains).await,
+        BrowserCookieSource::Brave => try_brave_cookies(domains).await,
+        BrowserCookieSource::Arc => try_arc_cookies(domains).await,
+        BrowserCookieSource::Opera => try_opera_cookies(domains).await,
+    }
 }
 
 async fn try_firefox_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
@@ -226,6 +313,46 @@ async fn try_chromium_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
         .map_err(|e| anyhow::anyhow!("Failed to read Chromium cookies: {}", e))?;
     
     extract_chromium_cookies("Chromium", all_cookies, domains)
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+async fn try_arc_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
+    tracing::info!("Attempting to import cookies from Arc...");
+
+    let chromium = ChromiumBuilder::<Arc>::new()
+        .build()
+        .await
+        .map_err(|e| anyhow::anyhow!("Arc not available: {}", e))?;
+
+    let all_cookies: Vec<ChromiumCookie> = chromium
+        .cookies_all()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read Arc cookies: {}", e))?;
+
+    extract_chromium_cookies("Arc", all_cookies, domains)
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn try_arc_cookies(_domains: &[&str]) -> Result<BrowserCookieResult> {
+    Err(anyhow::anyhow!(
+        "Arc cookies are not supported on this platform."
+    ))
+}
+
+async fn try_opera_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
+    tracing::info!("Attempting to import cookies from Opera...");
+
+    let chromium = ChromiumBuilder::<Opera>::new()
+        .build()
+        .await
+        .map_err(|e| anyhow::anyhow!("Opera not available: {}", e))?;
+
+    let all_cookies: Vec<ChromiumCookie> = chromium
+        .cookies_all()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read Opera cookies: {}", e))?;
+
+    extract_chromium_cookies("Opera", all_cookies, domains)
 }
 
 /// Extract cookies matching the given domains from Chromium-based browsers

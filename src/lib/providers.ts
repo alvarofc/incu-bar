@@ -1,4 +1,4 @@
-import type { ProviderId, ProviderMetadata } from './types';
+import type { ProviderId, ProviderMetadata, CookieSource } from './types';
 
 export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
   claude: {
@@ -254,4 +254,5 @@ export const DEFAULT_SETTINGS = {
   launchAtLogin: false,
   showCredits: true,
   showCost: true,
+  cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
 };

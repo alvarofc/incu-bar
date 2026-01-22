@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import type { ProviderId } from '../lib/types';
+import type { ProviderId, CookieSource } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
+import { COOKIE_SOURCES, COOKIE_SOURCE_LABELS } from '../lib/cookieSources';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUsageStore } from '../stores/usageStore';
 import { ProviderIcon } from './ProviderIcons';
@@ -47,7 +48,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [showCookieInput, setShowCookieInput] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
-  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment' | 'kimi'>('cursor');
+  const [cookieProvider, setCookieProvider] = useState<'cursor' | 'factory' | 'augment' | 'kimi' | 'minimax'>('cursor');
+  const cookieSources = useSettingsStore((s) => s.cookieSources);
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
   const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
@@ -139,8 +141,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     try {
       if (providerId === 'cursor') {
         setCookieProvider('cursor');
-        setLoginMessage('Importing cookies from browser…');
-        const importResult = await invoke<LoginResult>('import_cursor_browser_cookies');
+        const cookieSource = useSettingsStore.getState().getCookieSource('cursor');
+        setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
+        const importResult = await invoke<LoginResult>('import_cursor_browser_cookies_from_source', {
+          source: { source: cookieSource },
+        });
 
         if (importResult.success) {
           setLoginMessage(importResult.message);
@@ -155,42 +160,42 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax') {
-      const importCommand = providerId === 'factory'
-        ? 'import_factory_browser_cookies'
-        : providerId === 'augment'
-          ? 'import_augment_browser_cookies'
-          : providerId === 'minimax'
-            ? 'import_minimax_browser_cookies'
-            : 'import_kimi_browser_cookies';
-
-      if (providerId !== 'minimax') {
+      if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax') {
         setCookieProvider(providerId);
-      }
-      setLoginMessage('Importing cookies from browser…');
-      const importResult = await invoke<LoginResult>(importCommand);
+        const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
+        setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
+        const importCommand = providerId === 'factory'
+          ? 'import_factory_browser_cookies_from_source'
+          : providerId === 'augment'
+            ? 'import_augment_browser_cookies_from_source'
+            : providerId === 'minimax'
+              ? 'import_minimax_browser_cookies_from_source'
+              : 'import_kimi_browser_cookies_from_source';
+        const importResult = await invoke<LoginResult>(importCommand, {
+          source: { source: cookieSource },
+        });
 
-      if (importResult.success) {
-        setLoginMessage(importResult.message);
-        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(providerId);
-        useUsageStore.getState().refreshProvider(providerId);
+        if (importResult.success) {
+          setLoginMessage(importResult.message);
+          const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+          setAuthStatus(status);
+          useSettingsStore.getState().enableProvider(providerId);
+          useUsageStore.getState().refreshProvider(providerId);
+          setLoggingIn(null);
+          return;
+        }
+
+        setLoginMessage('Could not import from browser. You can paste cookies manually below.');
+        setShowCookieInput(true);
         setLoggingIn(null);
         return;
       }
 
-      setLoginMessage('Could not import from browser. You can paste cookies manually below.');
-      setShowCookieInput(true);
-      setLoggingIn(null);
-      return;
-    }
-
-    if (providerId === 'kiro') {
-      setLoginMessage('Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.');
-      setLoggingIn(null);
-      return;
-    }
+      if (providerId === 'kiro') {
+        setLoginMessage('Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.');
+        setLoggingIn(null);
+        return;
+      }
       
       if (providerId === 'copilot') {
         setLoginMessage('Requesting device code from GitHub…');
@@ -228,13 +233,15 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     
     setLoggingIn(cookieProvider);
     try {
-    const storeCommand = cookieProvider === 'factory'
-      ? 'store_factory_cookies'
-      : cookieProvider === 'augment'
-        ? 'store_augment_cookies'
-        : cookieProvider === 'kimi'
-          ? 'store_kimi_cookies'
-          : 'store_cursor_cookies';
+      const storeCommand = cookieProvider === 'factory'
+        ? 'store_factory_cookies'
+        : cookieProvider === 'augment'
+          ? 'store_augment_cookies'
+          : cookieProvider === 'kimi'
+            ? 'store_kimi_cookies'
+            : cookieProvider === 'minimax'
+              ? 'store_minimax_cookies'
+              : 'store_cursor_cookies';
       const result = await invoke<LoginResult>(storeCommand, { cookieHeader: cookieInput });
       if (result.success) {
         setLoginMessage(`${PROVIDERS[cookieProvider].name} cookies saved!`);
@@ -286,18 +293,23 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleImportBrowserCookies = useCallback(async () => {
     setLoggingIn(cookieProvider);
-    setLoginMessage('Importing cookies from browser…');
+    const cookieSource = useSettingsStore.getState().getCookieSource(cookieProvider);
+    setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
 
     const importCommand = cookieProvider === 'factory'
-      ? 'import_factory_browser_cookies'
+      ? 'import_factory_browser_cookies_from_source'
       : cookieProvider === 'augment'
-        ? 'import_augment_browser_cookies'
+        ? 'import_augment_browser_cookies_from_source'
         : cookieProvider === 'kimi'
-          ? 'import_kimi_browser_cookies'
-          : 'import_cursor_browser_cookies';
+          ? 'import_kimi_browser_cookies_from_source'
+          : cookieProvider === 'minimax'
+            ? 'import_minimax_browser_cookies_from_source'
+            : 'import_cursor_browser_cookies_from_source';
 
     try {
-      const result = await invoke<LoginResult>(importCommand);
+      const result = await invoke<LoginResult>(importCommand, {
+        source: { source: cookieSource },
+      });
       if (result.success) {
         setLoginMessage(result.message);
         setCursorLoginOpen(false);
@@ -317,6 +329,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       setLoggingIn(null);
     }
   }, [cookieProvider]);
+
+  const handleCookieSourceChange = useCallback((providerId: ProviderId, source: CookieSource) => {
+    useSettingsStore.getState().setCookieSource(providerId, source);
+  }, []);
 
   const handleCopyCopilotCode = useCallback(async () => {
     if (!copilotDeviceCode) return;
@@ -487,6 +503,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               const isLoggingIn = loggingIn === id;
               const isAuthenticated = status?.authenticated === true;
               const isEnabled = enabledProviders.includes(id);
+              const usesCookies = provider.authMethod === 'cookies';
+              const cookieSource = usesCookies
+                ? cookieSources[id] ?? useSettingsStore.getState().getCookieSource(id)
+                : null;
 
               return (
                 <div
@@ -522,9 +542,31 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                           Not connected
                         </span>
                       )}
+                      {usesCookies && cookieSource && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <label
+                            htmlFor={`cookie-source-${id}`}
+                            className="text-[11px] text-[var(--text-quaternary)]"
+                          >
+                            Cookies
+                          </label>
+                          <select
+                            id={`cookie-source-${id}`}
+                            value={cookieSource}
+                            onChange={(event) => handleCookieSourceChange(id, event.target.value as CookieSource)}
+                            className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
+                          >
+                            {COOKIE_SOURCES.map((source) => (
+                              <option key={source} value={source}>
+                                {COOKIE_SOURCE_LABELS[source]}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {isAuthenticated && (
                       <button

@@ -87,6 +87,8 @@ export interface ProviderMetadata {
   statusPageUrl?: string;
 }
 
+export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'brave' | 'opera';
+
 // Settings
 export interface AppSettings {
   refreshIntervalSeconds: number;
@@ -97,6 +99,7 @@ export interface AppSettings {
   launchAtLogin: boolean;
   showCredits: boolean;
   showCost: boolean;
+  cookieSources: Partial<Record<ProviderId, CookieSource>>;
 }
 
 // Event payloads from Rust

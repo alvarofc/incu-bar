@@ -5,6 +5,7 @@ use tauri::{command, AppHandle, State, Emitter, Manager};
 use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::login::{self, AuthStatus, LoginResult};
+use crate::browser_cookies::BrowserCookieSource;
 use crate::providers::{ProviderId, ProviderRegistry, UsageSnapshot};
 use crate::tray;
 
@@ -413,6 +414,82 @@ pub async fn import_cursor_browser_cookies(app: AppHandle) -> Result<LoginResult
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserCookieSourceRequest {
+    pub source: String,
+}
+
+fn parse_cookie_source(source: &str) -> Result<BrowserCookieSource, String> {
+    match source {
+        "chrome" => Ok(BrowserCookieSource::Chrome),
+        "safari" => Ok(BrowserCookieSource::Safari),
+        "firefox" => Ok(BrowserCookieSource::Firefox),
+        "arc" => Ok(BrowserCookieSource::Arc),
+        "edge" => Ok(BrowserCookieSource::Edge),
+        "brave" => Ok(BrowserCookieSource::Brave),
+        "opera" => Ok(BrowserCookieSource::Opera),
+        _ => Err(format!("Unsupported cookie source: {}", source)),
+    }
+}
+
+#[command]
+pub async fn import_cursor_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Cursor cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_cursor_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_cursor_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "cursor",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Cursor is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "cursor".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "cursor".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into cursor.com and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "cursor".to_string(),
+            })
+        }
+    }
+}
+
 /// Import Factory cookies from system browsers (Chrome, Safari, etc.)
 #[command]
 pub async fn import_factory_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
@@ -457,6 +534,63 @@ pub async fn import_factory_browser_cookies(app: AppHandle) -> Result<LoginResul
                 success: false,
                 message: format!(
                     "Could not import cookies from browsers: {}. Make sure you're logged into app.factory.ai in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "factory".to_string(),
+            })
+        }
+    }
+}
+
+#[command]
+pub async fn import_factory_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Factory cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_factory_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_factory_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "factory",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Factory is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "factory".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "factory".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Factory browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into app.factory.ai and try again.",
+                    parsed.as_label(),
                     e
                 ),
                 provider_id: "factory".to_string(),
@@ -517,6 +651,63 @@ pub async fn import_augment_browser_cookies(app: AppHandle) -> Result<LoginResul
     }
 }
 
+#[command]
+pub async fn import_augment_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Augment cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_augment_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_augment_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "augment",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Augment is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "augment".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "augment".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Augment browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into app.augmentcode.com and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "augment".to_string(),
+            })
+        }
+    }
+}
+
 /// Import Kimi cookies from system browsers (Chrome, Safari, etc.)
 #[command]
 pub async fn import_kimi_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
@@ -569,6 +760,63 @@ pub async fn import_kimi_browser_cookies(app: AppHandle) -> Result<LoginResult, 
     }
 }
 
+#[command]
+pub async fn import_kimi_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Kimi cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_kimi_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_kimi_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "kimi",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Kimi is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "kimi".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "kimi".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Kimi browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into kimi.moonshot.cn and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "kimi".to_string(),
+            })
+        }
+    }
+}
+
 /// Import MiniMax cookies from system browsers (Chrome, Safari, etc.)
 #[command]
 pub async fn import_minimax_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
@@ -613,6 +861,63 @@ pub async fn import_minimax_browser_cookies(app: AppHandle) -> Result<LoginResul
                 success: false,
                 message: format!(
                     "Could not import cookies from browsers: {}. Make sure you're logged into platform.minimax.io in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "minimax".to_string(),
+            })
+        }
+    }
+}
+
+#[command]
+pub async fn import_minimax_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing MiniMax cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_minimax_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_minimax_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "minimax",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! MiniMax is now connected.",
+                            result.cookie_count,
+                            result.browser_name
+                        ),
+                        provider_id: "minimax".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "minimax".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import MiniMax browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into platform.minimax.io and try again.",
+                    parsed.as_label(),
                     e
                 ),
                 provider_id: "minimax".to_string(),
