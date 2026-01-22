@@ -1,0 +1,73 @@
+import { create } from 'zustand';
+import { persist, createJSONStorage } from 'zustand/middleware';
+import type { ProviderId, AppSettings } from '../lib/types';
+import { DEFAULT_SETTINGS } from '../lib/providers';
+
+interface SettingsStore extends AppSettings {
+  // Actions
+  setRefreshInterval: (seconds: number) => void;
+  toggleProvider: (id: ProviderId) => void;
+  enableProvider: (id: ProviderId) => void;
+  disableProvider: (id: ProviderId) => void;
+  setProviderOrder: (order: ProviderId[]) => void;
+  setDisplayMode: (mode: 'merged' | 'separate') => void;
+  setShowNotifications: (show: boolean) => void;
+  setLaunchAtLogin: (launch: boolean) => void;
+  setShowCredits: (show: boolean) => void;
+  setShowCost: (show: boolean) => void;
+  resetToDefaults: () => void;
+}
+
+export const useSettingsStore = create<SettingsStore>()(
+  persist(
+    (set) => ({
+      ...DEFAULT_SETTINGS,
+
+      setRefreshInterval: (seconds) => set({ refreshIntervalSeconds: seconds }),
+
+      toggleProvider: (id) =>
+        set((state) => ({
+          enabledProviders: state.enabledProviders.includes(id)
+            ? state.enabledProviders.filter((p) => p !== id)
+            : [...state.enabledProviders, id],
+        })),
+
+      enableProvider: (id) =>
+        set((state) => ({
+          enabledProviders: state.enabledProviders.includes(id)
+            ? state.enabledProviders
+            : [...state.enabledProviders, id],
+        })),
+
+      disableProvider: (id) =>
+        set((state) => ({
+          enabledProviders: state.enabledProviders.filter((p) => p !== id),
+        })),
+
+      setProviderOrder: (order) => set({ providerOrder: order }),
+
+      setDisplayMode: (mode) => set({ displayMode: mode }),
+
+      setShowNotifications: (show) => set({ showNotifications: show }),
+
+      setLaunchAtLogin: (launch) => set({ launchAtLogin: launch }),
+
+      setShowCredits: (show) => set({ showCredits: show }),
+
+      setShowCost: (show) => set({ showCost: show }),
+
+      resetToDefaults: () => set(DEFAULT_SETTINGS),
+    }),
+    {
+      name: 'incubar-settings',
+      storage: createJSONStorage(() => localStorage),
+    }
+  )
+);
+
+// Selectors
+export const useEnabledProviderIds = () =>
+  useSettingsStore((state) => state.enabledProviders);
+
+export const useRefreshInterval = () =>
+  useSettingsStore((state) => state.refreshIntervalSeconds);

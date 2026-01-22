@@ -1,0 +1,164 @@
+import { create } from 'zustand';
+import { invoke } from '@tauri-apps/api/core';
+import { useShallow } from 'zustand/shallow';
+import type { ProviderId, ProviderState, UsageSnapshot } from '../lib/types';
+import { PROVIDERS, DEFAULT_ENABLED_PROVIDERS } from '../lib/providers';
+
+interface UsageStore {
+  // State
+  providers: Record<ProviderId, ProviderState>;
+  activeProvider: ProviderId;
+  isRefreshing: boolean;
+  lastGlobalRefresh: Date | null;
+
+  // Actions
+  setActiveProvider: (id: ProviderId) => void;
+  setProviderUsage: (id: ProviderId, usage: UsageSnapshot) => void;
+  setProviderLoading: (id: ProviderId, isLoading: boolean) => void;
+  setProviderError: (id: ProviderId, error: string | undefined) => void;
+  setProviderEnabled: (id: ProviderId, enabled: boolean) => void;
+  refreshProvider: (id: ProviderId) => Promise<void>;
+  refreshAllProviders: () => Promise<void>;
+  initializeProviders: (enabledIds: ProviderId[]) => void;
+}
+
+// Initialize provider states
+const createInitialProviderState = (id: ProviderId, enabled: boolean): ProviderState => ({
+  id,
+  name: PROVIDERS[id].name,
+  enabled,
+  isLoading: false,
+});
+
+const initialProviders: Record<ProviderId, ProviderState> = Object.fromEntries(
+  (Object.keys(PROVIDERS) as ProviderId[]).map((id) => [
+    id,
+    createInitialProviderState(id, DEFAULT_ENABLED_PROVIDERS.includes(id)),
+  ])
+) as Record<ProviderId, ProviderState>;
+
+export const useUsageStore = create<UsageStore>((set, get) => ({
+  providers: initialProviders,
+  activeProvider: DEFAULT_ENABLED_PROVIDERS[0] || 'claude',
+  isRefreshing: false,
+  lastGlobalRefresh: null,
+
+  setActiveProvider: (id) => set({ activeProvider: id }),
+
+  setProviderUsage: (id, usage) =>
+    set((state) => ({
+      providers: {
+        ...state.providers,
+        [id]: {
+          ...state.providers[id],
+          usage,
+          isLoading: false,
+          lastError: usage.error,
+        },
+      },
+    })),
+
+  setProviderLoading: (id, isLoading) =>
+    set((state) => ({
+      providers: {
+        ...state.providers,
+        [id]: {
+          ...state.providers[id],
+          isLoading,
+        },
+      },
+    })),
+
+  setProviderError: (id, error) =>
+    set((state) => ({
+      providers: {
+        ...state.providers,
+        [id]: {
+          ...state.providers[id],
+          lastError: error,
+          isLoading: false,
+        },
+      },
+    })),
+
+  setProviderEnabled: (id, enabled) =>
+    set((state) => ({
+      providers: {
+        ...state.providers,
+        [id]: {
+          ...state.providers[id],
+          enabled,
+        },
+      },
+    })),
+
+  refreshProvider: async (id) => {
+    const { setProviderLoading, setProviderUsage, setProviderError } = get();
+    setProviderLoading(id, true);
+
+    try {
+      const usage = await invoke<UsageSnapshot>('refresh_provider', { providerId: id });
+      setProviderUsage(id, usage);
+    } catch (error) {
+      setProviderError(id, error instanceof Error ? error.message : String(error));
+    }
+  },
+
+  refreshAllProviders: async () => {
+    const { providers, refreshProvider } = get();
+    set({ isRefreshing: true });
+
+    const enabledProviders = Object.values(providers).filter((p) => p.enabled);
+    
+    await Promise.allSettled(
+      enabledProviders.map((p) => refreshProvider(p.id))
+    );
+
+    set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+  },
+
+  initializeProviders: (enabledIds) =>
+    set((state) => ({
+      providers: Object.fromEntries(
+        (Object.keys(state.providers) as ProviderId[]).map((id) => [
+          id,
+          {
+            ...state.providers[id],
+            enabled: enabledIds.includes(id),
+          },
+        ])
+      ) as Record<ProviderId, ProviderState>,
+    })),
+}));
+
+// Selectors
+export const useActiveProvider = () =>
+  useUsageStore((state) => {
+    const active = state.providers[state.activeProvider];
+    // Only return if authenticated (has usage and no error)
+    if (active?.usage && !active.lastError) {
+      return active;
+    }
+    // Otherwise find first authenticated provider
+    const authenticated = Object.values(state.providers).find(
+      (p) => p.enabled && p.usage && !p.lastError
+    );
+    return authenticated || null;
+  });
+
+export const useEnabledProviders = () =>
+  useUsageStore(
+    useShallow((state) =>
+      Object.values(state.providers).filter((p) => p.enabled)
+    )
+  );
+
+export const useAuthenticatedProviders = () =>
+  useUsageStore(
+    useShallow((state) =>
+      Object.values(state.providers).filter((p) => p.enabled && p.usage && !p.lastError)
+    )
+  );
+
+export const useProviderById = (id: ProviderId) =>
+  useUsageStore((state) => state.providers[id]);
