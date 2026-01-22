@@ -11,6 +11,7 @@ pub mod storage;
 pub mod tray;
 
 use tauri::Manager;
+use tauri_plugin_autostart::MacosLauncher;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize logging
@@ -32,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_positioner::init())
+        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .setup(|app| {
             // Initialize the tray icon
             tray::setup_tray(app.handle())?;
@@ -70,6 +72,8 @@ pub fn run() {
             commands::import_cursor_browser_cookies,
             commands::copilot_request_device_code,
             commands::copilot_poll_for_token,
+            commands::get_autostart_enabled,
+            commands::set_autostart_enabled,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -1,7 +1,8 @@
 //! Tauri IPC commands for the frontend
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, State, Emitter};
+use tauri::{command, AppHandle, State, Emitter, Manager};
+use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, UsageSnapshot};
@@ -519,4 +520,35 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
         message: "Polling timed out. Please try again.".to_string(),
         provider_id: "copilot".to_string(),
     })
+}
+
+// ============== Autostart Commands ==============
+
+/// Get current autostart (launch at login) status
+#[command]
+pub async fn get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
+    let autostart_manager = app.state::<AutoLaunchManager>();
+    autostart_manager
+        .is_enabled()
+        .map_err(|e| format!("Failed to check autostart status: {}", e))
+}
+
+/// Enable or disable autostart (launch at login)
+#[command]
+pub async fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let autostart_manager = app.state::<AutoLaunchManager>();
+    
+    if enabled {
+        autostart_manager
+            .enable()
+            .map_err(|e| format!("Failed to enable autostart: {}", e))?;
+        tracing::info!("Autostart enabled");
+    } else {
+        autostart_manager
+            .disable()
+            .map_err(|e| format!("Failed to disable autostart: {}", e))?;
+        tracing::info!("Autostart disabled");
+    }
+    
+    Ok(())
 }

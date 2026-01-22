@@ -5,6 +5,10 @@ mod claude;
 mod codex;
 mod cursor;
 pub mod copilot;
+mod zai;
+mod kimi_k2;
+mod synthetic;
+mod gemini;
 
 pub use traits::*;
 
@@ -35,6 +39,7 @@ pub enum ProviderId {
     Amp,
     Jetbrains,
     Opencode,
+    Synthetic,
 }
 
 impl ProviderId {
@@ -57,6 +62,7 @@ impl ProviderId {
             ProviderId::Amp,
             ProviderId::Jetbrains,
             ProviderId::Opencode,
+            ProviderId::Synthetic,
         ]
     }
 }
@@ -193,6 +199,34 @@ impl ProviderRegistry {
             enabled: default_enabled.contains(&ProviderId::Copilot),
             cached_usage: None,
             fetcher: Box::new(copilot::CopilotProvider::new()),
+        });
+
+        // z.ai
+        providers.insert(ProviderId::Zai, ProviderState {
+            enabled: false, // Requires API token, not enabled by default
+            cached_usage: None,
+            fetcher: Box::new(zai::ZaiProvider::new()),
+        });
+
+        // Kimi K2
+        providers.insert(ProviderId::KimiK2, ProviderState {
+            enabled: false, // Requires API key, not enabled by default
+            cached_usage: None,
+            fetcher: Box::new(kimi_k2::KimiK2Provider::new()),
+        });
+
+        // Synthetic
+        providers.insert(ProviderId::Synthetic, ProviderState {
+            enabled: false, // Requires API key, not enabled by default
+            cached_usage: None,
+            fetcher: Box::new(synthetic::SyntheticProvider::new()),
+        });
+
+        // Gemini
+        providers.insert(ProviderId::Gemini, ProviderState {
+            enabled: false, // Requires Gemini CLI OAuth, not enabled by default
+            cached_usage: None,
+            fetcher: Box::new(gemini::GeminiProvider::new()),
         });
 
         Self {

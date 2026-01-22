@@ -200,15 +200,14 @@ impl ProviderFetcher for CodexProvider {
 // ---- Response Types ----
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CodexAuthFile {
     tokens: Option<CodexAuthTokens>,
 }
 
 // Note: Some fields below are unused but required for serde deserialization
+// Auth file uses snake_case: {"tokens": {"access_token": "...", "account_id": "..."}}
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CodexAuthTokens {
     access_token: String,
     #[serde(default)]
@@ -219,8 +218,8 @@ struct CodexAuthTokens {
     account_id: Option<String>,
 }
 
+// API response uses snake_case: {"plan_type": "...", "rate_limit": {...}, "credits": {...}}
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CodexUsageResponse {
     plan_type: Option<String>,
     rate_limit: Option<RateLimitDetails>,
@@ -228,14 +227,12 @@ struct CodexUsageResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct RateLimitDetails {
     primary_window: Option<WindowSnapshot>,
     secondary_window: Option<WindowSnapshot>,
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct WindowSnapshot {
     used_percent: Option<i32>,
     reset_at: Option<i64>,
@@ -244,7 +241,6 @@ struct WindowSnapshot {
 
 #[allow(dead_code)]
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CreditDetails {
     has_credits: Option<bool>,
     unlimited: Option<bool>,

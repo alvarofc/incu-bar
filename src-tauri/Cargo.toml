@@ -39,3 +39,7 @@ cookie = "0.18"
 decrypt-cookies = { version = "0.10", features = ["Safari"] }
 # Window positioner for tray-relative positioning
 tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
+# Base64 encoding/decoding for JWT tokens
+base64 = "0.22"
+# Auto-start at login
+tauri-plugin-autostart = "2"

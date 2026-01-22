@@ -14,6 +14,7 @@ function App() {
   const setProviderUsage = useUsageStore((s) => s.setProviderUsage);
   const initializeProviders = useUsageStore((s) => s.initializeProviders);
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
+  const initAutostart = useSettingsStore((s) => s.initAutostart);
   const initializedRef = useRef(false);
 
   // Initialize enabled providers from settings (only once on mount)
@@ -21,6 +22,8 @@ function App() {
     if (!initializedRef.current) {
       initializedRef.current = true;
       initializeProviders(enabledProviders);
+      // Sync autostart status from system
+      initAutostart();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

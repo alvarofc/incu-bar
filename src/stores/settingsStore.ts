@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 import type { ProviderId, AppSettings } from '../lib/types';
 import { DEFAULT_SETTINGS } from '../lib/providers';
 
@@ -16,6 +17,8 @@ interface SettingsStore extends AppSettings {
   setShowCredits: (show: boolean) => void;
   setShowCost: (show: boolean) => void;
   resetToDefaults: () => void;
+  // Initialization
+  initAutostart: () => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -50,13 +53,29 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowNotifications: (show) => set({ showNotifications: show }),
 
-      setLaunchAtLogin: (launch) => set({ launchAtLogin: launch }),
+      setLaunchAtLogin: async (launch) => {
+        try {
+          await invoke('set_autostart_enabled', { enabled: launch });
+          set({ launchAtLogin: launch });
+        } catch (e) {
+          console.error('Failed to set autostart:', e);
+        }
+      },
 
       setShowCredits: (show) => set({ showCredits: show }),
 
       setShowCost: (show) => set({ showCost: show }),
 
       resetToDefaults: () => set(DEFAULT_SETTINGS),
+
+      initAutostart: async () => {
+        try {
+          const enabled = await invoke<boolean>('get_autostart_enabled');
+          set({ launchAtLogin: enabled });
+        } catch (e) {
+          console.error('Failed to get autostart status:', e);
+        }
+      },
     }),
     {
       name: 'incubar-settings',
