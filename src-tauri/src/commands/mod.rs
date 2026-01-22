@@ -249,6 +249,7 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "minimax",
         "synthetic",
         "antigravity",
+        "kiro",
     ];
     let mut results = std::collections::HashMap::new();
     

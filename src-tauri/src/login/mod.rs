@@ -193,6 +193,7 @@ pub async fn check_auth_status(provider_id: &str) -> AuthStatus {
         "minimax" => check_minimax_auth().await,
         "synthetic" => check_synthetic_auth().await,
         "antigravity" => check_antigravity_auth().await,
+        "kiro" => check_kiro_auth().await,
         _ => AuthStatus {
             authenticated: false,
             method: None,
@@ -646,6 +647,109 @@ async fn check_antigravity_auth() -> AuthStatus {
             error: Some("Antigravity not running".to_string()),
         }
     }
+}
+
+async fn check_kiro_auth() -> AuthStatus {
+    let cli_path = match find_kiro_cli().await {
+        Some(path) => path,
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("kiro-cli not found. Install it from https://kiro.dev".to_string()),
+            };
+        }
+    };
+
+    let command = tokio::process::Command::new(cli_path)
+        .arg("whoami")
+        .output();
+    let output = match tokio::time::timeout(std::time::Duration::from_secs(5), command).await {
+        Ok(result) => match result {
+            Ok(result) => result,
+            Err(err) => {
+                return AuthStatus {
+                    authenticated: false,
+                    method: Some("cli".to_string()),
+                    email: None,
+                    error: Some(format!("Failed to run kiro-cli: {}", err)),
+                };
+            }
+        },
+        Err(_) => {
+            return AuthStatus {
+                authenticated: false,
+                method: Some("cli".to_string()),
+                email: None,
+                error: Some("kiro-cli timed out".to_string()),
+            };
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    let combined = if stderr.is_empty() { stdout } else { stderr };
+    let lowered = combined.to_lowercase();
+
+    if lowered.contains("not logged in") || lowered.contains("login required") {
+        return AuthStatus {
+            authenticated: false,
+            method: Some("cli".to_string()),
+            email: None,
+            error: Some("Run `kiro-cli login` in Terminal".to_string()),
+        };
+    }
+
+    if !output.status.success() {
+        return AuthStatus {
+            authenticated: false,
+            method: Some("cli".to_string()),
+            email: None,
+            error: Some(if combined.is_empty() {
+                format!("kiro-cli failed with status {}", output.status)
+            } else {
+                combined
+            }),
+        };
+    }
+
+    let email = if combined.contains('@') {
+        Some(combined)
+    } else {
+        None
+    };
+
+    AuthStatus {
+        authenticated: true,
+        method: Some("cli".to_string()),
+        email,
+        error: None,
+    }
+}
+
+async fn find_kiro_cli() -> Option<String> {
+    let output = tokio::process::Command::new("/usr/bin/which")
+        .arg("kiro-cli")
+        .output()
+        .await
+        .ok()?;
+    if output.status.success() {
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !path.is_empty() {
+            return Some(path);
+        }
+    }
+
+    let candidates = [
+        "/usr/local/bin/kiro-cli",
+        "/opt/homebrew/bin/kiro-cli",
+        &format!("{}/.local/bin/kiro-cli", std::env::var("HOME").unwrap_or_default()),
+    ];
+    candidates
+        .iter()
+        .map(|path| path.to_string())
+        .find(|path| std::path::Path::new(path).exists())
 }
 
 /// Find a binary in PATH or common locations

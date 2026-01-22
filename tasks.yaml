@@ -44,15 +44,15 @@ tasks:
   - title: implement Vertex AI provider with Google OAuth and monitoring API usage
     source: ../IncuBar/Sources/CodexBar/Providers/VertexAI, src-tauri/src/providers,
       src/lib/providers.ts
-    completed: false
+    completed: true
   - title: implement Antigravity provider status probe with incident detection
     source: ../IncuBar/Sources/CodexBar/Providers/Antigravity,
       src-tauri/src/providers, src/lib/providers.ts
-    completed: false
+    completed: true
   - title: implement Kiro provider status probe with incident detection
     source: ../IncuBar/Sources/CodexBar/Providers/Kiro, src-tauri/src/providers,
       src/lib/providers.ts
-    completed: false
+    completed: true
   - title: add cookie-source selection per provider
       (chrome/safari/firefox/arc/edge/brave/opera)
     source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,

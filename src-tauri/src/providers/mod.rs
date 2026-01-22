@@ -12,6 +12,7 @@ pub mod copilot;
 mod zai;
 mod kimi_k2;
 mod kimi;
+mod kiro;
 mod synthetic;
 mod gemini;
 mod jetbrains;
@@ -295,10 +296,11 @@ impl ProviderRegistry {
         });
 
         // Kiro
-        providers.insert(ProviderId::Kiro, Self::placeholder_state(
-            "Kiro",
-            "Kiro provider not implemented",
-        ));
+        providers.insert(ProviderId::Kiro, ProviderState {
+            enabled: false,
+            cached_usage: None,
+            fetcher: Box::new(kiro::KiroProvider::new()),
+        });
 
         // Vertex AI
         providers.insert(ProviderId::Vertex, Self::placeholder_state(

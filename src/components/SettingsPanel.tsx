@@ -155,14 +155,18 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi') {
+    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax') {
       const importCommand = providerId === 'factory'
         ? 'import_factory_browser_cookies'
         : providerId === 'augment'
           ? 'import_augment_browser_cookies'
-          : 'import_kimi_browser_cookies';
+          : providerId === 'minimax'
+            ? 'import_minimax_browser_cookies'
+            : 'import_kimi_browser_cookies';
 
-      setCookieProvider(providerId);
+      if (providerId !== 'minimax') {
+        setCookieProvider(providerId);
+      }
       setLoginMessage('Importing cookies from browser…');
       const importResult = await invoke<LoginResult>(importCommand);
 
@@ -178,6 +182,12 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
       setLoginMessage('Could not import from browser. You can paste cookies manually below.');
       setShowCookieInput(true);
+      setLoggingIn(null);
+      return;
+    }
+
+    if (providerId === 'kiro') {
+      setLoginMessage('Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.');
       setLoggingIn(null);
       return;
     }
