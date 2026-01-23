@@ -7,6 +7,9 @@ const settingsPanelFile = fs.readFileSync(settingsPanelPath, 'utf-8');
 const requiredMarkers = [
   'data-testid="provider-settings-list"',
   'data-testid="provider-detail-pane"',
+  'provider-enable-toggle-',
+  'provider-order-up-',
+  'provider-order-down-',
   'Settings',
   'Not connected',
 ];

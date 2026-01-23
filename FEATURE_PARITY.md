@@ -121,8 +121,8 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Popup | Last updated | Done | |
 | Popup | Manual refresh | Done | |
 | Popup | Settings button | Done | |
-| Settings | Provider toggles | Done | |
-| Settings | Provider order | Not Started | |
+| Settings | Provider toggles | Done | Per-provider enable toggles in settings |
+| Settings | Provider order | Done | Move controls persist ordering |
 | Settings | Refresh interval | Done | |
 | Settings | Show credits | Done | |
 | Settings | Show cost | Done | |

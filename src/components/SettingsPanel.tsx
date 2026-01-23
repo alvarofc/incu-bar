@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -35,10 +35,9 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onBack }: SettingsPanelProps) {
-  const initialProviderId = (Object.keys(PROVIDERS) as ProviderId[]).find(
-    (id) => PROVIDERS[id].implemented
-  ) ?? 'claude';
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
+  const providerOrder = useSettingsStore((s) => s.providerOrder);
+  const setProviderOrder = useSettingsStore((s) => s.setProviderOrder);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
@@ -51,8 +50,28 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
   const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
   const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
-  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(initialProviderId);
   const cookieSources = useSettingsStore((s) => s.cookieSources);
+
+  const orderedProviderIds = useMemo(() => {
+    const allProviders = Object.keys(PROVIDERS) as ProviderId[];
+    const uniqueOrder = providerOrder.filter((id) => allProviders.includes(id));
+    const missingProviders = allProviders.filter((id) => !uniqueOrder.includes(id));
+    return [...uniqueOrder, ...missingProviders];
+  }, [providerOrder]);
+
+  const implementedProviders = useMemo(
+    () => orderedProviderIds.filter((id) => PROVIDERS[id].implemented),
+    [orderedProviderIds]
+  );
+
+  const upcomingProviders = useMemo(
+    () => orderedProviderIds.filter((id) => !PROVIDERS[id].implemented),
+    [orderedProviderIds]
+  );
+
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
+    () => implementedProviders[0] ?? 'claude'
+  );
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
   const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
@@ -69,6 +88,18 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     };
     checkAuth();
   }, []);
+
+  useEffect(() => {
+    if (orderedProviderIds.join('|') !== providerOrder.join('|')) {
+      setProviderOrder(orderedProviderIds);
+    }
+  }, [orderedProviderIds, providerOrder, setProviderOrder]);
+
+  useEffect(() => {
+    if (!implementedProviders.includes(selectedProviderId)) {
+      setSelectedProviderId(implementedProviders[0] ?? 'claude');
+    }
+  }, [implementedProviders, selectedProviderId]);
 
   useEffect(() => {
     const unlistenLogin = listen('cursor-login-detected', async () => {
@@ -112,6 +143,21 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const handleToggleProvider = useCallback((id: ProviderId) => {
     useSettingsStore.getState().toggleProvider(id);
   }, []);
+
+  const handleMoveProvider = useCallback((id: ProviderId, direction: 'up' | 'down') => {
+    const currentIndex = implementedProviders.indexOf(id);
+    if (currentIndex === -1) return;
+    const nextIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= implementedProviders.length) return;
+
+    const reorderedProviders = [...implementedProviders];
+    [reorderedProviders[currentIndex], reorderedProviders[nextIndex]] = [
+      reorderedProviders[nextIndex],
+      reorderedProviders[currentIndex],
+    ];
+
+    setProviderOrder([...reorderedProviders, ...upcomingProviders]);
+  }, [implementedProviders, upcomingProviders, setProviderOrder]);
 
   const handleSetRefreshInterval = useCallback((seconds: number) => {
     useSettingsStore.getState().setRefreshInterval(seconds);
@@ -403,13 +449,6 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     { label: '30m', value: 1800 },
   ];
 
-  const implementedProviders = (Object.keys(PROVIDERS) as ProviderId[]).filter(
-    (id) => PROVIDERS[id].implemented
-  );
-  const upcomingProviders = (Object.keys(PROVIDERS) as ProviderId[]).filter(
-    (id) => !PROVIDERS[id].implemented
-  );
-
   const selectedProvider = PROVIDERS[selectedProviderId];
   const selectedStatus = authStatus[selectedProviderId];
   const selectedIsAuthenticated = selectedStatus?.authenticated === true;
@@ -524,20 +563,23 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               const status = authStatus[id];
               const isAuthenticated = status?.authenticated === true;
               const isSelected = selectedProviderId === id;
+              const isEnabled = enabledProviders.includes(id);
 
               return (
-                <button
+                <div
                   key={id}
-                  type="button"
-                  onClick={() => setSelectedProviderId(id)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors focus-ring ${
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
                     isSelected
                       ? 'bg-[var(--bg-subtle)] border-[var(--border-strong)]'
                       : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-overlay)]'
                   }`}
-                  aria-pressed={isSelected}
                 >
-                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProviderId(id)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left focus-ring"
+                    aria-pressed={isSelected}
+                  >
                     <ProviderIcon 
                       providerId={id} 
                       className={`w-5 h-5 flex-shrink-0 ${isAuthenticated ? 'opacity-100' : 'opacity-50'}`}
@@ -567,8 +609,42 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                         </span>
                       )}
                     </div>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleProvider(id)}
+                      className="toggle focus-ring"
+                      data-state={isEnabled ? 'checked' : 'unchecked'}
+                      role="switch"
+                      aria-checked={isEnabled}
+                      aria-label={isEnabled ? `Hide ${provider.name}` : `Show ${provider.name}`}
+                      data-testid={`provider-enable-toggle-${id}`}
+                    >
+                      <span className="toggle-thumb" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveProvider(id, 'up')}
+                      className="btn btn-icon focus-ring"
+                      aria-label={`Move ${provider.name} up`}
+                      disabled={implementedProviders[0] === id}
+                      data-testid={`provider-order-up-${id}`}
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveProvider(id, 'down')}
+                      className="btn btn-icon focus-ring"
+                      aria-label={`Move ${provider.name} down`}
+                      disabled={implementedProviders[implementedProviders.length - 1] === id}
+                      data-testid={`provider-order-down-${id}`}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
                   </div>
-                </button>
+                </div>
               );
           })}
           </div>
@@ -602,18 +678,16 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                   </div>
                 </div>
 
-                {selectedIsAuthenticated && (
-                  <button
-                    onClick={() => handleToggleProvider(selectedProviderId)}
-                    className="toggle focus-ring"
-                    data-state={selectedIsEnabled ? 'checked' : 'unchecked'}
-                    role="switch"
-                    aria-checked={selectedIsEnabled}
-                    aria-label={selectedIsEnabled ? `Hide ${selectedProvider.name}` : `Show ${selectedProvider.name}`}
-                  >
-                    <span className="toggle-thumb" />
-                  </button>
-                )}
+                <button
+                  onClick={() => handleToggleProvider(selectedProviderId)}
+                  className="toggle focus-ring"
+                  data-state={selectedIsEnabled ? 'checked' : 'unchecked'}
+                  role="switch"
+                  aria-checked={selectedIsEnabled}
+                  aria-label={selectedIsEnabled ? `Hide ${selectedProvider.name}` : `Show ${selectedProvider.name}`}
+                >
+                  <span className="toggle-thumb" />
+                </button>
               </div>
 
               {selectedStatus?.error && (
@@ -642,11 +716,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                     )}
                     <span>{selectedIsAuthenticated ? 'Reconnect' : 'Connect'}</span>
                   </button>
-                  {selectedIsAuthenticated && (
-                    <span className="text-[11px] text-[var(--text-quaternary)]">
-                      Visible in popup tabs
-                    </span>
-                  )}
+                  <span className="text-[11px] text-[var(--text-quaternary)]">
+                    Visible in popup tabs once connected
+                  </span>
                 </div>
 
                 {selectedUsesCookies && selectedCookieSource && (

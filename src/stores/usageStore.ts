@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/shallow';
 import type { ProviderId, ProviderState, UsageSnapshot } from '../lib/types';
 import { PROVIDERS, DEFAULT_ENABLED_PROVIDERS } from '../lib/providers';
+import { useSettingsStore } from './settingsStore';
 
 interface UsageStore {
   // State
@@ -36,6 +37,16 @@ const initialProviders: Record<ProviderId, ProviderState> = Object.fromEntries(
     createInitialProviderState(id, DEFAULT_ENABLED_PROVIDERS.includes(id)),
   ])
 ) as Record<ProviderId, ProviderState>;
+
+const orderProviderStates = (
+  providers: Record<ProviderId, ProviderState>,
+  order: ProviderId[]
+) => {
+  const providerIds = Object.keys(providers) as ProviderId[];
+  const normalizedOrder = order.filter((id) => providerIds.includes(id));
+  const missingProviders = providerIds.filter((id) => !normalizedOrder.includes(id));
+  return [...normalizedOrder, ...missingProviders].map((id) => providers[id]);
+};
 
 export const useUsageStore = create<UsageStore>((set, get) => ({
   providers: initialProviders,
@@ -134,13 +145,14 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 // Selectors
 export const useActiveProvider = () =>
   useUsageStore((state) => {
+    const providerOrder = useSettingsStore.getState().providerOrder;
     const active = state.providers[state.activeProvider];
     // Only return if authenticated (has usage and no error)
     if (active?.usage && !active.lastError) {
       return active;
     }
-    // Otherwise find first authenticated provider
-    const authenticated = Object.values(state.providers).find(
+    // Otherwise find first authenticated provider by preferred order
+    const authenticated = orderProviderStates(state.providers, providerOrder).find(
       (p) => p.enabled && p.usage && !p.lastError
     );
     return authenticated || null;
@@ -148,16 +160,22 @@ export const useActiveProvider = () =>
 
 export const useEnabledProviders = () =>
   useUsageStore(
-    useShallow((state) =>
-      Object.values(state.providers).filter((p) => p.enabled)
-    )
+    useShallow((state) => {
+      const providerOrder = useSettingsStore.getState().providerOrder;
+      return orderProviderStates(state.providers, providerOrder).filter(
+        (p) => p.enabled
+      );
+    })
   );
 
 export const useAuthenticatedProviders = () =>
   useUsageStore(
-    useShallow((state) =>
-      Object.values(state.providers).filter((p) => p.enabled && p.usage && !p.lastError)
-    )
+    useShallow((state) => {
+      const providerOrder = useSettingsStore.getState().providerOrder;
+      return orderProviderStates(state.providers, providerOrder).filter(
+        (p) => p.enabled && p.usage && !p.lastError
+      );
+    })
   );
 
 export const useProviderById = (id: ProviderId) =>
