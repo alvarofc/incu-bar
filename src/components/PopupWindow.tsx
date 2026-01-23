@@ -1,10 +1,13 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { Settings, RefreshCw, Plug } from 'lucide-react';
+import { Settings, RefreshCw, Plug, AlertCircle } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MenuCard } from './MenuCard';
 import { ProviderTabs, ProviderSwitcherButtons } from './ProviderTabs';
 import { useUsageStore, useActiveProvider, useEnabledProviders } from '../stores/usageStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { ProviderIcon } from './ProviderIcons';
+import { PROVIDERS } from '../lib/providers';
+import type { ProviderId } from '../lib/types';
 
 interface PopupWindowProps {
   onOpenSettings?: () => void;
@@ -17,12 +20,20 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const lastGlobalRefresh = useUsageStore((s) => s.lastGlobalRefresh);
   const displayMode = useSettingsStore((s) => s.displayMode);
   const hasRefreshedRef = useRef(false);
+  const errorProviders = enabledProviders.filter(
+    (provider) => provider.lastError && !provider.usage
+  );
+  const primaryErrorProvider = errorProviders[0];
 
   // Check if we're still loading (first refresh in progress)
   const isInitialLoading = !lastGlobalRefresh && enabledProviders.some((p) => p.isLoading);
 
   const handleRefreshAll = useCallback(() => {
     useUsageStore.getState().refreshAllProviders();
+  }, []);
+
+  const handleRefreshProvider = useCallback((providerId: ProviderId) => {
+    void useUsageStore.getState().refreshProvider(providerId);
   }, []);
 
   // Refresh all providers on mount (only once)
@@ -76,6 +87,43 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
           </div>
         ) : activeProvider ? (
           <MenuCard provider={activeProvider} />
+        ) : primaryErrorProvider ? (
+          <div
+            className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"
+            data-testid="provider-error-detail"
+            role="alert"
+          >
+            <div className="w-11 h-11 rounded-full bg-[var(--accent-danger)]/10 flex items-center justify-center mb-4">
+              <AlertCircle className="w-5 h-5 text-[var(--accent-danger)]" aria-hidden="true" />
+            </div>
+            <div className="flex items-center gap-2 mb-2">
+              <ProviderIcon providerId={primaryErrorProvider.id} className="w-4 h-4" aria-hidden="true" />
+              <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
+                {PROVIDERS[primaryErrorProvider.id].name} needs attention
+              </h2>
+            </div>
+            <p className="text-sm text-[var(--text-tertiary)] mb-3 max-w-[230px]">
+              We could not refresh usage. Reconnect in Settings or try again after updating your login.
+            </p>
+            <div className="w-full max-w-[240px] rounded-lg border border-[var(--accent-danger)]/20 bg-[var(--accent-danger)]/5 px-3 py-2 text-[12px] text-[var(--accent-danger)]/90 mb-4">
+              {primaryErrorProvider.lastError}
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleRefreshProvider(primaryErrorProvider.id)}
+                disabled={primaryErrorProvider.isLoading}
+                className="btn btn-primary focus-ring"
+              >
+                {primaryErrorProvider.isLoading ? 'Refreshing…' : 'Try Again'}
+              </button>
+              <button
+                onClick={onOpenSettings}
+                className="btn btn-ghost focus-ring"
+              >
+                Open Settings
+              </button>
+            </div>
+          </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up">
             <div className="w-11 h-11 rounded-full bg-[var(--bg-subtle)] flex items-center justify-center mb-4">
