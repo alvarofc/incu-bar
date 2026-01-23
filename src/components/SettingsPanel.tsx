@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -51,6 +51,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
   const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
   const cookieSources = useSettingsStore((s) => s.cookieSources);
+  const [draggingProviderId, setDraggingProviderId] = useState<ProviderId | null>(null);
+  const [dragOverProviderId, setDragOverProviderId] = useState<ProviderId | null>(null);
 
   const orderedProviderIds = useMemo(() => {
     const allProviders = Object.keys(PROVIDERS) as ProviderId[];
@@ -158,6 +160,47 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
     setProviderOrder([...reorderedProviders, ...upcomingProviders]);
   }, [implementedProviders, upcomingProviders, setProviderOrder]);
+
+  const handleDragStart = useCallback((event: DragEvent, id: ProviderId) => {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', id);
+    setDraggingProviderId(id);
+  }, []);
+
+  const handleDragOver = useCallback((event: DragEvent, id: ProviderId) => {
+    event.preventDefault();
+    setDragOverProviderId(id);
+  }, []);
+
+  const handleDrop = useCallback((event: DragEvent, targetId: ProviderId) => {
+    event.preventDefault();
+    const sourceId = draggingProviderId ?? (event.dataTransfer.getData('text/plain') as ProviderId | undefined);
+    if (!sourceId || sourceId === targetId) {
+      setDragOverProviderId(null);
+      setDraggingProviderId(null);
+      return;
+    }
+
+    const reorderedProviders = [...implementedProviders];
+    const sourceIndex = reorderedProviders.indexOf(sourceId);
+    const targetIndex = reorderedProviders.indexOf(targetId);
+    if (sourceIndex === -1 || targetIndex === -1) {
+      setDragOverProviderId(null);
+      setDraggingProviderId(null);
+      return;
+    }
+
+    reorderedProviders.splice(sourceIndex, 1);
+    reorderedProviders.splice(targetIndex, 0, sourceId);
+    setProviderOrder([...reorderedProviders, ...upcomingProviders]);
+    setDragOverProviderId(null);
+    setDraggingProviderId(null);
+  }, [draggingProviderId, implementedProviders, upcomingProviders, setProviderOrder]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingProviderId(null);
+    setDragOverProviderId(null);
+  }, []);
 
   const handleSetRefreshInterval = useCallback((seconds: number) => {
     useSettingsStore.getState().setRefreshInterval(seconds);
@@ -572,8 +615,23 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                     isSelected
                       ? 'bg-[var(--bg-subtle)] border-[var(--border-strong)]'
                       : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-overlay)]'
-                  }`}
+                  } ${dragOverProviderId === id ? 'ring-1 ring-[var(--accent-primary)]' : ''} ${draggingProviderId === id ? 'opacity-70' : ''}`}
+                  onDragOver={(event) => handleDragOver(event, id)}
+                  onDrop={(event) => handleDrop(event, id)}
+                  onDragLeave={() => setDragOverProviderId(null)}
+                  data-testid={`provider-order-item-${id}`}
                 >
+                  <button
+                    type="button"
+                    onDragStart={(event) => handleDragStart(event, id)}
+                    onDragEnd={handleDragEnd}
+                    draggable
+                    className="btn btn-icon focus-ring"
+                    aria-label={`Reorder ${provider.name}`}
+                    data-testid={`provider-order-handle-${id}`}
+                  >
+                    <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setSelectedProviderId(id)}
