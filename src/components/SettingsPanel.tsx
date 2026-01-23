@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
-import type { MenuBarDisplayMode, UsageBarDisplayMode } from '../lib/types';
+import type { MenuBarDisplayMode, ResetTimeDisplayMode, UsageBarDisplayMode } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -43,6 +43,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const displayMode = useSettingsStore((s) => s.displayMode);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
+  const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
@@ -232,6 +233,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetUsageBarDisplayMode = useCallback((mode: UsageBarDisplayMode) => {
     useSettingsStore.getState().setUsageBarDisplayMode(mode);
+  }, []);
+
+  const handleSetResetTimeDisplayMode = useCallback((mode: ResetTimeDisplayMode) => {
+    useSettingsStore.getState().setResetTimeDisplayMode(mode);
   }, []);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
@@ -1048,6 +1053,41 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               </div>
               <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
                 Show usage bars as remaining capacity or used capacity.
+              </p>
+            </div>
+            <div className="divider" />
+            <div>
+              <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
+                Reset Time Display
+              </span>
+              <div className="flex gap-1.5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => handleSetResetTimeDisplayMode('relative')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    resetTimeDisplayMode === 'relative'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="reset-time-display-relative"
+                >
+                  Relative
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetResetTimeDisplayMode('absolute')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    resetTimeDisplayMode === 'absolute'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="reset-time-display-absolute"
+                >
+                  Absolute
+                </button>
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                Show reset times as relative text or full date/time.
               </p>
             </div>
             <div className="divider" />

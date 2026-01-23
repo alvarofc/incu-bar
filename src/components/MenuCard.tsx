@@ -17,6 +17,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const showCost = useSettingsStore((s) => s.showCost);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
+  const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError } = provider;
@@ -151,6 +152,8 @@ export function MenuCard({ provider }: MenuCardProps) {
               percent={primaryWindow.usedPercent}
               label={primaryWindow.label || primaryLabel}
               resetDescription={primaryWindow.resetDescription}
+              resetsAt={primaryWindow.resetsAt}
+              resetTimeDisplayMode={resetTimeDisplayMode}
               size="md"
               displayMode={usageBarDisplayMode}
             />
@@ -161,6 +164,8 @@ export function MenuCard({ provider }: MenuCardProps) {
               percent={usage.secondary.usedPercent}
               label={usage.secondary.label || weeklyLabel}
               resetDescription={usage.secondary.resetDescription}
+              resetsAt={usage.secondary.resetsAt}
+              resetTimeDisplayMode={resetTimeDisplayMode}
               size="md"
               displayMode={usageBarDisplayMode}
             />
@@ -171,6 +176,8 @@ export function MenuCard({ provider }: MenuCardProps) {
               percent={usage.tertiary.usedPercent}
               label={usage.tertiary.label || 'Extra'}
               resetDescription={usage.tertiary.resetDescription}
+              resetsAt={usage.tertiary.resetsAt}
+              resetTimeDisplayMode={resetTimeDisplayMode}
               size="sm"
               displayMode={usageBarDisplayMode}
             />

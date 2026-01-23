@@ -21,6 +21,7 @@ interface SettingsStore extends AppSettings {
   setDisplayMode: (mode: 'merged' | 'separate') => void;
   setMenuBarDisplayMode: (mode: MenuBarDisplayMode) => void;
   setUsageBarDisplayMode: (mode: UsageBarDisplayMode) => void;
+  setResetTimeDisplayMode: (mode: 'relative' | 'absolute') => void;
   setShowNotifications: (show: boolean) => void;
   setLaunchAtLogin: (launch: boolean) => void;
   setShowCredits: (show: boolean) => void;
@@ -65,6 +66,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setMenuBarDisplayMode: (mode) => set({ menuBarDisplayMode: mode }),
 
       setUsageBarDisplayMode: (mode) => set({ usageBarDisplayMode: mode }),
+
+      setResetTimeDisplayMode: (mode) => set({ resetTimeDisplayMode: mode }),
 
       setShowNotifications: (show) => set({ showNotifications: show }),
 

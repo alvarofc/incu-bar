@@ -1,9 +1,13 @@
 import { useMemo } from 'react';
+import { ResetCountdown } from './ResetCountdown';
+import type { ResetTimeDisplayMode } from '../lib/types';
 
 interface ProgressBarProps {
   percent: number;        // 0-100, represents USED percentage
   label?: string;
   resetDescription?: string;
+  resetsAt?: string;
+  resetTimeDisplayMode?: ResetTimeDisplayMode;
   showPercentage?: boolean;
   displayMode?: 'remaining' | 'used';
   size?: 'sm' | 'md';
@@ -14,6 +18,8 @@ export function ProgressBar({
   percent,
   label,
   resetDescription,
+  resetsAt,
+  resetTimeDisplayMode,
   showPercentage = true,
   displayMode = 'remaining',
   size = 'md',
@@ -38,6 +44,7 @@ export function ProgressBar({
   }, [clampedPercent, isRemaining, remainingPercent]);
 
   const heightClass = size === 'sm' ? 'h-1' : 'h-1';
+  const showResetCountdown = !!resetsAt && !resetDescription;
 
   return (
     <div className={`w-full ${className}`} role="progressbar" aria-valuenow={trackPercent} aria-valuemin={0} aria-valuemax={100}>
@@ -75,6 +82,16 @@ export function ProgressBar({
           <span className="text-[11px] text-[var(--text-quaternary)]">
             {resetDescription}
           </span>
+        </div>
+      )}
+
+      {showResetCountdown && (
+        <div className="mt-1.5">
+          <ResetCountdown
+            resetsAt={resetsAt}
+            displayMode={resetTimeDisplayMode}
+            className="text-[11px] text-[var(--text-quaternary)]"
+          />
         </div>
       )}
     </div>

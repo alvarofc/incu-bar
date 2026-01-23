@@ -252,6 +252,7 @@ export const DEFAULT_SETTINGS = {
   displayMode: 'merged' as const,
   menuBarDisplayMode: 'session' as const,
   usageBarDisplayMode: 'remaining' as const,
+  resetTimeDisplayMode: 'relative' as const,
   showNotifications: true,
   launchAtLogin: false,
   showCredits: true,

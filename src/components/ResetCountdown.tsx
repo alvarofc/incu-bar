@@ -1,14 +1,16 @@
-import { formatDistanceToNow, format, differenceInHours } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 
 interface ResetCountdownProps {
   resetsAt?: string;        // ISO date string
   description?: string;     // Pre-formatted description from backend
+  displayMode?: 'relative' | 'absolute';
   className?: string;
 }
 
 export function ResetCountdown({
   resetsAt,
   description,
+  displayMode = 'relative',
   className = '',
 }: ResetCountdownProps) {
   if (!resetsAt && !description) return null;
@@ -25,11 +27,7 @@ export function ResetCountdown({
   // Otherwise, format the reset time
   if (resetsAt) {
     const resetDate = new Date(resetsAt);
-    const now = new Date();
-    const hoursUntilReset = differenceInHours(resetDate, now);
-
-    // Show relative time for near future, absolute for far future
-    const formattedTime = hoursUntilReset < 24
+    const formattedTime = displayMode === 'relative'
       ? `Resets ${formatDistanceToNow(resetDate, { addSuffix: true })}`
       : `Resets ${format(resetDate, 'MMM d, h:mm a')}`;
 

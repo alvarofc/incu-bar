@@ -93,6 +93,8 @@ export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace' | 'highest';
 
 export type UsageBarDisplayMode = 'remaining' | 'used';
 
+export type ResetTimeDisplayMode = 'relative' | 'absolute';
+
 // Settings
 export interface AppSettings {
   refreshIntervalSeconds: number;
@@ -101,6 +103,7 @@ export interface AppSettings {
   displayMode: 'merged' | 'separate';
   menuBarDisplayMode: MenuBarDisplayMode;
   usageBarDisplayMode: UsageBarDisplayMode;
+  resetTimeDisplayMode: ResetTimeDisplayMode;
   showNotifications: boolean;
   launchAtLogin: boolean;
   showCredits: boolean;
