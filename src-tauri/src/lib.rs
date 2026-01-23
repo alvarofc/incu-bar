@@ -1,5 +1,5 @@
 //! IncuBar - AI Usage Tracker
-//! 
+//!
 //! Cross-platform menu bar app for tracking API usage across
 //! Claude, Codex, Cursor, and other AI coding assistants.
 
@@ -18,8 +18,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn init_logging() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("incubar_tauri=debug".parse().unwrap()))
+        .with(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("incubar_tauri=debug".parse().unwrap()),
+        )
         .init();
 }
 
@@ -33,11 +35,14 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_positioner::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
         .setup(|app| {
             // Initialize the tray icon
             tray::setup_tray(app.handle())?;
-            
+
             // Create the popup window (hidden by default)
             tray::create_popup_window(app.handle())?;
 
@@ -59,6 +64,7 @@ pub fn run() {
             commands::refresh_all_providers,
             commands::get_provider_usage,
             commands::get_all_usage,
+            commands::poll_provider_statuses,
             commands::set_provider_enabled,
             commands::get_settings,
             commands::save_settings,

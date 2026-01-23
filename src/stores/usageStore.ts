@@ -1,7 +1,12 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { useShallow } from 'zustand/shallow';
-import type { ProviderId, ProviderState, UsageSnapshot } from '../lib/types';
+import type {
+  ProviderId,
+  ProviderState,
+  UsageSnapshot,
+  ProviderIncident,
+} from '../lib/types';
 import { PROVIDERS, DEFAULT_ENABLED_PROVIDERS } from '../lib/providers';
 import { useSettingsStore } from './settingsStore';
 
@@ -15,6 +20,7 @@ interface UsageStore {
   // Actions
   setActiveProvider: (id: ProviderId) => void;
   setProviderUsage: (id: ProviderId, usage: UsageSnapshot) => void;
+  setProviderStatus: (id: ProviderId, status: ProviderIncident | null) => void;
   setProviderLoading: (id: ProviderId, isLoading: boolean) => void;
   setProviderError: (id: ProviderId, error: string | undefined) => void;
   setProviderEnabled: (id: ProviderId, enabled: boolean) => void;
@@ -66,6 +72,17 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
           usage,
           isLoading: false,
           lastError: usage.error,
+        },
+      },
+    })),
+
+  setProviderStatus: (id, status) =>
+    set((state) => ({
+      providers: {
+        ...state.providers,
+        [id]: {
+          ...state.providers[id],
+          status: status ?? undefined,
         },
       },
     })),

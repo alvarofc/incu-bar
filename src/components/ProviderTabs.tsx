@@ -1,7 +1,7 @@
 import type { ProviderId } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { useUsageStore, useEnabledProviders } from '../stores/usageStore';
-import { ProviderIcon as BrandIcon } from './ProviderIcons';
+import { ProviderIcon as BrandIcon, ProviderIconWithOverlay } from './ProviderIcons';
 
 export function ProviderTabs() {
   const activeProvider = useUsageStore((s) => s.activeProvider);
@@ -44,11 +44,14 @@ export function ProviderTabs() {
               }
             `}
           >
-            <BrandIcon 
-              providerId={provider.id} 
-              className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
-              aria-hidden="true"
-            />
+            <span className="relative">
+              <BrandIcon 
+                providerId={provider.id} 
+                className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
+                aria-hidden="true"
+              />
+              <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+            </span>
             <span>{metadata.name}</span>
           </button>
         );
@@ -94,11 +97,14 @@ export function ProviderSwitcherButtons() {
             aria-label={`Switch to ${PROVIDERS[provider.id].name}`}
             data-testid={`provider-switcher-button-${provider.id}`}
           >
-            <BrandIcon
-              providerId={provider.id}
-              className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
-              aria-hidden="true"
-            />
+            <span className="relative">
+              <BrandIcon
+                providerId={provider.id}
+                className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
+                aria-hidden="true"
+              />
+              <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+            </span>
           </button>
         );
       })}

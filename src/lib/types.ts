@@ -45,6 +45,14 @@ export interface ProviderIdentity {
   organization?: string;
 }
 
+export type StatusIndicator = 'none' | 'minor' | 'major' | 'critical' | 'maintenance' | 'unknown';
+
+export interface ProviderIncident {
+  indicator: StatusIndicator;
+  description?: string;
+  updatedAt?: string;
+}
+
 // Full usage snapshot for a provider
 export interface UsageSnapshot {
   primary?: RateWindow;       // Session/5h window
@@ -67,6 +75,7 @@ export interface ProviderState {
   name: string;
   enabled: boolean;
   usage?: UsageSnapshot;
+  status?: ProviderIncident;
   isLoading: boolean;
   lastError?: string;
 }
@@ -117,6 +126,11 @@ export interface AppSettings {
 export interface UsageUpdateEvent {
   providerId: ProviderId;
   usage: UsageSnapshot;
+}
+
+export interface StatusUpdateEvent {
+  providerId: ProviderId;
+  status: ProviderIncident | null;
 }
 
 export interface RefreshingEvent {

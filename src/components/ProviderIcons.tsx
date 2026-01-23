@@ -8,6 +8,12 @@ interface IconProps {
   'aria-hidden'?: boolean | 'true' | 'false';
 }
 
+interface ProviderIconOverlayProps {
+  className?: string;
+  indicator?: 'none' | 'minor' | 'major' | 'critical' | 'maintenance' | 'unknown';
+  title?: string;
+}
+
 // Claude (Anthropic) - Official logo from Simple Icons
 export function ClaudeIcon({ className, 'aria-hidden': ariaHidden = true }: IconProps) {
   return (
@@ -190,4 +196,33 @@ export function ProviderIcon({ providerId, className }: { providerId: ProviderId
     return null;
   }
   return <IconComponent className={className} />;
+}
+
+const incidentColorMap: Record<NonNullable<ProviderIconOverlayProps['indicator']>, string> = {
+  none: 'bg-[var(--accent-success)]',
+  minor: 'bg-[var(--accent-warning)]',
+  major: 'bg-[var(--accent-danger)]',
+  critical: 'bg-[var(--accent-danger)]',
+  maintenance: 'bg-[var(--accent-warning)]',
+  unknown: 'bg-[var(--text-quaternary)]',
+};
+
+export function ProviderIconWithOverlay({
+  className,
+  indicator = 'none',
+  title,
+}: ProviderIconOverlayProps) {
+  if (indicator === 'none') {
+    return null;
+  }
+  const label = title ?? `Provider status: ${indicator}`;
+  const colorClass = incidentColorMap[indicator] ?? incidentColorMap.unknown;
+  return (
+    <span
+      className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-[var(--bg-base)] ${colorClass} ${className ?? ''}`}
+      role="status"
+      aria-label={label}
+      title={label}
+    />
+  );
 }

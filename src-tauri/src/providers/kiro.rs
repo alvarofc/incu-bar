@@ -2,11 +2,11 @@
 //!
 //! Uses the Kiro CLI status probe to read usage data.
 
+use super::{ProviderFetcher, ProviderIdentity, ProviderStatus, RateWindow, StatusIndicator, UsageSnapshot};
 use async_trait::async_trait;
 use chrono::Datelike;
 use regex::Regex;
 use tokio::io::AsyncReadExt;
-use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 
 const CLI_NAME: &str = "kiro-cli";
 const STATUS_FEED_URL: &str = "https://status.aws.amazon.com/rss/all.rss";
@@ -41,7 +41,9 @@ impl KiroProvider {
 
         let lowered = stripped.to_lowercase();
         if lowered.contains("could not retrieve usage information") {
-            return Err(KiroError::Parse("Kiro CLI could not retrieve usage information".to_string()));
+            return Err(KiroError::Parse(
+                "Kiro CLI could not retrieve usage information".to_string(),
+            ));
         }
         if is_not_logged_in(&lowered) {
             return Err(KiroError::NotLoggedIn);
@@ -61,7 +63,8 @@ impl KiroProvider {
 
         if !percent_matched && !credits_matched {
             return Err(KiroError::Parse(
-                "No recognizable usage patterns found. Kiro CLI output format may have changed.".to_string(),
+                "No recognizable usage patterns found. Kiro CLI output format may have changed."
+                    .to_string(),
             ));
         }
 
@@ -139,7 +142,7 @@ impl KiroProvider {
         Ok(result.stdout)
     }
 
-    async fn fetch_status(&self) -> Result<ProviderStatus, KiroError> {
+    async fn fetch_status_snapshot(&self) -> Result<ProviderStatus, KiroError> {
         let response = self
             .client
             .get(STATUS_FEED_URL)
@@ -171,19 +174,23 @@ impl ProviderFetcher for KiroProvider {
 
     async fn fetch(&self) -> Result<UsageSnapshot, anyhow::Error> {
         tracing::debug!("Fetching Kiro usage via CLI");
-        self.ensure_logged_in().await.map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        let output = self.run_usage_command().await.map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        let snapshot = self.parse_output(&output).map_err(|err| anyhow::anyhow!(err.to_string()))?;
-        if let Ok(status) = self.fetch_status().await {
-            if status.indicator != StatusIndicator::None {
-                tracing::warn!(
-                    "AWS Health incident detected for Kiro: {:?} {}",
-                    status.indicator,
-                    status.description.clone().unwrap_or_default()
-                );
-            }
-        }
+        self.ensure_logged_in()
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let output = self
+            .run_usage_command()
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let snapshot = self
+            .parse_output(&output)
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
         Ok(snapshot.to_usage_snapshot())
+    }
+
+    async fn fetch_status(&self) -> Result<ProviderStatus, anyhow::Error> {
+        self.fetch_status_snapshot()
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))
     }
 }
 
@@ -215,7 +222,9 @@ impl KiroUsageSnapshot {
                 let bonus_percent = ((used / total) * 100.0).clamp(0.0, 100.0);
                 let expires_at = self
                     .bonus_expiry_days
-                    .and_then(|days| chrono::Utc::now().checked_add_signed(chrono::Duration::days(days)))
+                    .and_then(|days| {
+                        chrono::Utc::now().checked_add_signed(chrono::Duration::days(days))
+                    })
                     .map(|value| value.to_rfc3339());
                 Some(RateWindow {
                     used_percent: bonus_percent,
@@ -272,23 +281,6 @@ enum KiroError {
     Status(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StatusIndicator {
-    None,
-    Minor,
-    Major,
-    Critical,
-    Maintenance,
-    Unknown,
-}
-
-#[derive(Debug, Clone)]
-struct ProviderStatus {
-    indicator: StatusIndicator,
-    description: Option<String>,
-    updated_at: Option<String>,
-}
-
 fn is_not_logged_in(lowered: &str) -> bool {
     lowered.contains("not logged in")
         || lowered.contains("login required")
@@ -299,7 +291,9 @@ fn is_not_logged_in(lowered: &str) -> bool {
 
 fn usage_output_complete(output: &str) -> bool {
     let lowered = strip_ansi(output).to_lowercase();
-    lowered.contains("covered in plan") || lowered.contains("resets on") || lowered.contains("bonus credits")
+    lowered.contains("covered in plan")
+        || lowered.contains("resets on")
+        || lowered.contains("bonus credits")
 }
 
 fn validate_whoami_output(stdout: &str, stderr: &str, status: i32) -> Result<(), KiroError> {
@@ -326,7 +320,9 @@ fn validate_whoami_output(stdout: &str, stderr: &str, status: i32) -> Result<(),
     }
 
     if combined.is_empty() {
-        return Err(KiroError::CliFailed("Kiro CLI whoami returned no output.".to_string()));
+        return Err(KiroError::CliFailed(
+            "Kiro CLI whoami returned no output.".to_string(),
+        ));
     }
 
     Ok(())
@@ -334,9 +330,9 @@ fn validate_whoami_output(stdout: &str, stderr: &str, status: i32) -> Result<(),
 
 fn parse_plan_name(text: &str) -> Option<String> {
     let regex = Regex::new(r"\|\s*(KIRO\s+\w+)").ok()?;
-    regex.captures(text).and_then(|cap| {
-        cap.get(1).map(|m| m.as_str().trim().to_string())
-    })
+    regex
+        .captures(text)
+        .and_then(|cap| cap.get(1).map(|m| m.as_str().trim().to_string()))
 }
 
 fn parse_reset_date(text: &str) -> Option<String> {
@@ -386,8 +382,14 @@ fn parse_credits(text: &str) -> (f64, f64, bool) {
     let regex = Regex::new(r"\((\d+\.?\d*)\s+of\s+(\d+)\s+covered").ok();
     if let Some(regex) = regex {
         if let Some(cap) = regex.captures(text) {
-            let used = cap.get(1).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(0.0);
-            let total = cap.get(2).and_then(|m| m.as_str().parse::<f64>().ok()).unwrap_or(50.0);
+            let used = cap
+                .get(1)
+                .and_then(|m| m.as_str().parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let total = cap
+                .get(2)
+                .and_then(|m| m.as_str().parse::<f64>().ok())
+                .unwrap_or(50.0);
             return (used, total, true);
         }
     }
@@ -430,23 +432,18 @@ fn strip_ansi(text: &str) -> String {
 }
 
 fn parse_aws_status_feed(feed: &str) -> Result<ProviderStatus, KiroError> {
-    let item_regex = Regex::new(r"(?s)<item>(.*?)</item>").map_err(|err| KiroError::Status(err.to_string()))?;
+    let item_regex =
+        Regex::new(r"(?s)<item>(.*?)</item>").map_err(|err| KiroError::Status(err.to_string()))?;
     let item = match item_regex.captures(feed).and_then(|cap| cap.get(1)) {
         Some(value) => value.as_str(),
         None => {
-            return Ok(ProviderStatus {
-                indicator: StatusIndicator::None,
-                description: None,
-                updated_at: None,
-            });
+            return Ok(ProviderStatus::none());
         }
     };
 
     let title = extract_tag_value(item, "title");
-    let description = extract_tag_value(item, "description")
-        .and_then(|value| html_summary(&value));
-    let pub_date = extract_tag_value(item, "pubDate")
-        .and_then(|value| parse_pub_date(&value));
+    let description = extract_tag_value(item, "description").and_then(|value| html_summary(&value));
+    let pub_date = extract_tag_value(item, "pubDate").and_then(|value| parse_pub_date(&value));
 
     let indicator = aws_indicator(title.as_deref().unwrap_or(""));
     Ok(ProviderStatus {
@@ -533,9 +530,17 @@ async fn run_command(
     command.stderr(std::process::Stdio::piped());
     command.env("TERM", "xterm-256color");
 
-    let mut child = command.spawn().map_err(|err| KiroError::CliFailed(err.to_string()))?;
-    let stdout = child.stdout.take().ok_or_else(|| KiroError::CliFailed("Missing stdout".to_string()))?;
-    let stderr = child.stderr.take().ok_or_else(|| KiroError::CliFailed("Missing stderr".to_string()))?;
+    let mut child = command
+        .spawn()
+        .map_err(|err| KiroError::CliFailed(err.to_string()))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| KiroError::CliFailed("Missing stdout".to_string()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| KiroError::CliFailed("Missing stderr".to_string()))?;
 
     let (stdout_sender, mut stdout_receiver) = tokio::sync::mpsc::unbounded_channel();
     let (stderr_sender, mut stderr_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -555,7 +560,9 @@ async fn run_command(
             return Err(KiroError::Timeout);
         }
 
-        let status = child.try_wait().map_err(|err| KiroError::CliFailed(err.to_string()))?;
+        let status = child
+            .try_wait()
+            .map_err(|err| KiroError::CliFailed(err.to_string()))?;
         if let Some(status) = status {
             let stdout_bytes = stdout_task.await.unwrap_or_default();
             let stderr_bytes = stderr_task.await.unwrap_or_default();
@@ -597,10 +604,7 @@ async fn run_command(
     }
 }
 
-async fn read_stream<S>(
-    mut stream: S,
-    sender: tokio::sync::mpsc::UnboundedSender<()>,
-) -> Vec<u8>
+async fn read_stream<S>(mut stream: S, sender: tokio::sync::mpsc::UnboundedSender<()>) -> Vec<u8>
 where
     S: tokio::io::AsyncRead + Unpin,
 {
@@ -632,7 +636,10 @@ fn which_cli() -> Option<String> {
     let candidates = [
         "/usr/local/bin/kiro-cli",
         "/opt/homebrew/bin/kiro-cli",
-        &format!("{}/.local/bin/kiro-cli", std::env::var("HOME").unwrap_or_default()),
+        &format!(
+            "{}/.local/bin/kiro-cli",
+            std::env::var("HOME").unwrap_or_default()
+        ),
     ];
     candidates
         .iter()
@@ -697,7 +704,8 @@ mod tests {
     #[test]
     fn parses_output_with_ansi_codes() {
         let provider = KiroProvider::new();
-        let output = "\u{001B}[32m| KIRO FREE                                          |\u{001B}[0m\n\
+        let output =
+            "\u{001B}[32m| KIRO FREE                                          |\u{001B}[0m\n\
             \u{001B}[38;5;11m████████████████████████████████████████████████████\u{001B}[0m 50%\n\
             (25.00 of 50 covered in plan), resets on 03/15";
 
@@ -733,7 +741,10 @@ mod tests {
         let usage = snapshot.to_usage_snapshot();
         assert_eq!(usage.primary.as_ref().unwrap().used_percent, 25.0);
         assert_eq!(usage.secondary.as_ref().unwrap().used_percent, 25.0);
-        assert_eq!(usage.identity.as_ref().and_then(|id| id.plan.as_deref()), Some("KIRO PRO"));
+        assert_eq!(
+            usage.identity.as_ref().and_then(|id| id.plan.as_deref()),
+            Some("KIRO PRO")
+        );
     }
 
     #[test]
@@ -764,7 +775,10 @@ mod tests {
 
         let status = parse_aws_status_feed(feed).expect("status");
         assert_eq!(status.indicator, StatusIndicator::Major);
-        assert_eq!(status.description.as_deref(), Some("We are investigating elevated errors."));
+        assert_eq!(
+            status.description.as_deref(),
+            Some("We are investigating elevated errors.")
+        );
         assert!(status.updated_at.is_some());
     }
 

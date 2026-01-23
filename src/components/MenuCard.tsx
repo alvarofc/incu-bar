@@ -2,7 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
-import { ProviderIcon } from './ProviderIcons';
+import { ProviderIcon, ProviderIconWithOverlay } from './ProviderIcons';
 import type { ProviderState } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { useUsageStore } from '../stores/usageStore';
@@ -21,7 +21,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
 
   const metadata = PROVIDERS[provider.id];
-  const { usage, isLoading, lastError } = provider;
+  const { usage, isLoading, lastError, status } = provider;
 
   const handleRefresh = useCallback(() => {
     useUsageStore.getState().refreshProvider(provider.id);
@@ -99,11 +99,14 @@ export function MenuCard({ provider }: MenuCardProps) {
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2.5">
-            <ProviderIcon 
-              providerId={provider.id} 
-              className="w-5 h-5 text-[var(--text-secondary)]" 
-              aria-hidden="true"
-            />
+            <span className="relative">
+              <ProviderIcon 
+                providerId={provider.id} 
+                className="w-5 h-5 text-[var(--text-secondary)]" 
+                aria-hidden="true"
+              />
+              <ProviderIconWithOverlay indicator={status?.indicator} />
+            </span>
             <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
               {metadata.name}
             </h2>
@@ -195,6 +198,22 @@ export function MenuCard({ provider }: MenuCardProps) {
               <p className="text-[11px] text-[var(--text-quaternary)] mt-1">
                 {paceText ? `Expected usage ${Math.round(paceDelta?.expectedUsedPercent ?? 0)}% by now.` : 'Need a weekly window to estimate pace.'}
               </p>
+            </div>
+          )}
+
+          {status && status.indicator !== 'none' && (
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-[var(--text-secondary)]">Status</span>
+                <span className="text-[12px] font-semibold uppercase text-[var(--text-primary)]">
+                  {status.indicator}
+                </span>
+              </div>
+              {status.description && (
+                <p className="text-[11px] text-[var(--text-quaternary)] mt-1">
+                  {status.description}
+                </p>
+              )}
             </div>
           )}
         </div>

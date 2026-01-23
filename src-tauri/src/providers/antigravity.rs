@@ -2,9 +2,16 @@
 //!
 //! Uses local Antigravity language server status probe to read usage data.
 
+use super::{
+    ProviderFetcher,
+    ProviderIdentity,
+    ProviderStatus,
+    RateWindow,
+    StatusIndicator,
+    UsageSnapshot,
+};
 use async_trait::async_trait;
 use regex::Regex;
-use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 
 const PROCESS_NAME: &str = "language_server_macos";
 const GET_USER_STATUS_PATH: &str = "/exa.language_server_pb.LanguageServerService/GetUserStatus";
@@ -60,14 +67,19 @@ impl AntigravityProvider {
         }
     }
 
-    fn build_usage_snapshot(&self, snapshot: AntigravityStatusSnapshot) -> Result<UsageSnapshot, AntigravityError> {
+    fn build_usage_snapshot(
+        &self,
+        snapshot: AntigravityStatusSnapshot,
+    ) -> Result<UsageSnapshot, AntigravityError> {
         let ordered = select_models(&snapshot.model_quotas);
         let primary = ordered.get(0).map(to_rate_window);
         let secondary = ordered.get(1).map(to_rate_window);
         let tertiary = ordered.get(2).map(to_rate_window);
 
         if primary.is_none() {
-            return Err(AntigravityError::Parse("No quota models available".to_string()));
+            return Err(AntigravityError::Parse(
+                "No quota models available".to_string(),
+            ));
         }
 
         Ok(UsageSnapshot {
@@ -127,8 +139,8 @@ impl AntigravityProvider {
             }
             saw_antigravity_process = true;
 
-            let csrf_token = extract_flag("--csrf_token", command)
-                .ok_or(AntigravityError::MissingCsrfToken)?;
+            let csrf_token =
+                extract_flag("--csrf_token", command).ok_or(AntigravityError::MissingCsrfToken)?;
             let extension_port = extract_flag("--extension_server_port", command)
                 .and_then(|raw| raw.parse::<i32>().ok());
 
@@ -264,9 +276,11 @@ impl AntigravityProvider {
         Ok(bytes.to_vec())
     }
 
-    fn parse_user_status_response(data: &[u8]) -> Result<AntigravityStatusSnapshot, AntigravityError> {
-        let response: UserStatusResponse = serde_json::from_slice(data)
-            .map_err(|err| AntigravityError::Parse(err.to_string()))?;
+    fn parse_user_status_response(
+        data: &[u8],
+    ) -> Result<AntigravityStatusSnapshot, AntigravityError> {
+        let response: UserStatusResponse =
+            serde_json::from_slice(data).map_err(|err| AntigravityError::Parse(err.to_string()))?;
         if let Some(invalid) = invalid_code(response.code.as_ref()) {
             return Err(AntigravityError::Api(invalid));
         }
@@ -296,8 +310,8 @@ impl AntigravityProvider {
     fn parse_command_model_response(
         data: &[u8],
     ) -> Result<AntigravityStatusSnapshot, AntigravityError> {
-        let response: CommandModelConfigResponse = serde_json::from_slice(data)
-            .map_err(|err| AntigravityError::Parse(err.to_string()))?;
+        let response: CommandModelConfigResponse =
+            serde_json::from_slice(data).map_err(|err| AntigravityError::Parse(err.to_string()))?;
         if let Some(invalid) = invalid_code(response.code.as_ref()) {
             return Err(AntigravityError::Api(invalid));
         }
@@ -328,6 +342,27 @@ impl ProviderFetcher for AntigravityProvider {
         tracing::debug!("Fetching Antigravity usage");
         let snapshot = self.fetch_snapshot().await?;
         Ok(self.build_usage_snapshot(snapshot)?)
+    }
+
+    async fn fetch_status(&self) -> Result<ProviderStatus, anyhow::Error> {
+        let response = self
+            .client
+            .get("https://www.google.com/appsstatus/json/en")
+            .header("Accept", "application/json")
+            .timeout(self.timeout)
+            .send()
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        let status = response.status();
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
+        if !status.is_success() {
+            return Err(anyhow::anyhow!(format!("HTTP {}", status)));
+        }
+        parse_google_workspace_status(&bytes, "npdyhgECDJ6tB66MxXyo")
+            .map_err(|err| anyhow::anyhow!(err.to_string()))
     }
 }
 
@@ -366,23 +401,6 @@ struct AntigravityModelQuota {
     reset_time: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum StatusIndicator {
-    None,
-    Minor,
-    Major,
-    Critical,
-    Maintenance,
-    Unknown,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct ProviderStatus {
-    indicator: StatusIndicator,
-    description: Option<String>,
-    updated_at: Option<String>,
-}
-
 #[derive(thiserror::Error, Debug)]
 enum AntigravityError {
     #[error("Antigravity language server not detected. Launch Antigravity and retry.")]
@@ -398,7 +416,6 @@ enum AntigravityError {
     #[error("Antigravity process error: {0}")]
     Process(String),
 }
-
 
 fn default_request_body() -> serde_json::Value {
     serde_json::json!({
@@ -431,7 +448,10 @@ fn unleash_request_body() -> serde_json::Value {
 
 fn select_models(models: &[AntigravityModelQuota]) -> Vec<AntigravityModelQuota> {
     let mut ordered = Vec::new();
-    if let Some(claude) = models.iter().find(|model| is_claude_without_thinking(&model.label)) {
+    if let Some(claude) = models
+        .iter()
+        .find(|model| is_claude_without_thinking(&model.label))
+    {
         ordered.push(claude.clone());
     }
     if let Some(pro) = models.iter().find(|model| is_gemini_pro_low(&model.label)) {
@@ -446,9 +466,11 @@ fn select_models(models: &[AntigravityModelQuota]) -> Vec<AntigravityModelQuota>
     }
     if ordered.is_empty() {
         let mut sorted = models.to_vec();
-        sorted.sort_by(|a, b| remaining_percent(a)
-            .partial_cmp(&remaining_percent(b))
-            .unwrap_or(std::cmp::Ordering::Equal));
+        sorted.sort_by(|a, b| {
+            remaining_percent(a)
+                .partial_cmp(&remaining_percent(b))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         ordered.extend(sorted);
     }
     ordered
@@ -501,10 +523,7 @@ fn parse_listening_ports(output: &str) -> Vec<i32> {
     let mut ports = std::collections::HashSet::new();
     if let Some(regex) = regex {
         for capture in regex.captures_iter(output) {
-            if let Some(port) = capture
-                .get(1)
-                .and_then(|m| m.as_str().parse::<i32>().ok())
-            {
+            if let Some(port) = capture.get(1).and_then(|m| m.as_str().parse::<i32>().ok()) {
                 ports.insert(port);
             }
         }
@@ -528,8 +547,8 @@ fn parse_google_workspace_status(
     data: &[u8],
     product_id: &str,
 ) -> Result<ProviderStatus, AntigravityError> {
-    let mut incident_list: Vec<GoogleWorkspaceIncident> = serde_json::from_slice(data)
-        .map_err(|err| AntigravityError::Parse(err.to_string()))?;
+    let mut incident_list: Vec<GoogleWorkspaceIncident> =
+        serde_json::from_slice(data).map_err(|err| AntigravityError::Parse(err.to_string()))?;
 
     incident_list.retain(|incident| incident.is_active());
     let relevant: Vec<GoogleWorkspaceIncident> = incident_list
@@ -538,11 +557,7 @@ fn parse_google_workspace_status(
         .collect();
 
     if relevant.is_empty() {
-        return Ok(ProviderStatus {
-            indicator: StatusIndicator::None,
-            description: None,
-            updated_at: None,
-        });
+        return Ok(ProviderStatus::none());
     }
 
     let mut best = None;
@@ -610,9 +625,7 @@ fn workspace_indicator(
         Some(value) if value == "SERVICE_INFORMATION" => StatusIndicator::Minor,
         Some(value) if value == "SERVICE_DISRUPTION" => StatusIndicator::Major,
         Some(value) if value == "SERVICE_OUTAGE" => StatusIndicator::Critical,
-        Some(value)
-            if value == "SERVICE_MAINTENANCE" || value == "SCHEDULED_MAINTENANCE" =>
-        {
+        Some(value) if value == "SERVICE_MAINTENANCE" || value == "SCHEDULED_MAINTENANCE" => {
             StatusIndicator::Maintenance
         }
         _ => match severity.map(|value| value.to_lowercase()) {
@@ -876,8 +889,8 @@ mod tests {
         }
         "#;
 
-        let snapshot = AntigravityProvider::parse_user_status_response(json.as_bytes())
-            .expect("snapshot");
+        let snapshot =
+            AntigravityProvider::parse_user_status_response(json.as_bytes()).expect("snapshot");
         assert_eq!(snapshot.account_email.as_deref(), Some("test@example.com"));
         assert_eq!(snapshot.account_plan.as_deref(), Some("Pro"));
         assert_eq!(snapshot.model_quotas.len(), 3);
@@ -911,8 +924,8 @@ mod tests {
         }
         "#;
 
-        let snapshot = AntigravityProvider::parse_command_model_response(json.as_bytes())
-            .expect("snapshot");
+        let snapshot =
+            AntigravityProvider::parse_command_model_response(json.as_bytes()).expect("snapshot");
         assert_eq!(snapshot.model_quotas.len(), 1);
         assert_eq!(snapshot.model_quotas[0].label, "Gemini Flash");
     }
@@ -959,8 +972,7 @@ mod tests {
         ]
         "#;
 
-        let status = parse_google_workspace_status(data, "npdyhgECDJ6tB66MxXyo")
-            .expect("status");
+        let status = parse_google_workspace_status(data, "npdyhgECDJ6tB66MxXyo").expect("status");
         assert_eq!(status.indicator, StatusIndicator::Critical);
         assert_eq!(status.description.as_deref(), Some("Gemini API error."));
     }

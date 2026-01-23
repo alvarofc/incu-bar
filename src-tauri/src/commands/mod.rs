@@ -6,7 +6,7 @@ use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::browser_cookies::BrowserCookieSource;
 use crate::login::{self, AuthStatus, LoginResult};
-use crate::providers::{ProviderId, ProviderRegistry, UsageSnapshot};
+use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
 use crate::tray;
 
 struct LoadingGuard {
@@ -81,6 +81,7 @@ pub async fn refresh_provider(
 
     let mut loading_guard = LoadingGuard::new(&app);
 
+    let status = registry.fetch_status(&provider_id).await.ok();
     let usage = registry
         .fetch_usage(&provider_id)
         .await
@@ -94,6 +95,14 @@ pub async fn refresh_provider(
         serde_json::json!({
             "providerId": provider_id,
             "usage": usage,
+        }),
+    );
+
+    let _ = app.emit(
+        "status-updated",
+        serde_json::json!({
+            "providerId": provider_id,
+            "status": status,
         }),
     );
 
@@ -115,6 +124,7 @@ pub async fn refresh_all_providers(
     let mut loading_guard = LoadingGuard::new(&app);
 
     for provider_id in providers {
+        let status = registry.fetch_status(&provider_id).await.ok();
         match registry.fetch_usage(&provider_id).await {
             Ok(usage) => {
                 let _ = app.emit(
@@ -122,6 +132,13 @@ pub async fn refresh_all_providers(
                     serde_json::json!({
                         "providerId": provider_id,
                         "usage": usage,
+                    }),
+                );
+                let _ = app.emit(
+                    "status-updated",
+                    serde_json::json!({
+                        "providerId": provider_id,
+                        "status": status,
                     }),
                 );
                 if let Err(e) = tray::handle_usage_update(&app, provider_id, usage.clone()) {
@@ -136,6 +153,13 @@ pub async fn refresh_all_providers(
                     serde_json::json!({
                         "providerId": provider_id,
                         "usage": usage,
+                    }),
+                );
+                let _ = app.emit(
+                    "status-updated",
+                    serde_json::json!({
+                        "providerId": provider_id,
+                        "status": status,
                     }),
                 );
                 if let Err(e) = tray::handle_usage_update(&app, provider_id, usage) {
@@ -165,6 +189,24 @@ pub async fn get_all_usage(
     registry: State<'_, ProviderRegistry>,
 ) -> Result<std::collections::HashMap<ProviderId, UsageSnapshot>, String> {
     Ok(registry.get_all_cached_usage())
+}
+
+/// Poll provider status/incident data
+#[command]
+pub async fn poll_provider_statuses(
+    registry: State<'_, ProviderRegistry>,
+) -> Result<std::collections::HashMap<ProviderId, Option<ProviderStatus>>, String> {
+    let providers = ProviderId::all();
+    let mut statuses = std::collections::HashMap::new();
+    for provider_id in providers {
+        let status = registry.fetch_status(&provider_id).await.ok();
+        if let Some(value) = status {
+            statuses.insert(provider_id, Some(value));
+        } else {
+            statuses.insert(provider_id, None);
+        }
+    }
+    Ok(statuses)
 }
 
 /// Enable or disable a provider

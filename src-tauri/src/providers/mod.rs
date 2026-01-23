@@ -177,6 +177,41 @@ pub struct UsageSnapshot {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatusIndicator {
+    None,
+    Minor,
+    Major,
+    Critical,
+    Maintenance,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderStatus {
+    pub indicator: StatusIndicator,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+impl ProviderStatus {
+    pub fn none() -> Self {
+        Self {
+            indicator: StatusIndicator::None,
+            description: None,
+            updated_at: None,
+        }
+    }
+
+    pub fn is_incident(&self) -> bool {
+        self.indicator != StatusIndicator::None
+    }
+}
+
 #[derive(Debug, Clone)]
 struct RefreshSchedule {
     interval: Duration,
@@ -452,6 +487,16 @@ impl ProviderRegistry {
         }
     }
 
+    pub async fn fetch_status(&self, id: &ProviderId) -> Result<ProviderStatus, anyhow::Error> {
+        let providers = self.providers.read().await;
+        if let Some(state) = providers.get(id) {
+            let status = state.fetcher.fetch_status().await?;
+            Ok(status)
+        } else {
+            Err(anyhow::anyhow!("Provider {:?} not found", id))
+        }
+    }
+
     pub fn get_cached_usage(&self, _id: &ProviderId) -> Option<UsageSnapshot> {
         // For sync access, we'd need a different approach
         // For now, return None and let the frontend trigger a refresh
@@ -478,7 +523,7 @@ impl ProviderRegistry {
 }
 
 /// Start the background refresh loop
-pub async fn start_refresh_loop(app: AppHandle) {
+    pub async fn start_refresh_loop(app: AppHandle) {
     let interval = std::time::Duration::from_secs(300); // 5 minutes
     let tick_interval = std::time::Duration::from_secs(5);
     let mut schedule = RefreshSchedule::new(interval);
@@ -495,6 +540,15 @@ pub async fn start_refresh_loop(app: AppHandle) {
             let providers = registry.get_enabled_providers();
 
             for provider_id in providers {
+                if let Ok(status) = registry.fetch_status(&provider_id).await {
+                    let _ = app.emit(
+                        "status-updated",
+                        serde_json::json!({
+                            "providerId": provider_id,
+                            "status": status,
+                        }),
+                    );
+                }
                 match registry.fetch_usage(&provider_id).await {
                     Ok(usage) => {
                         let _ = app.emit(
