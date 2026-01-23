@@ -93,34 +93,68 @@ pub async fn refresh_provider(
     emit_refreshing(&app, provider_id, true);
 
     let status = registry.fetch_status(&provider_id).await.ok();
-    let usage = registry
-        .fetch_usage(&provider_id)
-        .await
-        .map_err(|e| e.to_string())?;
+    let usage_result = registry.fetch_usage(&provider_id).await;
 
     loading_guard.finish();
     emit_refreshing(&app, provider_id, false);
 
-    // Emit event to frontend
-    let _ = app.emit(
-        "usage-updated",
-        serde_json::json!({
-            "providerId": provider_id,
-            "usage": usage,
-        }),
-    );
+    match usage_result {
+        Ok(usage) => {
+            let _ = app.emit(
+                "usage-updated",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "usage": usage,
+                }),
+            );
 
-    let _ = app.emit(
-        "status-updated",
-        serde_json::json!({
-            "providerId": provider_id,
-            "status": status,
-        }),
-    );
+            let _ = app.emit(
+                "status-updated",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "status": status,
+                }),
+            );
 
-    tray::handle_usage_update(&app, provider_id, usage.clone()).map_err(|e| e.to_string())?;
+            tray::handle_usage_update(&app, provider_id, usage.clone()).map_err(|e| e.to_string())?;
 
-    Ok(usage)
+            Ok(usage)
+        }
+        Err(e) => {
+            let message = e.to_string();
+            let usage = UsageSnapshot::error(message.clone());
+
+            let _ = app.emit(
+                "refresh-failed",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "usage": usage.clone(),
+                }),
+            );
+
+            let _ = app.emit(
+                "status-updated",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "status": status,
+                }),
+            );
+
+            let _ = app.emit(
+                "usage-updated",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "usage": usage.clone(),
+                }),
+            );
+
+            if let Err(e) = tray::handle_usage_update(&app, provider_id, usage) {
+                tracing::warn!("Failed to update tray icon: {}", e);
+            }
+
+            Err(message)
+        }
+    }
 }
 
 /// Refresh all enabled providers
@@ -168,7 +202,14 @@ pub async fn refresh_all_providers(
                     "usage-updated",
                     serde_json::json!({
                         "providerId": provider_id,
-                        "usage": usage,
+                        "usage": usage.clone(),
+                    }),
+                );
+                let _ = app.emit(
+                    "refresh-failed",
+                    serde_json::json!({
+                        "providerId": provider_id,
+                        "usage": usage.clone(),
                     }),
                 );
                 let _ = app.emit(

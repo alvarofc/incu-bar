@@ -1,3 +1,4 @@
+import { formatDistanceToNow } from 'date-fns';
 import type { ProviderId, UsageSnapshot } from './types';
 
 export const SESSION_QUOTA_THRESHOLDS = [80, 90];
@@ -33,6 +34,33 @@ export type CreditsNotificationInput = {
   usage: UsageSnapshot;
   showNotifications: boolean;
   stateMap: Map<ProviderId, CreditsNotificationState>;
+  notify: (title: string, body: string) => void;
+};
+
+export type RefreshFailureNotificationState = {
+  lastError?: string;
+};
+
+export type RefreshFailureNotificationInput = {
+  providerId: ProviderId;
+  providerName: string;
+  error?: string;
+  showNotifications: boolean;
+  stateMap: Map<ProviderId, RefreshFailureNotificationState>;
+  notify: (title: string, body: string) => void;
+};
+
+export type StaleUsageNotificationState = {
+  notified: boolean;
+};
+
+export type StaleUsageNotificationInput = {
+  providerId: ProviderId;
+  providerName: string;
+  updatedAt?: string;
+  showNotifications: boolean;
+  staleAfterMs: number;
+  stateMap: Map<ProviderId, StaleUsageNotificationState>;
   notify: (title: string, body: string) => void;
 };
 
@@ -137,4 +165,57 @@ export const evaluateCreditsNotifications = ({
   previous.lastPercent = currentPercent;
   previous.lastTotal = total;
   stateMap.set(providerId, previous);
+};
+
+export const evaluateRefreshFailureNotifications = ({
+  providerId,
+  providerName,
+  error,
+  showNotifications,
+  stateMap,
+  notify,
+}: RefreshFailureNotificationInput) => {
+  if (!showNotifications) return;
+  if (!error) {
+    if (stateMap.has(providerId)) {
+      stateMap.delete(providerId);
+    }
+    return;
+  }
+
+  const previous = stateMap.get(providerId);
+  if (previous?.lastError === error) return;
+
+  notify(`${providerName} refresh failed`, error);
+  stateMap.set(providerId, { lastError: error });
+};
+
+export const evaluateStaleUsageNotifications = ({
+  providerId,
+  providerName,
+  updatedAt,
+  showNotifications,
+  staleAfterMs,
+  stateMap,
+  notify,
+}: StaleUsageNotificationInput) => {
+  if (!showNotifications) return;
+  if (!updatedAt || staleAfterMs <= 0) return;
+  const updatedAtMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedAtMs)) return;
+
+  const now = Date.now();
+  const isStale = now - updatedAtMs > staleAfterMs;
+  const previous = stateMap.get(providerId) ?? { notified: false };
+
+  if (isStale && !previous.notified) {
+    const relativeTime = formatDistanceToNow(new Date(updatedAtMs), { addSuffix: true });
+    notify(`${providerName} data is stale`, `Last updated ${relativeTime}.`);
+    stateMap.set(providerId, { notified: true });
+    return;
+  }
+
+  if (!isStale && previous.notified) {
+    stateMap.set(providerId, { notified: false });
+  }
 };

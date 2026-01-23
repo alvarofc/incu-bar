@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node FEATURE_PARITY.test.cjs && node cookieSources.test.cjs && node providerSettingsPane.test.cjs && node menuBarHighestUsage.test.cjs && node usageBarDisplay.test.cjs && node resetTimeDisplay.test.cjs && node optionalCreditsExtraUsage.test.cjs && node usageBreakdownView.test.cjs && node launchAtLogin.test.cjs && node crashRecovery.test.cjs && node trayIconStates.test.cjs && node statusPollingBadges.test.cjs && node manualRefreshHotkey.test.cjs && node sessionQuotaNotifications.test.cjs && node lowCreditsNotifications.test.cjs",
+    "test": "node FEATURE_PARITY.test.cjs && node cookieSources.test.cjs && node providerSettingsPane.test.cjs && node menuBarHighestUsage.test.cjs && node usageBarDisplay.test.cjs && node resetTimeDisplay.test.cjs && node optionalCreditsExtraUsage.test.cjs && node usageBreakdownView.test.cjs && node launchAtLogin.test.cjs && node crashRecovery.test.cjs && node trayIconStates.test.cjs && node statusPollingBadges.test.cjs && node manualRefreshHotkey.test.cjs && node sessionQuotaNotifications.test.cjs && node lowCreditsNotifications.test.cjs && node refreshFailureNotifications.test.cjs && node staleUsageNotifications.test.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
