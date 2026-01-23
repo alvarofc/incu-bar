@@ -69,12 +69,19 @@ export interface UsageSnapshot {
   error?: string;             // Error message if fetch failed
 }
 
+export interface UsageHistoryPoint {
+  timestamp: string;
+  cost?: number;
+  credits?: number;
+}
+
 // Provider state in the store
 export interface ProviderState {
   id: ProviderId;
   name: string;
   enabled: boolean;
   usage?: UsageSnapshot;
+  usageHistory?: UsageHistoryPoint[];
   status?: ProviderIncident;
   isLoading: boolean;
   lastError?: string;
@@ -96,7 +103,7 @@ export interface ProviderMetadata {
   statusPageUrl?: string;
 }
 
-export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'brave' | 'opera';
+export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'brave' | 'opera' | 'manual';
 
 export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace' | 'highest';
 

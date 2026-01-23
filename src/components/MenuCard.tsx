@@ -22,6 +22,7 @@ export function MenuCard({ provider }: MenuCardProps) {
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError, status } = provider;
+  const usageHistory = provider.usageHistory ?? [];
 
   const handleRefresh = useCallback(() => {
     useUsageStore.getState().refreshProvider(provider.id);
@@ -87,6 +88,59 @@ export function MenuCard({ provider }: MenuCardProps) {
   }, [highestWindow, menuBarDisplayMode, sessionLabel, weeklyLabel]);
 
   const showSecondary = menuBarDisplayMode === 'session' && !!usage?.secondary;
+  const usageBreakdown = useMemo(() => {
+    if (!usage) return [];
+    return [
+      usage.primary
+        ? {
+            label: usage.primary.label || sessionLabel,
+            percent: usage.primary.usedPercent,
+            color: 'var(--accent-primary)',
+          }
+        : null,
+      usage.secondary
+        ? {
+            label: usage.secondary.label || weeklyLabel,
+            percent: usage.secondary.usedPercent,
+            color: 'var(--accent-warning)',
+          }
+        : null,
+      usage.tertiary
+        ? {
+            label: usage.tertiary.label || extraLabel,
+            percent: usage.tertiary.usedPercent,
+            color: 'var(--accent-danger)',
+          }
+        : null,
+    ].filter((item): item is { label: string; percent: number; color: string } => !!item);
+  }, [extraLabel, sessionLabel, usage, weeklyLabel]);
+
+  const costHistory = useMemo(
+    () => usageHistory.map((point) => point.cost).filter((value): value is number => value !== undefined),
+    [usageHistory]
+  );
+
+  const creditsHistory = useMemo(
+    () => usageHistory.map((point) => point.credits).filter((value): value is number => value !== undefined),
+    [usageHistory]
+  );
+
+  const latestCost = costHistory[costHistory.length - 1];
+  const latestCredits = creditsHistory[creditsHistory.length - 1];
+
+  const sparklinePoints = (values: number[], width = 120, height = 32) => {
+    if (values.length < 2) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = Math.max(1e-6, max - min);
+    return values
+      .map((value, index) => {
+        const x = (index / (values.length - 1)) * width;
+        const y = height - ((value - min) / range) * height;
+        return `${x.toFixed(2)},${y.toFixed(2)}`;
+      })
+      .join(' ');
+  };
 
   return (
     <div 
@@ -219,6 +273,36 @@ export function MenuCard({ provider }: MenuCardProps) {
         </div>
       )}
 
+      {usage && usageBreakdown.length > 0 && (
+        <div className="mt-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-medium text-[var(--text-secondary)]">Usage Breakdown</span>
+            <span className="text-[11px] text-[var(--text-quaternary)]">Current windows</span>
+          </div>
+          <div className="mt-3 flex items-end gap-2 h-16">
+            {usageBreakdown.map((item) => (
+              <div key={item.label} className="flex-1 flex flex-col items-center gap-1">
+                <div className="flex-1 w-full flex items-end">
+                  <div
+                    className="w-full rounded-sm"
+                    style={{
+                      height: `${Math.max(6, Math.min(item.percent, 100))}%`,
+                      background: item.color,
+                    }}
+                  />
+                </div>
+                <span className="text-[10px] text-[var(--text-quaternary)] truncate w-full text-center">
+                  {item.label}
+                </span>
+                <span className="text-[11px] font-medium text-[var(--text-secondary)] tabular-nums">
+                  {Math.round(item.percent)}%
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Credits */}
       {showCredits && usage?.credits && (
         <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
@@ -256,6 +340,70 @@ export function MenuCard({ provider }: MenuCardProps) {
               {usage.cost.currency}{usage.cost.monthAmount.toFixed(2)}
             </span>
           </div>
+        </div>
+      )}
+
+      {(showCost || showCredits) && (costHistory.length > 0 || creditsHistory.length > 0) && (
+        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)] space-y-3">
+          {showCost && usage?.cost && costHistory.length > 0 && (
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-[var(--text-secondary)]">Cost History</span>
+                <span className="text-[12px] text-[var(--text-primary)] tabular-nums">
+                  {latestCost !== undefined ? `${usage.cost.currency}${latestCost.toFixed(2)}` : '—'}
+                </span>
+              </div>
+              <div className="mt-2 h-8">
+                {sparklinePoints(costHistory) ? (
+                  <svg viewBox="0 0 120 32" className="w-full h-8" aria-hidden="true">
+                    <polyline
+                      points={sparklinePoints(costHistory) ?? ''}
+                      fill="none"
+                      stroke="var(--accent-primary)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  <div className="h-8 flex items-center text-[11px] text-[var(--text-quaternary)]">
+                    Not enough data yet
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {showCredits && usage?.credits && creditsHistory.length > 0 && (
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-[var(--text-secondary)]">Credits History</span>
+                <span className="text-[12px] text-[var(--text-primary)] tabular-nums">
+                  {latestCredits !== undefined ? latestCredits.toLocaleString() : '—'}
+                </span>
+              </div>
+              <div className="mt-2 h-8">
+                {sparklinePoints(creditsHistory) ? (
+                  <svg viewBox="0 0 120 32" className="w-full h-8" aria-hidden="true">
+                    <polyline
+                      points={sparklinePoints(creditsHistory) ?? ''}
+                      fill="none"
+                      stroke="var(--accent-success)"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                ) : (
+                  <div className="h-8 flex items-center text-[11px] text-[var(--text-quaternary)]">
+                    Not enough data yet
+                  </div>
+                )}
+              </div>
+              <p className="mt-1 text-[10px] text-[var(--text-quaternary)]">
+                Remaining {usage.credits.unit}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

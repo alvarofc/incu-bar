@@ -10,6 +10,8 @@ import type {
 import { PROVIDERS, DEFAULT_ENABLED_PROVIDERS } from '../lib/providers';
 import { useSettingsStore } from './settingsStore';
 
+const MAX_HISTORY_POINTS = 30;
+
 interface UsageStore {
   // State
   providers: Record<ProviderId, ProviderState>;
@@ -36,6 +38,7 @@ const createInitialProviderState = (id: ProviderId, enabled: boolean): ProviderS
   name: PROVIDERS[id].name,
   enabled,
   isLoading: false,
+  usageHistory: [],
 });
 
 const initialProviders: Record<ProviderId, ProviderState> = Object.fromEntries(
@@ -64,17 +67,33 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
   setActiveProvider: (id) => set({ activeProvider: id }),
 
   setProviderUsage: (id, usage) =>
-    set((state) => ({
-      providers: {
-        ...state.providers,
-        [id]: {
-          ...state.providers[id],
-          usage,
-          isLoading: false,
-          lastError: usage.error,
+    set((state) => {
+      const previous = state.providers[id];
+      const history = previous.usageHistory ?? [];
+      const nextPoint = {
+        timestamp: usage.updatedAt,
+        cost: usage.cost?.todayAmount ?? usage.cost?.monthAmount,
+        credits: usage.credits?.remaining,
+      };
+      const lastPoint = history[history.length - 1];
+      const shouldAppend = !lastPoint || lastPoint.timestamp !== nextPoint.timestamp;
+      const nextHistory = shouldAppend
+        ? [...history, nextPoint].slice(-MAX_HISTORY_POINTS)
+        : history;
+
+      return {
+        providers: {
+          ...state.providers,
+          [id]: {
+            ...previous,
+            usage,
+            usageHistory: nextHistory,
+            isLoading: false,
+            lastError: usage.error,
+          },
         },
-      },
-    })),
+      };
+    }),
 
   setProviderStatus: (id, status) =>
     set((state) => ({
