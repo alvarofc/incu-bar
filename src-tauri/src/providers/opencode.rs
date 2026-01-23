@@ -888,6 +888,13 @@ mod tests {
     }
 
     #[test]
+    fn cookie_header_has_auth_detects_matching_cookies() {
+        assert!(cookie_header_has_auth("auth=token; Path=/"));
+        assert!(cookie_header_has_auth("__Host-auth=token; Secure"));
+        assert!(!cookie_header_has_auth("foo=bar; Path=/"));
+    }
+
+    #[test]
     fn parses_subscription_from_json_with_reset_at() {
         let provider = OpencodeProvider::new();
         let now = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();

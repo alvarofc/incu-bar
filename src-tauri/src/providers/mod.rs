@@ -16,7 +16,7 @@ mod kiro;
 mod synthetic;
 mod gemini;
 mod jetbrains;
-mod opencode;
+pub(crate) mod opencode;
 mod antigravity;
 
 pub use traits::*;
