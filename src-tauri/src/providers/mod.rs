@@ -22,6 +22,7 @@ mod antigravity;
 pub use traits::*;
 
 use std::collections::HashMap;
+use std::time::{Duration, SystemTime};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -174,6 +175,33 @@ pub struct UsageSnapshot {
     pub updated_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct RefreshSchedule {
+    interval: Duration,
+    next_refresh_at: SystemTime,
+}
+
+impl RefreshSchedule {
+    fn new(interval: Duration) -> Self {
+        Self::new_at(SystemTime::now(), interval)
+    }
+
+    fn new_at(now: SystemTime, interval: Duration) -> Self {
+        Self {
+            interval,
+            next_refresh_at: now.checked_add(interval).unwrap_or(now),
+        }
+    }
+
+    fn is_due(&self, now: SystemTime) -> bool {
+        now >= self.next_refresh_at
+    }
+
+    fn mark_refreshed(&mut self, now: SystemTime) {
+        self.next_refresh_at = now.checked_add(self.interval).unwrap_or(now);
+    }
 }
 
 impl UsageSnapshot {
@@ -391,9 +419,16 @@ impl ProviderRegistry {
 /// Start the background refresh loop
 pub async fn start_refresh_loop(app: AppHandle) {
     let interval = std::time::Duration::from_secs(300); // 5 minutes
+    let tick_interval = std::time::Duration::from_secs(5);
+    let mut schedule = RefreshSchedule::new(interval);
 
     loop {
-        tokio::time::sleep(interval).await;
+        tokio::time::sleep(tick_interval).await;
+        let now = SystemTime::now();
+
+        if !schedule.is_due(now) {
+            continue;
+        }
         
         if let Some(registry) = app.try_state::<ProviderRegistry>() {
             let providers = registry.get_enabled_providers();
@@ -412,5 +447,42 @@ pub async fn start_refresh_loop(app: AppHandle) {
                 }
             }
         }
+
+        schedule.mark_refreshed(SystemTime::now());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RefreshSchedule;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn refresh_schedule_waits_until_due() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let mut schedule = RefreshSchedule::new_at(start, Duration::from_secs(300));
+
+        let before_due = start + Duration::from_secs(299);
+        assert!(!schedule.is_due(before_due));
+
+        let due = start + Duration::from_secs(300);
+        assert!(schedule.is_due(due));
+
+        schedule.mark_refreshed(due);
+        let after_refresh = due + Duration::from_secs(1);
+        assert!(!schedule.is_due(after_refresh));
+    }
+
+    #[test]
+    fn refresh_schedule_handles_sleep_gaps() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let mut schedule = RefreshSchedule::new_at(start, Duration::from_secs(300));
+
+        let wake_time = start + Duration::from_secs(3_600);
+        assert!(schedule.is_due(wake_time));
+
+        schedule.mark_refreshed(wake_time);
+        let next_due = wake_time + Duration::from_secs(299);
+        assert!(!schedule.is_due(next_due));
     }
 }
