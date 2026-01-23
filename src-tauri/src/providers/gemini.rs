@@ -727,13 +727,13 @@ mod tests {
         fs::create_dir_all(&bin_dir).expect("bin dir");
 
         let gemini_path = bin_dir.join("gemini");
-        let script = r"#!/bin/sh
-mkdir -p \"$HOME/.gemini\"
-cat > \"$HOME/.gemini/oauth_creds.json\" <<'EOF'
-{\"access_token\":\"cli-token\",\"refresh_token\":\"refresh\",\"expiry_date\":1234567890}
+        let script = r#"#!/bin/sh
+mkdir -p "$HOME/.gemini"
+cat > "$HOME/.gemini/oauth_creds.json" <<'EOF'
+{"access_token":"cli-token","refresh_token":"refresh","expiry_date":1234567890}
 EOF
 exit 0
-";
+"#;
         fs::write(&gemini_path, script).expect("write script");
         let mut perms = fs::metadata(&gemini_path).expect("metadata").permissions();
         perms.set_mode(0o755);
@@ -742,7 +742,7 @@ exit 0
         let previous_home = std::env::var("HOME").ok();
         let previous_path = std::env::var("PATH").ok();
         std::env::set_var("HOME", temp_dir.path());
-        let new_path = match previous_path {
+        let new_path = match previous_path.as_ref() {
             Some(path) => format!("{}:{}", bin_dir.display(), path),
             None => bin_dir.display().to_string(),
         };

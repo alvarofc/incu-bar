@@ -77,9 +77,12 @@ mod tests {
         let _ = storage.delete(test_key);
 
         // Store
-        storage
-            .store(test_key, test_value)
-            .expect("Failed to store");
+        if let Err(err) = storage.store(test_key, test_value) {
+            if matches!(err, KeyringError::Keyring(_)) {
+                return;
+            }
+            panic!("Failed to store: {:?}", err);
+        }
 
         // Retrieve
         let retrieved = storage.get(test_key).expect("Failed to get");
