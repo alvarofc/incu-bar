@@ -27,6 +27,7 @@ const requiredMarkers = [
   '15m',
   'Settings',
   'Not connected',
+  'On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.',
 ];
 
 requiredMarkers.forEach((marker) => {

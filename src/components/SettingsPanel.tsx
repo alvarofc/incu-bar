@@ -592,6 +592,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const selectedCookieSource = selectedUsesCookies
     ? cookieSources[selectedProviderId] ?? useSettingsStore.getState().getCookieSource(selectedProviderId)
     : null;
+  const keychainPromptSources: CookieSource[] = ['chrome', 'arc', 'edge', 'brave', 'opera'];
+  const showKeychainGuidance = selectedCookieSource
+    ? keychainPromptSources.includes(selectedCookieSource)
+    : false;
 
   const getAuthMethodLabel = (method: string) => {
     switch (method) {
@@ -909,6 +913,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                     >
                       {manualCookiePanels[selectedProviderId] ? 'Hide manual' : 'Paste cookies'}
                     </button>
+                    {showKeychainGuidance && (
+                      <p className="text-[11px] text-[var(--text-quaternary)]">
+                        On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
