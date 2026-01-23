@@ -7,8 +7,8 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
 import type { ProviderId, ProviderIncident, RefreshingEvent, UsageUpdateEvent } from './lib/types';
-import type { SessionNotificationState } from './lib/notifications';
-import { evaluateSessionNotifications } from './lib/notifications';
+import type { CreditsNotificationState, SessionNotificationState } from './lib/notifications';
+import { evaluateCreditsNotifications, evaluateSessionNotifications } from './lib/notifications';
 import { PROVIDERS } from './lib/providers';
 import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
@@ -26,6 +26,7 @@ function App() {
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const initializedRef = useRef(false);
   const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
+  const creditsNotificationStateRef = useRef(new Map<ProviderId, CreditsNotificationState>());
 
   // Initialize enabled providers from settings (only once on mount)
   useEffect(() => {
@@ -58,6 +59,14 @@ function App() {
         usage,
         showNotifications,
         stateMap: notificationStateRef.current,
+        notify: (title, body) => void sendNotification({ title, body }),
+      });
+      evaluateCreditsNotifications({
+        providerId,
+        providerName: metadata.name,
+        usage,
+        showNotifications,
+        stateMap: creditsNotificationStateRef.current,
         notify: (title, body) => void sendNotification({ title, body }),
       });
     });
