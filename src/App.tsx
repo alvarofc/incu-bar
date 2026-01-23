@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { sendNotification } from '@tauri-apps/plugin-notification';
 import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
 import type { ProviderId, ProviderIncident, RefreshingEvent, UsageUpdateEvent } from './lib/types';
+import type { SessionNotificationState } from './lib/notifications';
+import { evaluateSessionNotifications } from './lib/notifications';
+import { PROVIDERS } from './lib/providers';
 import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
 
@@ -18,8 +22,10 @@ function App() {
   const initializeProviders = useUsageStore((s) => s.initializeProviders);
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
+  const showNotifications = useSettingsStore((s) => s.showNotifications);
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const initializedRef = useRef(false);
+  const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
 
   // Initialize enabled providers from settings (only once on mount)
   useEffect(() => {
@@ -42,13 +48,24 @@ function App() {
   // Listen for usage updates from Rust backend
   useEffect(() => {
     const unlisten = listen<UsageUpdateEvent>('usage-updated', (event) => {
-      setProviderUsage(event.payload.providerId, event.payload.usage);
+      const { providerId, usage } = event.payload;
+      setProviderUsage(providerId, usage);
+      const metadata = PROVIDERS[providerId];
+      evaluateSessionNotifications({
+        providerId,
+        providerName: metadata.name,
+        sessionLabel: metadata.sessionLabel,
+        usage,
+        showNotifications,
+        stateMap: notificationStateRef.current,
+        notify: (title, body) => void sendNotification({ title, body }),
+      });
     });
 
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [setProviderUsage]);
+  }, [setProviderUsage, showNotifications]);
 
   useEffect(() => {
     const unlistenRefresh = listen('refresh-requested', () => {
