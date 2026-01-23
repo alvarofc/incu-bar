@@ -100,30 +100,30 @@ tasks:
   - title: add "show highest usage" display mode with correct aggregation
     source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/stores/settingsStore.ts, src/components/MenuCard.tsx
-    completed: false
+    completed: true
   - title: implement usage bars as "used vs remaining" toggle
     source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/components/ProgressBar.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: implement reset time display toggle (absolute vs relative)
     source: ../IncuBar/Sources/CodexBar/Date+RelativeDescription.swift,
       ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/components/ResetCountdown.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: implement "show optional credits and extra usage" toggle
     source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/components/MenuCard.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: implement "show all token accounts in menu" toggle and UI
     source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       ../IncuBar/Sources/CodexBar/UsageStore+TokenAccounts.swift,
       src/components/MenuCard.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: add launch-at-login support via tauri plugin and wire setting toggle
     source: ../IncuBar/Sources/CodexBar/LaunchAtLoginManager.swift,
       src-tauri/src/lib.rs, src-tauri/src/commands/mod.rs,
       src/components/SettingsPanel.tsx
-    completed: false
+    completed: true
   - title: add system sleep/wake handling to pause and resume refresh loop correctly
     source: ../IncuBar/Sources/CodexBar/DisplayLink.swift,
       ../IncuBar/Sources/CodexBar/UsageStore+Refresh.swift,
