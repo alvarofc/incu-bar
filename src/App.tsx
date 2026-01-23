@@ -37,6 +37,11 @@ function App() {
   const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
   const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
   const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
+  const debugFileLogging = useSettingsStore((s) => s.debugFileLogging);
+  const debugKeepCliSessionsAlive = useSettingsStore(
+    (s) => s.debugKeepCliSessionsAlive
+  );
+  const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const initializedRef = useRef(false);
   const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
@@ -56,6 +61,20 @@ function App() {
       initAutostart();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    void invoke('set_debug_file_logging', { enabled: debugFileLogging });
+  }, [debugFileLogging]);
+
+  useEffect(() => {
+    void invoke('set_debug_keep_cli_sessions_alive', {
+      enabled: debugKeepCliSessionsAlive,
+    });
+  }, [debugKeepCliSessionsAlive]);
+
+  useEffect(() => {
+    void invoke('set_debug_random_blink', { enabled: debugRandomBlink });
+  }, [debugRandomBlink]);
 
   // Sync enabled providers when settings change
   useEffect(() => {

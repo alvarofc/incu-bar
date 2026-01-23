@@ -34,6 +34,9 @@ interface SettingsStore extends AppSettings {
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
+  setDebugFileLogging: (enabled: boolean) => void;
+  setDebugKeepCliSessionsAlive: (enabled: boolean) => void;
+  setDebugRandomBlink: (enabled: boolean) => void;
   // Initialization
   initAutostart: () => Promise<void>;
   setCrashRecoveryAt: (timestamp: string) => void;
@@ -100,6 +103,13 @@ export const useSettingsStore = create<SettingsStore>()(
       setShowCost: (show) => set({ showCost: show }),
 
       setShowExtraUsage: (show) => set({ showExtraUsage: show }),
+
+      setDebugFileLogging: (enabled) => set({ debugFileLogging: enabled }),
+
+      setDebugKeepCliSessionsAlive: (enabled) =>
+        set({ debugKeepCliSessionsAlive: enabled }),
+
+      setDebugRandomBlink: (enabled) => set({ debugRandomBlink: enabled }),
 
       setCookieSource: (providerId, source) =>
         set((state) => ({

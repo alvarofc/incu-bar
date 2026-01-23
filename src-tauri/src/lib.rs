@@ -6,6 +6,7 @@
 pub mod browser_cookies;
 pub mod commands;
 pub mod login;
+pub mod debug_settings;
 pub mod providers;
 pub mod storage;
 pub mod tray;
@@ -19,6 +20,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn init_logging() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::fmt::layer().with_writer(debug_settings::file_writer()),
+        )
         .with(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive("incubar_tauri=debug".parse().unwrap()),
@@ -75,6 +79,9 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::send_test_notification,
+            commands::set_debug_file_logging,
+            commands::set_debug_keep_cli_sessions_alive,
+            commands::set_debug_random_blink,
             commands::start_login,
             commands::check_auth,
             commands::check_all_auth,

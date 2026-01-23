@@ -131,6 +131,9 @@ export interface AppSettings {
   showExtraUsage: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
   crashRecoveryAt?: string;
+  debugFileLogging: boolean;
+  debugKeepCliSessionsAlive: boolean;
+  debugRandomBlink: boolean;
 }
 
 // Event payloads from Rust

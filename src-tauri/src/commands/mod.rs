@@ -6,6 +6,7 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::browser_cookies::BrowserCookieSource;
+use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
 use crate::tray;
@@ -64,6 +65,9 @@ pub struct AppSettings {
     pub launch_at_login: bool,
     pub show_credits: bool,
     pub show_cost: bool,
+    pub debug_file_logging: bool,
+    pub debug_keep_cli_sessions_alive: bool,
+    pub debug_random_blink: bool,
 }
 
 impl Default for AppSettings {
@@ -77,6 +81,9 @@ impl Default for AppSettings {
             launch_at_login: false,
             show_credits: true,
             show_cost: true,
+            debug_file_logging: false,
+            debug_keep_cli_sessions_alive: false,
+            debug_random_blink: false,
         }
     }
 }
@@ -294,6 +301,24 @@ pub async fn get_settings() -> Result<AppSettings, String> {
 pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
     // TODO: Save to tauri-plugin-store
     tracing::debug!("Saving settings: {:?}", settings);
+    Ok(())
+}
+
+#[command]
+pub async fn set_debug_file_logging(enabled: bool) -> Result<(), String> {
+    debug_settings::set_file_logging(enabled);
+    Ok(())
+}
+
+#[command]
+pub async fn set_debug_keep_cli_sessions_alive(enabled: bool) -> Result<(), String> {
+    debug_settings::set_keep_cli_sessions_alive(enabled);
+    Ok(())
+}
+
+#[command]
+pub async fn set_debug_random_blink(enabled: bool) -> Result<(), String> {
+    debug_settings::set_random_blink(enabled);
     Ok(())
 }
 

@@ -263,4 +263,7 @@ export const DEFAULT_SETTINGS = {
   showCost: true,
   showExtraUsage: true,
   cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
+  debugFileLogging: false,
+  debugKeepCliSessionsAlive: false,
+  debugRandomBlink: false,
 };

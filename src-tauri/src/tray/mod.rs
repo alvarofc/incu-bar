@@ -15,8 +15,10 @@ use tauri::{
 use tauri_plugin_positioner::{Position, WindowExt};
 use url::Url;
 use chrono::{DateTime, Utc};
+use rand::Rng;
 
 use crate::providers::{ProviderId, UsageSnapshot};
+use crate::debug_settings;
 
 const TRAY_ICON_ID: &str = "main";
 const TRAY_TOOLTIP_BASE: &str = "IncuBar - AI Usage Tracker";
@@ -27,6 +29,8 @@ const MAX_RINGS: usize = 3;
 const STALE_THRESHOLD_SECS: i64 = 600;
 const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
+const RANDOM_BLINK_INTERVAL_MS: u64 = 4200;
+const RANDOM_BLINK_VARIANCE_MS: u64 = 1600;
 const TRAY_REFRESH_MENU_ID: &str = "tray_refresh";
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
@@ -791,8 +795,43 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .build(app)?;
 
     update_tray_icon(app)?;
+    start_random_blinking_loop(app);
     tracing::info!("Tray icon created");
     Ok(())
+}
+
+fn start_random_blinking_loop(app: &AppHandle) {
+    let app_handle = app.clone();
+    std::thread::spawn(move || loop {
+        let mut rng = rand::thread_rng();
+        let jitter = rng.gen_range(0..=RANDOM_BLINK_VARIANCE_MS);
+        std::thread::sleep(std::time::Duration::from_millis(
+            RANDOM_BLINK_INTERVAL_MS + jitter,
+        ));
+
+        if !debug_settings::random_blink_enabled() {
+            continue;
+        }
+
+        if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+            if state.loading_count > 0 {
+                continue;
+            }
+            state.blinking = true;
+        }
+
+        let _ = update_tray_icon(&app_handle);
+
+        std::thread::sleep(std::time::Duration::from_millis(900));
+
+        if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+            if state.loading_count == 0 {
+                state.blinking = false;
+            }
+        }
+
+        let _ = update_tray_icon(&app_handle);
+    });
 }
 
 /// Create the popup window (hidden by default)

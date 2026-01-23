@@ -53,6 +53,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
   const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
   const launchAtLogin = useSettingsStore((s) => s.launchAtLogin);
+  const debugFileLogging = useSettingsStore((s) => s.debugFileLogging);
+  const debugKeepCliSessionsAlive = useSettingsStore(
+    (s) => s.debugKeepCliSessionsAlive
+  );
+  const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
   const [loggingIn, setLoggingIn] = useState<string | null>(null);
@@ -276,6 +281,18 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
     useSettingsStore.getState().setLaunchAtLogin(launch);
+  }, []);
+
+  const handleSetDebugFileLogging = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setDebugFileLogging(enabled);
+  }, []);
+
+  const handleSetDebugKeepCliSessionsAlive = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setDebugKeepCliSessionsAlive(enabled);
+  }, []);
+
+  const handleSetDebugRandomBlink = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setDebugRandomBlink(enabled);
   }, []);
 
   const handleResetToDefaults = useCallback(() => {
@@ -1253,6 +1270,32 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               )}
               <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
             </div>
+          </div>
+        </section>
+
+        <div className="divider mx-4" />
+
+        {/* Debug */}
+        <section className="p-4">
+          <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
+            Debug
+          </h2>
+          <div className="space-y-1" data-testid="debug-settings">
+            <ToggleOption
+              label="File Logging"
+              enabled={debugFileLogging}
+              onChange={handleSetDebugFileLogging}
+            />
+            <ToggleOption
+              label="Keep CLI Sessions Alive"
+              enabled={debugKeepCliSessionsAlive}
+              onChange={handleSetDebugKeepCliSessionsAlive}
+            />
+            <ToggleOption
+              label="Random Blink"
+              enabled={debugRandomBlink}
+              onChange={handleSetDebugRandomBlink}
+            />
           </div>
         </section>
 

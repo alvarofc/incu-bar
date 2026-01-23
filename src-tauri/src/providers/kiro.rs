@@ -8,6 +8,8 @@ use chrono::Datelike;
 use regex::Regex;
 use tokio::io::AsyncReadExt;
 
+use crate::debug_settings;
+
 const CLI_NAME: &str = "kiro-cli";
 const STATUS_FEED_URL: &str = "https://status.aws.amazon.com/rss/all.rss";
 const DEFAULT_TIMEOUT_SECS: u64 = 20;
@@ -98,10 +100,16 @@ impl KiroProvider {
     }
 
     async fn run_usage_command(&self) -> Result<String, KiroError> {
+        let idle_timeout = if debug_settings::keep_cli_sessions_alive() {
+            std::time::Duration::from_secs(DEFAULT_TIMEOUT_SECS)
+        } else {
+            self.idle_timeout
+        };
+
         let result = run_command(
             &["chat", "--no-interactive", "/usage"],
             self.timeout,
-            self.idle_timeout,
+            idle_timeout,
         )
         .await?;
 
