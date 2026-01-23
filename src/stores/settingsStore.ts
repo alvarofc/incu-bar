@@ -1,7 +1,13 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
-import type { ProviderId, AppSettings, CookieSource, MenuBarDisplayMode } from '../lib/types';
+import type {
+  ProviderId,
+  AppSettings,
+  CookieSource,
+  MenuBarDisplayMode,
+  UsageBarDisplayMode,
+} from '../lib/types';
 import { DEFAULT_COOKIE_SOURCE } from '../lib/cookieSources';
 import { DEFAULT_SETTINGS } from '../lib/providers';
 
@@ -14,6 +20,7 @@ interface SettingsStore extends AppSettings {
   setProviderOrder: (order: ProviderId[]) => void;
   setDisplayMode: (mode: 'merged' | 'separate') => void;
   setMenuBarDisplayMode: (mode: MenuBarDisplayMode) => void;
+  setUsageBarDisplayMode: (mode: UsageBarDisplayMode) => void;
   setShowNotifications: (show: boolean) => void;
   setLaunchAtLogin: (launch: boolean) => void;
   setShowCredits: (show: boolean) => void;
@@ -56,6 +63,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setDisplayMode: (mode) => set({ displayMode: mode }),
 
       setMenuBarDisplayMode: (mode) => set({ menuBarDisplayMode: mode }),
+
+      setUsageBarDisplayMode: (mode) => set({ usageBarDisplayMode: mode }),
 
       setShowNotifications: (show) => set({ showNotifications: show }),
 

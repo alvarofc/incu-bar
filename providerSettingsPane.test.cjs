@@ -18,6 +18,8 @@ const requiredMarkers = [
   'data-testid="menu-bar-display-weekly"',
   'data-testid="menu-bar-display-pace"',
   'data-testid="menu-bar-display-highest"',
+  'data-testid="usage-bar-display-remaining"',
+  'data-testid="usage-bar-display-used"',
   'Settings',
   'Not connected',
 ];

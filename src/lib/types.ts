@@ -91,6 +91,8 @@ export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'b
 
 export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace' | 'highest';
 
+export type UsageBarDisplayMode = 'remaining' | 'used';
+
 // Settings
 export interface AppSettings {
   refreshIntervalSeconds: number;
@@ -98,6 +100,7 @@ export interface AppSettings {
   providerOrder: ProviderId[];
   displayMode: 'merged' | 'separate';
   menuBarDisplayMode: MenuBarDisplayMode;
+  usageBarDisplayMode: UsageBarDisplayMode;
   showNotifications: boolean;
   launchAtLogin: boolean;
   showCredits: boolean;

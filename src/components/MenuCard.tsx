@@ -16,6 +16,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
+  const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError } = provider;
@@ -151,6 +152,7 @@ export function MenuCard({ provider }: MenuCardProps) {
               label={primaryWindow.label || primaryLabel}
               resetDescription={primaryWindow.resetDescription}
               size="md"
+              displayMode={usageBarDisplayMode}
             />
           )}
 
@@ -160,6 +162,7 @@ export function MenuCard({ provider }: MenuCardProps) {
               label={usage.secondary.label || weeklyLabel}
               resetDescription={usage.secondary.resetDescription}
               size="md"
+              displayMode={usageBarDisplayMode}
             />
           )}
 
@@ -169,6 +172,7 @@ export function MenuCard({ provider }: MenuCardProps) {
               label={usage.tertiary.label || 'Extra'}
               resetDescription={usage.tertiary.resetDescription}
               size="sm"
+              displayMode={usageBarDisplayMode}
             />
           )}
 
