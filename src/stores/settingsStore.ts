@@ -33,6 +33,7 @@ interface SettingsStore extends AppSettings {
   // Initialization
   initAutostart: () => Promise<void>;
   setCrashRecoveryAt: (timestamp: string) => void;
+  syncProviderEnabled: (id: ProviderId, enabled: boolean) => Promise<void>;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -102,6 +103,14 @@ export const useSettingsStore = create<SettingsStore>()(
       resetToDefaults: () => set(DEFAULT_SETTINGS),
 
       setCrashRecoveryAt: (timestamp) => set({ crashRecoveryAt: timestamp }),
+
+      syncProviderEnabled: async (id, enabled) => {
+        try {
+          await invoke('set_provider_enabled', { providerId: id, enabled });
+        } catch (e) {
+          console.error('Failed to sync provider enabled state:', e);
+        }
+      },
 
       initAutostart: async () => {
         try {

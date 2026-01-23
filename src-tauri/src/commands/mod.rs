@@ -1,13 +1,45 @@
 //! Tauri IPC commands for the frontend
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, State, Emitter, Manager};
+use tauri::{command, AppHandle, Emitter, Manager, State};
 use tauri_plugin_autostart::AutoLaunchManager;
 
-use crate::login::{self, AuthStatus, LoginResult};
 use crate::browser_cookies::BrowserCookieSource;
+use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, UsageSnapshot};
 use crate::tray;
+
+struct LoadingGuard {
+    app: AppHandle,
+    active: bool,
+}
+
+impl LoadingGuard {
+    fn new(app: &AppHandle) -> Self {
+        if let Err(err) = tray::set_loading_state(app, true) {
+            tracing::warn!("Failed to set loading state: {}", err);
+        }
+        Self {
+            app: app.clone(),
+            active: true,
+        }
+    }
+
+    fn finish(&mut self) {
+        if self.active {
+            if let Err(err) = tray::set_loading_state(&self.app, false) {
+                tracing::warn!("Failed to clear loading state: {}", err);
+            }
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for LoadingGuard {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
 
 /// Settings structure matching frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,16 +59,8 @@ impl Default for AppSettings {
     fn default() -> Self {
         Self {
             refresh_interval_seconds: 300,
-            enabled_providers: vec![
-                ProviderId::Claude,
-                ProviderId::Codex,
-                ProviderId::Cursor,
-            ],
-            provider_order: vec![
-                ProviderId::Claude,
-                ProviderId::Codex,
-                ProviderId::Cursor,
-            ],
+            enabled_providers: vec![ProviderId::Claude, ProviderId::Codex, ProviderId::Cursor],
+            provider_order: vec![ProviderId::Claude, ProviderId::Codex, ProviderId::Cursor],
             display_mode: "merged".to_string(),
             show_notifications: true,
             launch_at_login: false,
@@ -55,16 +79,25 @@ pub async fn refresh_provider(
 ) -> Result<UsageSnapshot, String> {
     tracing::debug!("Refreshing provider: {:?}", provider_id);
 
+    let mut loading_guard = LoadingGuard::new(&app);
+
     let usage = registry
         .fetch_usage(&provider_id)
         .await
         .map_err(|e| e.to_string())?;
 
+    loading_guard.finish();
+
     // Emit event to frontend
-    let _ = app.emit("usage-updated", serde_json::json!({
-        "providerId": provider_id,
-        "usage": usage,
-    }));
+    let _ = app.emit(
+        "usage-updated",
+        serde_json::json!({
+            "providerId": provider_id,
+            "usage": usage,
+        }),
+    );
+
+    tray::handle_usage_update(&app, provider_id, usage.clone()).map_err(|e| e.to_string())?;
 
     Ok(usage)
 }
@@ -78,27 +111,41 @@ pub async fn refresh_all_providers(
     tracing::debug!("Refreshing all providers");
 
     let providers = registry.get_enabled_providers();
-    
+
+    let mut loading_guard = LoadingGuard::new(&app);
+
     for provider_id in providers {
         match registry.fetch_usage(&provider_id).await {
             Ok(usage) => {
-                let _ = app.emit("usage-updated", serde_json::json!({
-                    "providerId": provider_id,
-                    "usage": usage,
-                }));
+                let _ = app.emit(
+                    "usage-updated",
+                    serde_json::json!({
+                        "providerId": provider_id,
+                        "usage": usage,
+                    }),
+                );
+                if let Err(e) = tray::handle_usage_update(&app, provider_id, usage.clone()) {
+                    tracing::warn!("Failed to update tray icon: {}", e);
+                }
             }
             Err(e) => {
                 tracing::warn!("Failed to refresh {:?}: {}", provider_id, e);
-                let _ = app.emit("usage-updated", serde_json::json!({
-                    "providerId": provider_id,
-                    "usage": {
-                        "error": e.to_string(),
-                        "updatedAt": chrono::Utc::now().to_rfc3339(),
-                    },
-                }));
+                let usage = UsageSnapshot::error(e.to_string());
+                let _ = app.emit(
+                    "usage-updated",
+                    serde_json::json!({
+                        "providerId": provider_id,
+                        "usage": usage,
+                    }),
+                );
+                if let Err(e) = tray::handle_usage_update(&app, provider_id, usage) {
+                    tracing::warn!("Failed to update tray icon: {}", e);
+                }
             }
         }
     }
+
+    loading_guard.finish();
 
     Ok(())
 }
@@ -126,8 +173,11 @@ pub async fn set_provider_enabled(
     provider_id: ProviderId,
     enabled: bool,
     registry: State<'_, ProviderRegistry>,
+    app: AppHandle,
 ) -> Result<(), String> {
     registry.set_enabled(&provider_id, enabled);
+    tray::set_provider_disabled(&app, provider_id, !enabled).map_err(|e| e.to_string())?;
+    tray::set_blinking_state(&app, !enabled).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -152,19 +202,18 @@ pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
 #[command]
 pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginResult, String> {
     tracing::info!("Starting login for provider: {}", provider_id);
-    
+
     // Emit login started event
-    let _ = app.emit("login-started", serde_json::json!({
-        "providerId": provider_id,
-    }));
-    
+    let _ = app.emit(
+        "login-started",
+        serde_json::json!({
+            "providerId": provider_id,
+        }),
+    );
+
     let result = match provider_id.as_str() {
-        "claude" => {
-            login::run_claude_login().await.map_err(|e| e.to_string())?
-        }
-        "codex" => {
-            login::run_codex_login().await.map_err(|e| e.to_string())?
-        }
+        "claude" => login::run_claude_login().await.map_err(|e| e.to_string())?,
+        "codex" => login::run_codex_login().await.map_err(|e| e.to_string())?,
         "cursor" => {
             // Open Cursor login window
             tray::create_cursor_login_window(&app).map_err(|e| e.to_string())?;
@@ -191,14 +240,18 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
         "amp" => {
             return Ok(LoginResult {
                 success: true,
-                message: "Amp uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                message:
+                    "Amp uses browser cookies. Use Import from Browser or paste cookies manually."
+                        .to_string(),
                 provider_id: "amp".to_string(),
             });
         }
         "kimi" => {
             return Ok(LoginResult {
                 success: true,
-                message: "Kimi uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
+                message:
+                    "Kimi uses browser cookies. Use Import from Browser or paste cookies manually."
+                        .to_string(),
                 provider_id: "kimi".to_string(),
             });
         }
@@ -216,12 +269,10 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 provider_id: "opencode".to_string(),
             });
         }
-        "copilot" => {
-            login::run_copilot_login().await.map_err(|e| e.to_string())?
-        }
-        "gemini" => {
-            login::run_gemini_login().await.map_err(|e| e.to_string())?
-        }
+        "copilot" => login::run_copilot_login()
+            .await
+            .map_err(|e| e.to_string())?,
+        "gemini" => login::run_gemini_login().await.map_err(|e| e.to_string())?,
         _ => {
             return Ok(LoginResult {
                 success: false,
@@ -230,14 +281,17 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
             });
         }
     };
-    
+
     // Emit login completed event
-    let _ = app.emit("login-completed", serde_json::json!({
-        "providerId": provider_id,
-        "success": result.success,
-        "message": result.message,
-    }));
-    
+    let _ = app.emit(
+        "login-completed",
+        serde_json::json!({
+            "providerId": provider_id,
+            "success": result.success,
+            "message": result.message,
+        }),
+    );
+
     Ok(result)
 }
 
@@ -269,12 +323,12 @@ pub async fn check_all_auth() -> Result<std::collections::HashMap<String, AuthSt
         "kiro",
     ];
     let mut results = std::collections::HashMap::new();
-    
+
     for provider_id in providers {
         let status = login::check_auth_status(provider_id).await;
         results.insert(provider_id.to_string(), status);
     }
-    
+
     Ok(results)
 }
 
@@ -415,7 +469,7 @@ pub async fn close_cursor_login(app: AppHandle) -> Result<(), String> {
 #[command]
 pub async fn import_cursor_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
     tracing::info!("Importing Cursor cookies from system browsers");
-    
+
     match crate::browser_cookies::import_cursor_cookies_from_browser().await {
         Ok(result) => {
             tracing::info!(
@@ -423,7 +477,7 @@ pub async fn import_cursor_browser_cookies(app: AppHandle) -> Result<LoginResult
                 result.cookie_count,
                 result.browser_name
             );
-            
+
             // Store the cookies
             match login::store_cursor_session(result.cookie_header).await {
                 Ok(()) => {
@@ -433,13 +487,12 @@ pub async fn import_cursor_browser_cookies(app: AppHandle) -> Result<LoginResult
                         "success": true,
                         "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
                     }));
-                    
+
                     Ok(LoginResult {
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Cursor is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "cursor".to_string(),
                     })
@@ -535,8 +588,7 @@ pub async fn import_cursor_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Cursor is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "cursor".to_string(),
                     })
@@ -588,8 +640,7 @@ pub async fn import_factory_browser_cookies(app: AppHandle) -> Result<LoginResul
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Factory is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "factory".to_string(),
                     })
@@ -644,8 +695,7 @@ pub async fn import_factory_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Factory is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "factory".to_string(),
                     })
@@ -697,8 +747,7 @@ pub async fn import_augment_browser_cookies(app: AppHandle) -> Result<LoginResul
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Augment is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "augment".to_string(),
                     })
@@ -753,8 +802,7 @@ pub async fn import_augment_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Augment is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "augment".to_string(),
                     })
@@ -806,8 +854,7 @@ pub async fn import_kimi_browser_cookies(app: AppHandle) -> Result<LoginResult, 
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Kimi is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "kimi".to_string(),
                     })
@@ -862,8 +909,7 @@ pub async fn import_kimi_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Kimi is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "kimi".to_string(),
                     })
@@ -915,8 +961,7 @@ pub async fn import_minimax_browser_cookies(app: AppHandle) -> Result<LoginResul
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! MiniMax is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "minimax".to_string(),
                     })
@@ -971,8 +1016,7 @@ pub async fn import_minimax_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! MiniMax is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "minimax".to_string(),
                     })
@@ -1035,8 +1079,7 @@ pub async fn import_amp_browser_cookies(app: AppHandle) -> Result<LoginResult, S
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Amp is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "amp".to_string(),
                     })
@@ -1102,8 +1145,7 @@ pub async fn import_amp_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! Amp is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "amp".to_string(),
                     })
@@ -1163,8 +1205,7 @@ pub async fn import_opencode_browser_cookies(app: AppHandle) -> Result<LoginResu
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! OpenCode is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "opencode".to_string(),
                     })
@@ -1227,8 +1268,7 @@ pub async fn import_opencode_browser_cookies_from_source(
                         success: true,
                         message: format!(
                             "Imported {} cookies from {}! OpenCode is now connected.",
-                            result.cookie_count,
-                            result.browser_name
+                            result.cookie_count, result.browser_name
                         ),
                         provider_id: "opencode".to_string(),
                     })
@@ -1262,7 +1302,7 @@ pub async fn import_opencode_browser_cookies_from_source(
 #[command]
 pub async fn extract_cursor_cookies(app: AppHandle) -> Result<LoginResult, String> {
     tracing::info!("Attempting to extract cookies from Cursor login window");
-    
+
     // First try the webview cookie extraction
     match tray::extract_cursor_cookies(&app).await {
         Ok(Some(cookie_header)) if !cookie_header.is_empty() => {
@@ -1271,14 +1311,17 @@ pub async fn extract_cursor_cookies(app: AppHandle) -> Result<LoginResult, Strin
                 Ok(()) => {
                     // Close the login window
                     let _ = tray::close_cursor_login_window(&app);
-                    
+
                     // Emit login completed event
-                    let _ = app.emit("login-completed", serde_json::json!({
-                        "providerId": "cursor",
-                        "success": true,
-                        "message": "Cursor cookies extracted from webview!",
-                    }));
-                    
+                    let _ = app.emit(
+                        "login-completed",
+                        serde_json::json!({
+                            "providerId": "cursor",
+                            "success": true,
+                            "message": "Cursor cookies extracted from webview!",
+                        }),
+                    );
+
                     return Ok(LoginResult {
                         success: true,
                         message: "Cursor cookies extracted and saved!".to_string(),
@@ -1297,7 +1340,7 @@ pub async fn extract_cursor_cookies(app: AppHandle) -> Result<LoginResult, Strin
             tracing::warn!("Webview cookie extraction failed: {}", e);
         }
     }
-    
+
     // Fallback: try importing from system browsers
     tracing::info!("Falling back to browser cookie import");
     import_cursor_browser_cookies(app).await
@@ -1321,7 +1364,7 @@ pub struct CopilotDeviceCodeResponse {
 #[command]
 pub async fn copilot_request_device_code() -> Result<CopilotDeviceCodeResponse, String> {
     tracing::info!("Requesting Copilot device code");
-    
+
     let client = reqwest::Client::new();
     let response = client
         .post("https://github.com/login/device/code")
@@ -1331,20 +1374,20 @@ pub async fn copilot_request_device_code() -> Result<CopilotDeviceCodeResponse, 
         .send()
         .await
         .map_err(|e| format!("Failed to request device code: {}", e))?;
-    
+
     if !response.status().is_success() {
         let status = response.status();
         let body = response.text().await.unwrap_or_default();
         return Err(format!("Device code request failed ({}): {}", status, body));
     }
-    
+
     let device_code: login::DeviceCodeResponse = response
         .json()
         .await
         .map_err(|e| format!("Failed to parse device code response: {}", e))?;
-    
+
     tracing::info!("Got device code. User code: {}", device_code.user_code);
-    
+
     Ok(CopilotDeviceCodeResponse {
         user_code: device_code.user_code,
         verification_uri: device_code.verification_uri,
@@ -1357,18 +1400,21 @@ pub async fn copilot_request_device_code() -> Result<CopilotDeviceCodeResponse, 
 /// Poll for Copilot access token (step 2)
 /// Called after user has entered the code on GitHub
 #[command]
-pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Result<LoginResult, String> {
+pub async fn copilot_poll_for_token(
+    device_code: String,
+    app: AppHandle,
+) -> Result<LoginResult, String> {
     tracing::info!("Polling for Copilot access token");
-    
+
     let client = reqwest::Client::new();
     let interval = 5u64; // Default polling interval
     let max_attempts = 60; // 5 minutes max
-    
+
     for attempt in 0..max_attempts {
         if attempt > 0 {
             tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
         }
-        
+
         let response = client
             .post("https://github.com/login/oauth/access_token")
             .header("Accept", "application/json")
@@ -1379,7 +1425,7 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
             ))
             .send()
             .await;
-        
+
         let response = match response {
             Ok(r) => r,
             Err(e) => {
@@ -1387,9 +1433,9 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
                 continue;
             }
         };
-        
+
         let body = response.text().await.unwrap_or_default();
-        
+
         // Try to parse as error first
         if let Ok(error_resp) = serde_json::from_str::<serde_json::Value>(&body) {
             if let Some(error) = error_resp.get("error").and_then(|e| e.as_str()) {
@@ -1418,7 +1464,8 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
                         });
                     }
                     _ => {
-                        let desc = error_resp.get("error_description")
+                        let desc = error_resp
+                            .get("error_description")
                             .and_then(|d| d.as_str())
                             .unwrap_or("Unknown error");
                         return Ok(LoginResult {
@@ -1429,36 +1476,41 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
                     }
                 }
             }
-            
+
             // Check for access token
             if let Some(access_token) = error_resp.get("access_token").and_then(|t| t.as_str()) {
                 tracing::info!("Copilot login successful!");
-                
+
                 // Store the token
-                let data_dir = dirs::data_dir()
-                    .ok_or_else(|| "Could not find data directory".to_string())?;
+                let data_dir =
+                    dirs::data_dir().ok_or_else(|| "Could not find data directory".to_string())?;
                 let session_dir = data_dir.join("IncuBar");
-                tokio::fs::create_dir_all(&session_dir).await
+                tokio::fs::create_dir_all(&session_dir)
+                    .await
                     .map_err(|e| format!("Failed to create session directory: {}", e))?;
-                
+
                 let token_path = session_dir.join("copilot-token.json");
                 let content = serde_json::json!({
                     "access_token": access_token,
                     "saved_at": chrono::Utc::now().to_rfc3339(),
                 });
-                
-                tokio::fs::write(&token_path, serde_json::to_string_pretty(&content).unwrap()).await
+
+                tokio::fs::write(&token_path, serde_json::to_string_pretty(&content).unwrap())
+                    .await
                     .map_err(|e| format!("Failed to save token: {}", e))?;
-                
+
                 tracing::info!("Saved Copilot token to {:?}", token_path);
-                
+
                 // Emit login completed event
-                let _ = app.emit("login-completed", serde_json::json!({
-                    "providerId": "copilot",
-                    "success": true,
-                    "message": "Copilot login successful!",
-                }));
-                
+                let _ = app.emit(
+                    "login-completed",
+                    serde_json::json!({
+                        "providerId": "copilot",
+                        "success": true,
+                        "message": "Copilot login successful!",
+                    }),
+                );
+
                 return Ok(LoginResult {
                     success: true,
                     message: "Copilot login successful! Token saved.".to_string(),
@@ -1467,7 +1519,7 @@ pub async fn copilot_poll_for_token(device_code: String, app: AppHandle) -> Resu
             }
         }
     }
-    
+
     Ok(LoginResult {
         success: false,
         message: "Polling timed out. Please try again.".to_string(),
@@ -1490,7 +1542,7 @@ pub async fn get_autostart_enabled(app: AppHandle) -> Result<bool, String> {
 #[command]
 pub async fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
     let autostart_manager = app.state::<AutoLaunchManager>();
-    
+
     if enabled {
         autostart_manager
             .enable()
@@ -1502,6 +1554,6 @@ pub async fn set_autostart_enabled(app: AppHandle, enabled: bool) -> Result<(), 
             .map_err(|e| format!("Failed to disable autostart: {}", e))?;
         tracing::info!("Autostart disabled");
     }
-    
+
     Ok(())
 }

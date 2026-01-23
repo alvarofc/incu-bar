@@ -3,7 +3,7 @@
 use anyhow::Result;
 use once_cell::sync::Lazy;
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
 use std::sync::RwLock;
 use tauri::{
@@ -23,29 +23,35 @@ const RING_THICKNESS: f64 = 3.0;
 const RING_GAP: f64 = 1.5;
 const MAX_RINGS: usize = 3;
 const STALE_THRESHOLD_SECS: i64 = 600;
+const LOADING_ANIMATION_TICK_MS: u64 = 250;
+const BLINKING_ANIMATION_TICK_MS: u64 = 500;
+const LOADING_SPINNER_COLOR: [u8; 4] = [86, 157, 226, 255];
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
-    RwLock::new(TrayUsageState {
-        provider_usage: HashMap::new(),
-    })
+    RwLock::new(TrayUsageState::default())
 });
 
 #[derive(Default)]
 struct TrayUsageState {
     provider_usage: HashMap<ProviderId, UsageSnapshot>,
+    disabled_providers: HashSet<ProviderId>,
+    loading_count: usize,
+    animation_phase: u8,
+    blinking: bool,
 }
 
 #[cfg(test)]
 fn reset_tray_usage_state() {
     if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        state.provider_usage.clear();
+        *state = TrayUsageState::default();
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum TrayStatus {
     Ok,
-    Inactive,
+    Loading,
+    Disabled,
     Stale,
     Error,
 }
@@ -62,6 +68,14 @@ struct TrayRenderState {
     usage_rings: Vec<UsageRing>,
     status: TrayStatus,
     primary_provider: Option<ProviderId>,
+    animation_phase: u8,
+    blink_enabled: bool,
+}
+
+impl TrayRenderState {
+    fn needs_animation(&self) -> bool {
+        matches!(self.status, TrayStatus::Loading) || self.blink_enabled
+    }
 }
 
 struct Canvas {
@@ -161,6 +175,57 @@ impl Canvas {
             }
         }
     }
+
+    fn draw_arc(
+        &mut self,
+        center_x: f64,
+        center_y: f64,
+        outer_radius: f64,
+        thickness: f64,
+        start_fraction: f64,
+        sweep_fraction: f64,
+        color: [u8; 4],
+    ) {
+        let inner_radius = (outer_radius - thickness).max(0.0);
+        let outer_sq = outer_radius * outer_radius;
+        let inner_sq = inner_radius * inner_radius;
+        let min_x = (center_x - outer_radius).floor() as i32;
+        let max_x = (center_x + outer_radius).ceil() as i32;
+        let min_y = (center_y - outer_radius).floor() as i32;
+        let max_y = (center_y + outer_radius).ceil() as i32;
+        let start = start_fraction.rem_euclid(1.0);
+        let sweep = sweep_fraction.clamp(0.0, 1.0);
+        let end = (start + sweep).rem_euclid(1.0);
+
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                let dx = (x as f64 + 0.5) - center_x;
+                let dy = (y as f64 + 0.5) - center_y;
+                let dist_sq = dx * dx + dy * dy;
+                if dist_sq > outer_sq || dist_sq < inner_sq {
+                    continue;
+                }
+
+                let mut angle = dy.atan2(dx) + (PI / 2.0);
+                if angle < 0.0 {
+                    angle += 2.0 * PI;
+                }
+                let fraction = angle / (2.0 * PI);
+
+                let in_arc = if sweep >= 1.0 {
+                    true
+                } else if start <= end {
+                    fraction >= start && fraction <= end
+                } else {
+                    fraction >= start || fraction <= end
+                };
+
+                if in_arc {
+                    self.set_pixel(x, y, color);
+                }
+            }
+        }
+    }
 }
 
 pub fn handle_usage_update(
@@ -170,6 +235,41 @@ pub fn handle_usage_update(
 ) -> Result<()> {
     if let Ok(mut state) = TRAY_USAGE_STATE.write() {
         state.provider_usage.insert(provider_id, usage);
+    } else {
+        tracing::warn!("Tray usage state lock poisoned");
+    }
+    update_tray_icon(app)
+}
+
+pub fn set_loading_state(app: &AppHandle, is_loading: bool) -> Result<()> {
+    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+        if is_loading {
+            state.loading_count = state.loading_count.saturating_add(1);
+        } else if state.loading_count > 0 {
+            state.loading_count -= 1;
+        }
+    } else {
+        tracing::warn!("Tray usage state lock poisoned");
+    }
+    update_tray_icon(app)
+}
+
+pub fn set_blinking_state(app: &AppHandle, enabled: bool) -> Result<()> {
+    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+        state.blinking = enabled;
+    } else {
+        tracing::warn!("Tray usage state lock poisoned");
+    }
+    update_tray_icon(app)
+}
+
+pub fn set_provider_disabled(app: &AppHandle, provider_id: ProviderId, disabled: bool) -> Result<()> {
+    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+        if disabled {
+            state.disabled_providers.insert(provider_id);
+        } else {
+            state.disabled_providers.remove(&provider_id);
+        }
     } else {
         tracing::warn!("Tray usage state lock poisoned");
     }
@@ -186,9 +286,31 @@ fn update_tray_icon(app: &AppHandle) -> Result<()> {
     };
 
     let state = compute_render_state();
-    let icon = render_tray_icon(state);
+    let icon = render_tray_icon(state.clone());
     tray.set_icon(Some(icon))?;
     tray.set_icon_as_template(false)?;
+
+    if state.needs_animation() {
+        let app_handle = app.clone();
+        let sleep_ms = if state.blink_enabled {
+            BLINKING_ANIMATION_TICK_MS
+        } else {
+            LOADING_ANIMATION_TICK_MS
+        };
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+            let should_continue = if let Ok(mut guard) = TRAY_USAGE_STATE.write() {
+                guard.animation_phase = guard.animation_phase.wrapping_add(1);
+                guard.loading_count > 0 || guard.blinking
+            } else {
+                false
+            };
+            if should_continue {
+                let _ = update_tray_icon(&app_handle);
+            }
+        });
+    }
+
     Ok(())
 }
 
@@ -196,8 +318,16 @@ fn compute_render_state() -> TrayRenderState {
     let mut rings: Vec<UsageRing> = Vec::new();
     let mut has_error = false;
     let mut has_stale = false;
+    let mut loading_count = 0;
+    let mut animation_phase = 0;
+    let mut blinking = false;
+    let mut has_disabled = false;
 
     if let Ok(state) = TRAY_USAGE_STATE.read() {
+        loading_count = state.loading_count;
+        animation_phase = state.animation_phase;
+        blinking = state.blinking;
+        has_disabled = !state.disabled_providers.is_empty();
         for (provider_id, usage) in state.provider_usage.iter() {
             if usage.error.is_some() {
                 has_error = true;
@@ -223,12 +353,16 @@ fn compute_render_state() -> TrayRenderState {
     rings.truncate(MAX_RINGS);
     let primary_provider = rings.first().map(|ring| ring.provider_id);
 
-    let status = if has_error {
+    let status = if loading_count > 0 {
+        TrayStatus::Loading
+    } else if has_error {
         TrayStatus::Error
-    } else if rings.is_empty() {
-        TrayStatus::Inactive
     } else if has_stale {
         TrayStatus::Stale
+    } else if has_disabled {
+        TrayStatus::Disabled
+    } else if rings.is_empty() {
+        TrayStatus::Disabled
     } else {
         TrayStatus::Ok
     };
@@ -237,6 +371,8 @@ fn compute_render_state() -> TrayRenderState {
         usage_rings: rings,
         status,
         primary_provider,
+        animation_phase,
+        blink_enabled: blinking,
     }
 }
 
@@ -267,7 +403,11 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     let mut canvas = Canvas::new(ICON_SIZE, ICON_SIZE);
     let center = (ICON_SIZE as f64 / 2.0, ICON_SIZE as f64 / 2.0);
     let outer_radius = (ICON_SIZE as f64 / 2.0) - 1.0;
-    let track_color = [190, 190, 190, 220];
+    let track_color = if matches!(state.status, TrayStatus::Disabled) {
+        [165, 165, 165, 180]
+    } else {
+        [190, 190, 190, 220]
+    };
 
     if state.usage_rings.is_empty() {
         canvas.draw_ring(
@@ -297,13 +437,38 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
             );
         }
     }
-    draw_provider_icon(&mut canvas, state.primary_provider, center);
 
-    let badge_color = match state.status {
-        TrayStatus::Ok => None,
-        TrayStatus::Inactive => Some([120, 120, 120, 255]),
-        TrayStatus::Stale => Some([234, 167, 77, 255]),
-        TrayStatus::Error => Some([220, 70, 60, 255]),
+    if !matches!(state.status, TrayStatus::Disabled) {
+        draw_provider_icon(&mut canvas, state.primary_provider, center);
+    } else {
+        draw_generic_ring(&mut canvas, center);
+    }
+
+    if matches!(state.status, TrayStatus::Loading) {
+        let phase = (state.animation_phase % 4) as f64;
+        let start_fraction = (phase * 0.25) % 1.0;
+        canvas.draw_arc(
+            center.0,
+            center.1,
+            outer_radius - 0.5,
+            RING_THICKNESS,
+            start_fraction,
+            0.25,
+            LOADING_SPINNER_COLOR,
+        );
+    }
+
+    let blink_off = state.blink_enabled && state.animation_phase % 2 == 1;
+    let badge_color = if blink_off {
+        None
+    } else {
+        match state.status {
+            TrayStatus::Ok => None,
+            TrayStatus::Loading => Some(LOADING_SPINNER_COLOR),
+            TrayStatus::Disabled => Some([120, 120, 120, 255]),
+            TrayStatus::Stale => Some([234, 167, 77, 255]),
+            TrayStatus::Error => Some([220, 70, 60, 255]),
+        }
     };
 
     if let Some(color) = badge_color {
@@ -393,8 +558,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .tooltip("IncuBar - AI Usage Tracker")
         .icon(render_tray_icon(TrayRenderState {
             usage_rings: Vec::new(),
-            status: TrayStatus::Inactive,
+            status: TrayStatus::Disabled,
             primary_provider: None,
+            animation_phase: 0,
+            blink_enabled: false,
         }))
         .icon_as_template(false)
         .on_tray_icon_event(|tray, event| {
@@ -763,6 +930,8 @@ mod tests {
             }],
             status: TrayStatus::Ok,
             primary_provider: Some(ProviderId::Claude),
+            animation_phase: 0,
+            blink_enabled: false,
         });
         assert_eq!(icon.width(), ICON_SIZE);
         assert_eq!(icon.height(), ICON_SIZE);
@@ -781,6 +950,8 @@ mod tests {
 
         let state = compute_render_state();
         assert_eq!(state.status, TrayStatus::Ok);
+        assert_eq!(state.animation_phase, 0);
+        assert!(!state.blink_enabled);
         assert_eq!(state.usage_rings.len(), 2);
         assert_eq!(state.usage_rings.first().map(|ring| ring.percent), Some(81.0));
         assert_eq!(state.primary_provider, Some(ProviderId::Codex));
@@ -815,5 +986,49 @@ mod tests {
 
         let state = compute_render_state();
         assert_eq!(state.status, TrayStatus::Stale);
+    }
+
+    #[test]
+    fn compute_render_state_marks_loading_status() {
+        reset_tray_usage_state();
+        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        guard.loading_count = 1;
+        drop(guard);
+
+        let state = compute_render_state();
+        assert_eq!(state.status, TrayStatus::Loading);
+    }
+
+    #[test]
+    fn compute_render_state_marks_disabled_status() {
+        reset_tray_usage_state();
+
+        let state = compute_render_state();
+        assert_eq!(state.status, TrayStatus::Disabled);
+    }
+
+    #[test]
+    fn render_tray_icon_blinks_when_enabled() {
+        reset_tray_usage_state();
+        let steady_icon = render_tray_icon(TrayRenderState {
+            usage_rings: Vec::new(),
+            status: TrayStatus::Disabled,
+            primary_provider: None,
+            animation_phase: 0,
+            blink_enabled: false,
+        });
+        let blinking_icon = render_tray_icon(TrayRenderState {
+            usage_rings: Vec::new(),
+            status: TrayStatus::Disabled,
+            primary_provider: None,
+            animation_phase: 1,
+            blink_enabled: true,
+        });
+
+        let idx = ((6 * ICON_SIZE + (ICON_SIZE - 6)) * 4) as usize;
+        let steady_alpha = steady_icon.rgba()[idx + 3];
+        let blinking_alpha = blinking_icon.rgba()[idx + 3];
+        assert_eq!(steady_alpha, 255);
+        assert_eq!(blinking_alpha, 180);
     }
 }

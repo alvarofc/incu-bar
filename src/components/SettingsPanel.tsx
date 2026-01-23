@@ -120,7 +120,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           setManualCookiePanels((state) => ({ ...state, cursor: false }));
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           setAuthStatus(status);
-          useSettingsStore.getState().enableProvider('cursor');
+          const settingsStore = useSettingsStore.getState();
+          settingsStore.enableProvider('cursor');
+          void settingsStore.syncProviderEnabled('cursor', true);
+          useUsageStore.getState().setProviderEnabled('cursor', true);
           useUsageStore.getState().refreshProvider('cursor');
         }
       } catch (e) {
@@ -137,7 +140,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(providerId as ProviderId);
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider(providerId as ProviderId);
+        void settingsStore.syncProviderEnabled(providerId as ProviderId, true);
+        useUsageStore.getState().setProviderEnabled(providerId as ProviderId, true);
         useUsageStore.getState().refreshProvider(providerId as ProviderId);
       }
     });
@@ -149,7 +155,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, []);
 
   const handleToggleProvider = useCallback((id: ProviderId) => {
-    useSettingsStore.getState().toggleProvider(id);
+    const store = useSettingsStore.getState();
+    const currentlyEnabled = store.enabledProviders.includes(id);
+    store.toggleProvider(id);
+    void store.syncProviderEnabled(id, !currentlyEnabled);
+    useUsageStore.getState().setProviderEnabled(id, !currentlyEnabled);
   }, []);
 
   const handleMoveProvider = useCallback((id: ProviderId, direction: 'up' | 'down') => {
@@ -268,7 +278,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           setLoginMessage(importResult.message);
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           setAuthStatus(status);
-          useSettingsStore.getState().enableProvider('cursor');
+          const settingsStore = useSettingsStore.getState();
+          settingsStore.enableProvider('cursor');
+          void settingsStore.syncProviderEnabled('cursor', true);
+          useUsageStore.getState().setProviderEnabled('cursor', true);
           useUsageStore.getState().refreshProvider('cursor');
           setLoggingIn(null);
           return;
@@ -299,7 +312,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           setLoginMessage(importResult.message);
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           setAuthStatus(status);
-          useSettingsStore.getState().enableProvider(providerId);
+          const settingsStore = useSettingsStore.getState();
+          settingsStore.enableProvider(providerId);
+          void settingsStore.syncProviderEnabled(providerId, true);
+          useUsageStore.getState().setProviderEnabled(providerId, true);
           useUsageStore.getState().refreshProvider(providerId);
           setLoggingIn(null);
           return;
@@ -333,7 +349,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(providerId);
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider(providerId);
+        void settingsStore.syncProviderEnabled(providerId, true);
+        useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
@@ -378,7 +397,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         }
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(providerId);
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider(providerId);
+        void settingsStore.syncProviderEnabled(providerId, true);
+        useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
@@ -444,7 +466,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider(providerId);
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider(providerId);
+        void settingsStore.syncProviderEnabled(providerId, true);
+        useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
       } else {
         setLoginMessage(result.message);
@@ -494,7 +519,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setCopilotDeviceCode(null);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         setAuthStatus(status);
-        useSettingsStore.getState().enableProvider('copilot');
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider('copilot');
+        void settingsStore.syncProviderEnabled('copilot', true);
+        useUsageStore.getState().setProviderEnabled('copilot', true);
         useUsageStore.getState().refreshProvider('copilot');
       } else {
         setLoginMessage(result.message);
