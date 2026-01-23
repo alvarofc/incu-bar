@@ -18,6 +18,7 @@ use chrono::{DateTime, Utc};
 use crate::providers::{ProviderId, UsageSnapshot};
 
 const TRAY_ICON_ID: &str = "main";
+const TRAY_TOOLTIP_BASE: &str = "IncuBar - AI Usage Tracker";
 const ICON_SIZE: u32 = 32;
 const RING_THICKNESS: f64 = 3.0;
 const RING_GAP: f64 = 1.5;
@@ -402,6 +403,7 @@ fn update_tray_icon(app: &AppHandle) -> Result<()> {
     let icon = render_tray_icon(state.clone());
     tray.set_icon(Some(icon))?;
     tray.set_icon_as_template(false)?;
+    tray.set_tooltip(Some(build_tray_tooltip()))?;
 
     if state.needs_animation() {
         let app_handle = app.clone();
@@ -675,10 +677,76 @@ fn usage_color(percent: f64, theme: Theme) -> [u8; 4] {
     }
 }
 
+fn provider_display_name(provider_id: ProviderId) -> &'static str {
+    match provider_id {
+        ProviderId::Claude => "Claude",
+        ProviderId::Codex => "Codex",
+        ProviderId::Cursor => "Cursor",
+        ProviderId::Copilot => "Copilot",
+        ProviderId::Gemini => "Gemini",
+        ProviderId::Antigravity => "Antigravity",
+        ProviderId::Factory => "Droid",
+        ProviderId::Zai => "z.ai",
+        ProviderId::Minimax => "MiniMax",
+        ProviderId::Kimi => "Kimi",
+        ProviderId::KimiK2 => "Kimi K2",
+        ProviderId::Kiro => "Kiro",
+        ProviderId::Vertex => "Vertex AI",
+        ProviderId::Augment => "Augment",
+        ProviderId::Amp => "Amp",
+        ProviderId::Jetbrains => "JetBrains AI",
+        ProviderId::Opencode => "OpenCode",
+        ProviderId::Synthetic => "Synthetic",
+    }
+}
+
+fn build_tray_tooltip() -> String {
+    let Ok(state) = TRAY_USAGE_STATE.read() else {
+        return TRAY_TOOLTIP_BASE.to_string();
+    };
+    format_tray_tooltip(&state)
+}
+
+fn format_tray_tooltip(state: &TrayUsageState) -> String {
+    let mut entries: Vec<(f64, ProviderId)> = Vec::new();
+    let mut error_entries: Vec<ProviderId> = Vec::new();
+
+    for (provider_id, usage) in state.provider_usage.iter() {
+        if usage.error.is_some() {
+            error_entries.push(*provider_id);
+            continue;
+        }
+        if let Some(percent) = usage_percent_from_snapshot(usage) {
+            entries.push((percent, *provider_id));
+        }
+    }
+
+    entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+
+    let mut summary_parts: Vec<String> = Vec::new();
+    for (percent, provider_id) in entries.iter().take(MAX_RINGS) {
+        summary_parts.push(format!(
+            "{} {:.0}%",
+            provider_display_name(*provider_id),
+            percent
+        ));
+    }
+
+    for provider_id in error_entries {
+        summary_parts.push(format!("{} error", provider_display_name(provider_id)));
+    }
+
+    if summary_parts.is_empty() {
+        TRAY_TOOLTIP_BASE.to_string()
+    } else {
+        format!("{} - {}", TRAY_TOOLTIP_BASE, summary_parts.join(" • "))
+    }
+}
+
 /// Set up the system tray icon
 pub fn setup_tray(app: &AppHandle) -> Result<()> {
     let _tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
-        .tooltip("IncuBar - AI Usage Tracker")
+        .tooltip(TRAY_TOOLTIP_BASE)
         .icon(render_tray_icon(TrayRenderState {
             usage_rings: Vec::new(),
             status: TrayStatus::Disabled,
@@ -1025,8 +1093,9 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_render_state, palette_for_theme, render_tray_icon, reset_tray_usage_state,
-        TrayRenderState, TrayStatus, UsageRing, ICON_SIZE, STALE_THRESHOLD_SECS, TRAY_USAGE_STATE,
+        compute_render_state, format_tray_tooltip, palette_for_theme, render_tray_icon,
+        reset_tray_usage_state, TrayRenderState, TrayStatus, UsageRing, ICON_SIZE,
+        STALE_THRESHOLD_SECS, TRAY_USAGE_STATE,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
     use std::collections::HashMap;
@@ -1187,5 +1256,26 @@ mod tests {
         let idx = ((center - 6) * ICON_SIZE as usize + center) * 4;
         let pixel = &icon.rgba()[idx..idx + 4];
         assert_eq!(pixel, palette.generic_ring);
+    }
+
+    #[test]
+    fn format_tray_tooltip_includes_top_usage_and_errors() {
+        reset_tray_usage_state();
+        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        guard.provider_usage = HashMap::from([
+            (ProviderId::Codex, sample_usage(72.0)),
+            (ProviderId::Claude, sample_usage(12.0)),
+        ]);
+        let mut error_usage = sample_usage(40.0);
+        error_usage.error = Some("broken".to_string());
+        guard.provider_usage.insert(ProviderId::Cursor, error_usage);
+        drop(guard);
+
+        let state = TRAY_USAGE_STATE.read().unwrap();
+        let tooltip = format_tray_tooltip(&state);
+        assert!(tooltip.starts_with("IncuBar - AI Usage Tracker - "));
+        assert!(tooltip.contains("Codex 72%"));
+        assert!(tooltip.contains("Claude 12%"));
+        assert!(tooltip.contains("Cursor error"));
     }
 }
