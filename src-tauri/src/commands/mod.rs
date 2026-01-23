@@ -41,6 +41,16 @@ impl Drop for LoadingGuard {
     }
 }
 
+fn emit_refreshing(app: &AppHandle, provider_id: ProviderId, is_refreshing: bool) {
+    let _ = app.emit(
+        "refreshing-provider",
+        serde_json::json!({
+            "providerId": provider_id,
+            "isRefreshing": is_refreshing,
+        }),
+    );
+}
+
 /// Settings structure matching frontend
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,6 +90,7 @@ pub async fn refresh_provider(
     tracing::debug!("Refreshing provider: {:?}", provider_id);
 
     let mut loading_guard = LoadingGuard::new(&app);
+    emit_refreshing(&app, provider_id, true);
 
     let status = registry.fetch_status(&provider_id).await.ok();
     let usage = registry
@@ -88,6 +99,7 @@ pub async fn refresh_provider(
         .map_err(|e| e.to_string())?;
 
     loading_guard.finish();
+    emit_refreshing(&app, provider_id, false);
 
     // Emit event to frontend
     let _ = app.emit(
@@ -122,6 +134,10 @@ pub async fn refresh_all_providers(
     let providers = registry.get_enabled_providers();
 
     let mut loading_guard = LoadingGuard::new(&app);
+
+    for provider_id in &providers {
+        emit_refreshing(&app, *provider_id, true);
+    }
 
     for provider_id in providers {
         let status = registry.fetch_status(&provider_id).await.ok();
@@ -167,6 +183,7 @@ pub async fn refresh_all_providers(
                 }
             }
         }
+        emit_refreshing(&app, provider_id, false);
     }
 
     loading_guard.finish();
@@ -494,6 +511,23 @@ pub async fn store_opencode_cookies(cookie_header: String) -> Result<LoginResult
     }
 }
 
+/// Store Codex session cookies (for web dashboard extras)
+#[command]
+pub async fn store_codex_cookies(cookie_header: String) -> Result<LoginResult, String> {
+    match login::store_codex_session(cookie_header).await {
+        Ok(()) => Ok(LoginResult {
+            success: true,
+            message: "Codex cookies saved successfully".to_string(),
+            provider_id: "codex".to_string(),
+        }),
+        Err(e) => Ok(LoginResult {
+            success: false,
+            message: format!("Failed to save Codex cookies: {}", e),
+            provider_id: "codex".to_string(),
+        }),
+    }
+}
+
 /// Open the Cursor login window (WebView-based login)
 #[command]
 pub async fn open_cursor_login(app: AppHandle) -> Result<(), String> {
@@ -575,6 +609,7 @@ fn parse_cookie_source(source: &str) -> Result<BrowserCookieSource, String> {
         "edge" => Ok(BrowserCookieSource::Edge),
         "brave" => Ok(BrowserCookieSource::Brave),
         "opera" => Ok(BrowserCookieSource::Opera),
+        "manual" => Err("Manual cookie import requires pasting a Cookie header".to_string()),
         _ => Err(format!("Unsupported cookie source: {}", source)),
     }
 }
@@ -1332,6 +1367,113 @@ pub async fn import_opencode_browser_cookies_from_source(
                     e
                 ),
                 provider_id: "opencode".to_string(),
+            })
+        }
+    }
+}
+
+/// Import Codex cookies from system browsers (Chrome, Safari, etc.)
+#[command]
+pub async fn import_codex_browser_cookies(app: AppHandle) -> Result<LoginResult, String> {
+    tracing::info!("Importing Codex cookies from system browsers");
+
+    match crate::browser_cookies::import_codex_cookies_from_browser().await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_codex_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "codex",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Codex web extras are now connected.",
+                            result.cookie_count, result.browser_name
+                        ),
+                        provider_id: "codex".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "codex".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Codex browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from browsers: {}. Make sure you're logged into chatgpt.com in Chrome or Safari, then try again.",
+                    e
+                ),
+                provider_id: "codex".to_string(),
+            })
+        }
+    }
+}
+
+#[command]
+pub async fn import_codex_browser_cookies_from_source(
+    app: AppHandle,
+    source: BrowserCookieSourceRequest,
+) -> Result<LoginResult, String> {
+    tracing::info!("Importing Codex cookies from {:?}", source.source);
+
+    let parsed = parse_cookie_source(source.source.trim())?;
+
+    match crate::browser_cookies::import_codex_cookies_from_browser_source(parsed).await {
+        Ok(result) => {
+            tracing::info!(
+                "Successfully imported {} cookies from {}",
+                result.cookie_count,
+                result.browser_name
+            );
+
+            match login::store_codex_session(result.cookie_header).await {
+                Ok(()) => {
+                    let _ = app.emit("login-completed", serde_json::json!({
+                        "providerId": "codex",
+                        "success": true,
+                        "message": format!("Imported {} cookies from {}", result.cookie_count, result.browser_name),
+                    }));
+
+                    Ok(LoginResult {
+                        success: true,
+                        message: format!(
+                            "Imported {} cookies from {}! Codex web extras are now connected.",
+                            result.cookie_count, result.browser_name
+                        ),
+                        provider_id: "codex".to_string(),
+                    })
+                }
+                Err(e) => Ok(LoginResult {
+                    success: false,
+                    message: format!("Failed to save imported cookies: {}", e),
+                    provider_id: "codex".to_string(),
+                }),
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to import Codex browser cookies: {}", e);
+            Ok(LoginResult {
+                success: false,
+                message: format!(
+                    "Could not import cookies from {}: {}. Make sure you're logged into chatgpt.com and try again.",
+                    parsed.as_label(),
+                    e
+                ),
+                provider_id: "codex".to_string(),
             })
         }
     }

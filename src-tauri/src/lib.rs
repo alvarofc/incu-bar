@@ -12,6 +12,7 @@ pub mod tray;
 
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize logging
@@ -39,6 +40,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
+        .plugin(tauri_plugin_global_shortcut::init())
         .setup(|app| {
             // Initialize the tray icon
             tray::setup_tray(app.handle())?;
@@ -55,6 +57,10 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 providers::start_refresh_loop(handle).await;
             });
+
+            app.global_shortcut().register("CmdOrCtrl+R", move |app, _| {
+                let _ = app.emit("refresh-requested", ());
+            })?;
 
             tracing::info!("IncuBar initialized successfully");
             Ok(())

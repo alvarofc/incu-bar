@@ -46,3 +46,6 @@ tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 base64 = "0.22"
 # Auto-start at login
 tauri-plugin-autostart = "2"
+
+[target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
+tauri-plugin-global-shortcut = "2"

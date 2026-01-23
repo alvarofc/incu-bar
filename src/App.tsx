@@ -5,7 +5,7 @@ import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
-import type { ProviderId, ProviderIncident, UsageUpdateEvent } from './lib/types';
+import type { ProviderId, ProviderIncident, RefreshingEvent, UsageUpdateEvent } from './lib/types';
 import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
 
@@ -49,6 +49,29 @@ function App() {
       unlisten.then((fn) => fn());
     };
   }, [setProviderUsage]);
+
+  useEffect(() => {
+    const unlistenRefresh = listen('refresh-requested', () => {
+      useUsageStore.getState().refreshAllProviders();
+    });
+
+    return () => {
+      unlistenRefresh.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlistenRefreshing = listen<RefreshingEvent>('refreshing-provider', (event) => {
+      useUsageStore.getState().setProviderLoading(
+        event.payload.providerId,
+        event.payload.isRefreshing
+      );
+    });
+
+    return () => {
+      unlistenRefreshing.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;

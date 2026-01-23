@@ -8,6 +8,7 @@ use std::f64::consts::PI;
 use std::sync::RwLock;
 use tauri::{
     image::Image,
+    menu::{MenuBuilder, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
@@ -26,6 +27,7 @@ const MAX_RINGS: usize = 3;
 const STALE_THRESHOLD_SECS: i64 = 600;
 const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
+const TRAY_REFRESH_MENU_ID: &str = "tray_refresh";
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
     RwLock::new(TrayUsageState::default())
@@ -745,8 +747,14 @@ fn format_tray_tooltip(state: &TrayUsageState) -> String {
 
 /// Set up the system tray icon
 pub fn setup_tray(app: &AppHandle) -> Result<()> {
+    let refresh_menu_item = MenuItemBuilder::with_id(TRAY_REFRESH_MENU_ID, "Refresh")
+        .accelerator("CmdOrCtrl+R")
+        .build(app)?;
+    let tray_menu = MenuBuilder::new(app).item(&refresh_menu_item).build()?;
+
     let _tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
+        .menu(&tray_menu)
         .icon(render_tray_icon(TrayRenderState {
             usage_rings: Vec::new(),
             status: TrayStatus::Disabled,
@@ -773,6 +781,11 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
                     }
                 }
                 _ => {}
+            }
+        })
+        .on_menu_event(|tray, event| {
+            if event.id().as_ref() == TRAY_REFRESH_MENU_ID {
+                let _ = tray.app_handle().emit("refresh-requested", ());
             }
         })
         .build(app)?;
