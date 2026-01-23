@@ -48,6 +48,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const showCost = useSettingsStore((s) => s.showCost);
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
+  const notifySessionUsage = useSettingsStore((s) => s.notifySessionUsage);
+  const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
+  const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
+  const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
   const launchAtLogin = useSettingsStore((s) => s.launchAtLogin);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
@@ -236,6 +240,22 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetShowNotifications = useCallback((show: boolean) => {
     useSettingsStore.getState().setShowNotifications(show);
+  }, []);
+
+  const handleSetNotifySessionUsage = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setNotifySessionUsage(enabled);
+  }, []);
+
+  const handleSetNotifyCreditsLow = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setNotifyCreditsLow(enabled);
+  }, []);
+
+  const handleSetNotifyRefreshFailure = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setNotifyRefreshFailure(enabled);
+  }, []);
+
+  const handleSetNotifyStaleUsage = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setNotifyStaleUsage(enabled);
   }, []);
 
   const handleSetDisplayMode = useCallback((mode: 'merged' | 'separate') => {
@@ -1190,6 +1210,38 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
               <ToggleOption label="Show Extra Usage" enabled={showExtraUsage} onChange={handleSetShowExtraUsage} />
               <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
+              {showNotifications && (
+                <div className="space-y-1 pl-2" data-testid="notification-preferences">
+                  <ToggleOption
+                    label="Session usage alerts"
+                    enabled={notifySessionUsage}
+                    onChange={handleSetNotifySessionUsage}
+                  />
+                  <ToggleOption
+                    label="Credits low alerts"
+                    enabled={notifyCreditsLow}
+                    onChange={handleSetNotifyCreditsLow}
+                  />
+                  <ToggleOption
+                    label="Refresh failure alerts"
+                    enabled={notifyRefreshFailure}
+                    onChange={handleSetNotifyRefreshFailure}
+                  />
+                  <ToggleOption
+                    label="Stale usage alerts"
+                    enabled={notifyStaleUsage}
+                    onChange={handleSetNotifyStaleUsage}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void invoke('send_test_notification')}
+                    className="mt-1 w-full text-left text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                    data-testid="notification-test-button"
+                  >
+                    Send test notification
+                  </button>
+                </div>
+              )}
               <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
             </div>
           </div>

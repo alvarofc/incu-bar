@@ -121,6 +121,10 @@ export interface AppSettings {
   usageBarDisplayMode: UsageBarDisplayMode;
   resetTimeDisplayMode: ResetTimeDisplayMode;
   showNotifications: boolean;
+  notifySessionUsage: boolean;
+  notifyCreditsLow: boolean;
+  notifyRefreshFailure: boolean;
+  notifyStaleUsage: boolean;
   launchAtLogin: boolean;
   showCredits: boolean;
   showCost: boolean;

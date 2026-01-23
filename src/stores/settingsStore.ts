@@ -23,6 +23,10 @@ interface SettingsStore extends AppSettings {
   setUsageBarDisplayMode: (mode: UsageBarDisplayMode) => void;
   setResetTimeDisplayMode: (mode: 'relative' | 'absolute') => void;
   setShowNotifications: (show: boolean) => void;
+  setNotifySessionUsage: (enabled: boolean) => void;
+  setNotifyCreditsLow: (enabled: boolean) => void;
+  setNotifyRefreshFailure: (enabled: boolean) => void;
+  setNotifyStaleUsage: (enabled: boolean) => void;
   setLaunchAtLogin: (launch: boolean) => void;
   setShowCredits: (show: boolean) => void;
   setShowCost: (show: boolean) => void;
@@ -73,6 +77,14 @@ export const useSettingsStore = create<SettingsStore>()(
       setResetTimeDisplayMode: (mode) => set({ resetTimeDisplayMode: mode }),
 
       setShowNotifications: (show) => set({ showNotifications: show }),
+
+      setNotifySessionUsage: (enabled) => set({ notifySessionUsage: enabled }),
+
+      setNotifyCreditsLow: (enabled) => set({ notifyCreditsLow: enabled }),
+
+      setNotifyRefreshFailure: (enabled) => set({ notifyRefreshFailure: enabled }),
+
+      setNotifyStaleUsage: (enabled) => set({ notifyStaleUsage: enabled }),
 
       setLaunchAtLogin: async (launch) => {
         try {

@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use tauri::{command, AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::browser_cookies::BrowserCookieSource;
@@ -294,6 +295,17 @@ pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
     // TODO: Save to tauri-plugin-store
     tracing::debug!("Saving settings: {:?}", settings);
     Ok(())
+}
+
+/// Send a test notification
+#[command]
+pub async fn send_test_notification(app: AppHandle) -> Result<(), String> {
+    app.notification()
+        .builder()
+        .title("IncuBar")
+        .body("Notifications are enabled")
+        .show()
+        .map_err(|e| e.to_string())
 }
 
 // ============== Login Commands ==============

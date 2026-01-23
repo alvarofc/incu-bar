@@ -33,6 +33,10 @@ function App() {
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
+  const notifySessionUsage = useSettingsStore((s) => s.notifySessionUsage);
+  const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
+  const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
+  const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const initializedRef = useRef(false);
   const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
@@ -71,7 +75,7 @@ function App() {
         providerName: metadata.name,
         sessionLabel: metadata.sessionLabel,
         usage,
-        showNotifications,
+        showNotifications: showNotifications && notifySessionUsage,
         stateMap: notificationStateRef.current,
         notify: (title, body) => void sendNotification({ title, body }),
       });
@@ -79,7 +83,7 @@ function App() {
         providerId,
         providerName: metadata.name,
         usage,
-        showNotifications,
+        showNotifications: showNotifications && notifyCreditsLow,
         stateMap: creditsNotificationStateRef.current,
         notify: (title, body) => void sendNotification({ title, body }),
       });
@@ -87,7 +91,7 @@ function App() {
         providerId,
         providerName: metadata.name,
         error: usage.error,
-        showNotifications,
+        showNotifications: showNotifications && notifyRefreshFailure,
         stateMap: refreshFailureNotificationRef.current,
         notify: (title, body) => void sendNotification({ title, body }),
       });
@@ -96,7 +100,7 @@ function App() {
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [setProviderUsage, showNotifications]);
+  }, [setProviderUsage, showNotifications, notifySessionUsage, notifyCreditsLow, notifyRefreshFailure]);
 
   useEffect(() => {
     const unlistenRefresh = listen('refresh-requested', () => {
@@ -130,7 +134,7 @@ function App() {
         providerId,
         providerName: metadata.name,
         error: usage.error,
-        showNotifications,
+        showNotifications: showNotifications && notifyRefreshFailure,
         stateMap: refreshFailureNotificationRef.current,
         notify: (title, body) => void sendNotification({ title, body }),
       });
@@ -139,7 +143,7 @@ function App() {
     return () => {
       unlistenRefreshFailure.then((fn) => fn());
     };
-  }, [showNotifications]);
+  }, [showNotifications, notifyRefreshFailure]);
 
   useEffect(() => {
     if (refreshIntervalSeconds <= 0) return undefined;
@@ -154,7 +158,7 @@ function App() {
           providerId: provider.id,
           providerName: metadata.name,
           updatedAt: provider.usage.updatedAt,
-          showNotifications,
+          showNotifications: showNotifications && notifyStaleUsage,
           staleAfterMs: intervalMs * 2,
           stateMap: staleUsageNotificationRef.current,
           notify: (title, body) => void sendNotification({ title, body }),
@@ -165,7 +169,7 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [refreshIntervalSeconds, showNotifications]);
+  }, [refreshIntervalSeconds, showNotifications, notifyStaleUsage]);
 
 
   useEffect(() => {

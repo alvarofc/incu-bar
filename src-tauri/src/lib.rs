@@ -74,6 +74,7 @@ pub fn run() {
             commands::set_provider_enabled,
             commands::get_settings,
             commands::save_settings,
+            commands::send_test_notification,
             commands::start_login,
             commands::check_auth,
             commands::check_all_auth,
