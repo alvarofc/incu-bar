@@ -1,13 +1,13 @@
 //! Codex (OpenAI) provider implementation
-//! 
+//!
 //! Supports two authentication methods:
 //! 1. OAuth API (chatgpt.com) - uses credentials from ~/.codex/auth.json
-//! 2. CLI fallback (not yet implemented)
+//! 2. OpenAI web cookies (chatgpt.com) - optional extras via browser cookies
 
+use super::{cost_usage, Credits, ProviderFetcher, ProviderId, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::PathBuf;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity, Credits};
 
 const DEFAULT_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 
@@ -21,15 +21,16 @@ impl CodexProvider {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
-        
+
         Self { client }
     }
 
     /// Fetch usage via OAuth API
     async fn fetch_via_oauth(&self) -> Result<UsageSnapshot, anyhow::Error> {
         let auth = self.load_auth_credentials().await?;
-        
-        let mut request = self.client
+
+        let mut request = self
+            .client
             .get(DEFAULT_USAGE_URL)
             .header("Authorization", format!("Bearer {}", auth.access_token))
             .header("Accept", "application/json")
@@ -42,7 +43,37 @@ impl CodexProvider {
         let response = request.send().await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Codex API returned status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Codex API returned status: {}",
+                response.status()
+            ));
+        }
+
+        let usage_response: CodexUsageResponse = response.json().await?;
+        Ok(self.convert_response(usage_response))
+    }
+
+    async fn fetch_via_cookies(&self) -> Result<UsageSnapshot, anyhow::Error> {
+        let cookie_header = self.load_stored_cookies().await?;
+
+        let response = self
+            .client
+            .get(DEFAULT_USAGE_URL)
+            .header("Cookie", cookie_header)
+            .header("Accept", "application/json")
+            .header("User-Agent", "IncuBar/1.0")
+            .send()
+            .await?;
+
+        match response.status().as_u16() {
+            200 => {}
+            401 | 403 => return Err(anyhow::anyhow!("OpenAI session expired")),
+            status => {
+                return Err(anyhow::anyhow!(
+                    "OpenAI web request failed (HTTP {})",
+                    status
+                ))
+            }
         }
 
         let usage_response: CodexUsageResponse = response.json().await?;
@@ -52,17 +83,32 @@ impl CodexProvider {
     /// Load OAuth credentials from ~/.codex/auth.json
     async fn load_auth_credentials(&self) -> Result<CodexAuthTokens, anyhow::Error> {
         let auth_path = self.get_auth_path()?;
-        
+
         if !auth_path.exists() {
-            return Err(anyhow::anyhow!("Codex auth file not found at {:?}", auth_path));
+            return Err(anyhow::anyhow!(
+                "Codex auth file not found at {:?}",
+                auth_path
+            ));
         }
 
         let content = tokio::fs::read_to_string(&auth_path).await?;
         let auth_file: CodexAuthFile = serde_json::from_str(&content)?;
-        
-        auth_file.tokens.ok_or_else(|| {
-            anyhow::anyhow!("No tokens section in auth file")
-        })
+
+        auth_file
+            .tokens
+            .ok_or_else(|| anyhow::anyhow!("No tokens section in auth file"))
+    }
+
+    async fn load_stored_cookies(&self) -> Result<String, anyhow::Error> {
+        let session_path = self.get_session_path()?;
+
+        if session_path.exists() {
+            let content = tokio::fs::read_to_string(&session_path).await?;
+            let session: CodexCookieSession = serde_json::from_str(&content)?;
+            return Ok(session.cookie_header);
+        }
+
+        Err(anyhow::anyhow!("No stored Codex cookie session found"))
     }
 
     /// Get the path to Codex auth file
@@ -71,9 +117,16 @@ impl CodexProvider {
         if let Ok(codex_home) = std::env::var("CODEX_HOME") {
             return Ok(PathBuf::from(codex_home).join("auth.json"));
         }
-        
-        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
         Ok(home.join(".codex").join("auth.json"))
+    }
+
+    fn get_session_path(&self) -> Result<PathBuf, anyhow::Error> {
+        let data_dir =
+            dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+        Ok(data_dir.join("IncuBar").join("codex-session.json"))
     }
 
     /// Convert API response to UsageSnapshot
@@ -185,12 +238,19 @@ impl ProviderFetcher for CodexProvider {
         tracing::debug!("Fetching Codex usage");
 
         match self.fetch_via_oauth().await {
-            Ok(usage) => {
+            Ok(mut usage) => {
                 tracing::debug!("Codex OAuth fetch successful");
+                usage.cost = cost_usage::load_cost_snapshot(ProviderId::Codex).await;
                 Ok(usage)
             }
             Err(e) => {
                 tracing::debug!("Codex OAuth fetch failed: {}", e);
+                if let Ok(usage) = self.fetch_via_cookies().await {
+                    tracing::debug!("Codex cookie fetch successful");
+                    let mut usage = usage;
+                    usage.cost = cost_usage::load_cost_snapshot(ProviderId::Codex).await;
+                    return Ok(usage);
+                }
                 Err(anyhow::anyhow!("Not authenticated: {}", e))
             }
         }
@@ -224,6 +284,12 @@ struct CodexUsageResponse {
     plan_type: Option<String>,
     rate_limit: Option<RateLimitDetails>,
     credits: Option<CreditDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CodexCookieSession {
+    cookie_header: String,
 }
 
 #[derive(Debug, Deserialize)]

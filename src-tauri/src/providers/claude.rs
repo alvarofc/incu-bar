@@ -1,14 +1,14 @@
 //! Claude provider implementation
-//! 
+//!
 //! Supports three authentication methods in priority order:
 //! 1. OAuth API (api.anthropic.com) - requires credentials from ~/.claude/.credentials.json
 //! 2. Web API (claude.ai) - requires session cookie from browser
 //! 3. CLI fallback (not yet implemented)
 
+use super::{cost_usage, ProviderFetcher, ProviderId, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::PathBuf;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity};
 
 const OAUTH_BASE_URL: &str = "https://api.anthropic.com";
 const OAUTH_USAGE_PATH: &str = "/api/oauth/usage";
@@ -27,15 +27,16 @@ impl ClaudeProvider {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
-        
+
         Self { client }
     }
 
     /// Try to fetch via OAuth API first
     async fn fetch_via_oauth(&self) -> Result<UsageSnapshot, anyhow::Error> {
         let creds = self.load_oauth_credentials().await?;
-        
-        let response = self.client
+
+        let response = self
+            .client
             .get(format!("{}{}", OAUTH_BASE_URL, OAUTH_USAGE_PATH))
             .header("Authorization", format!("Bearer {}", creds.access_token))
             .header("Accept", "application/json")
@@ -46,7 +47,10 @@ impl ClaudeProvider {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("OAuth API returned status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "OAuth API returned status: {}",
+                response.status()
+            ));
         }
 
         let usage_response: OAuthUsageResponse = response.json().await?;
@@ -56,17 +60,20 @@ impl ClaudeProvider {
     /// Load OAuth credentials from Claude's credential file
     async fn load_oauth_credentials(&self) -> Result<ClaudeOAuthCredentials, anyhow::Error> {
         let creds_path = self.get_credentials_path()?;
-        
+
         if !creds_path.exists() {
-            return Err(anyhow::anyhow!("Claude credentials file not found at {:?}", creds_path));
+            return Err(anyhow::anyhow!(
+                "Claude credentials file not found at {:?}",
+                creds_path
+            ));
         }
 
         let content = tokio::fs::read_to_string(&creds_path).await?;
         let file: CredentialsFile = serde_json::from_str(&content)?;
-        
-        let oauth = file.claude_ai_oauth.ok_or_else(|| {
-            anyhow::anyhow!("No claudeAiOauth section in credentials file")
-        })?;
+
+        let oauth = file
+            .claude_ai_oauth
+            .ok_or_else(|| anyhow::anyhow!("No claudeAiOauth section in credentials file"))?;
 
         // Validate scopes
         if !oauth.scopes.contains(&"user:profile".to_string()) {
@@ -78,12 +85,17 @@ impl ClaudeProvider {
 
     /// Get the path to Claude's credentials file
     fn get_credentials_path(&self) -> Result<PathBuf, anyhow::Error> {
-        let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
+        let home = dirs::home_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?;
         Ok(home.join(".claude").join(".credentials.json"))
     }
 
     /// Convert OAuth response to UsageSnapshot
-    fn convert_oauth_response(&self, response: OAuthUsageResponse, tier: Option<String>) -> UsageSnapshot {
+    fn convert_oauth_response(
+        &self,
+        response: OAuthUsageResponse,
+        tier: Option<String>,
+    ) -> UsageSnapshot {
         let primary = response.five_hour.map(|w| RateWindow {
             used_percent: w.utilization.unwrap_or(0.0),
             window_minutes: Some(300), // 5 hours
@@ -100,20 +112,28 @@ impl ClaudeProvider {
             label: Some("Weekly".to_string()),
         });
 
-        let tertiary = response.seven_day_opus.or(response.seven_day_sonnet).map(|w| RateWindow {
-            used_percent: w.utilization.unwrap_or(0.0),
-            window_minutes: Some(10080),
-            resets_at: w.resets_at.clone(),
-            reset_description: w.resets_at.as_ref().and_then(|r| self.format_reset_time(r)),
-            label: Some("Weekly (Model)".to_string()),
-        });
+        let tertiary = response
+            .seven_day_opus
+            .or(response.seven_day_sonnet)
+            .map(|w| RateWindow {
+                used_percent: w.utilization.unwrap_or(0.0),
+                window_minutes: Some(10080),
+                resets_at: w.resets_at.clone(),
+                reset_description: w.resets_at.as_ref().and_then(|r| self.format_reset_time(r)),
+                label: Some("Weekly (Model)".to_string()),
+            });
 
         let plan = tier.map(|t| {
             // Convert tier codes to display names
-            if t.contains("max") { "Max".to_string() }
-            else if t.contains("pro") { "Pro".to_string() }
-            else if t.contains("team") { "Team".to_string() }
-            else { t }
+            if t.contains("max") {
+                "Max".to_string()
+            } else if t.contains("pro") {
+                "Pro".to_string()
+            } else if t.contains("team") {
+                "Team".to_string()
+            } else {
+                t
+            }
         });
 
         UsageSnapshot {
@@ -164,8 +184,9 @@ impl ProviderFetcher for ClaudeProvider {
 
         // Try OAuth first
         match self.fetch_via_oauth().await {
-            Ok(usage) => {
+            Ok(mut usage) => {
                 tracing::debug!("Claude OAuth fetch successful");
+                usage.cost = cost_usage::load_cost_snapshot(ProviderId::Claude).await;
                 Ok(usage)
             }
             Err(e) => {

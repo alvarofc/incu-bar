@@ -15,6 +15,7 @@ mod kimi_k2;
 mod kiro;
 mod minimax;
 pub(crate) mod opencode;
+mod cost_usage;
 mod synthetic;
 mod traits;
 mod zai;
