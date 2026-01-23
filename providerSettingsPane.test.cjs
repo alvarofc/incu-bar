@@ -12,6 +12,8 @@ const requiredMarkers = [
   'provider-enable-toggle-',
   'provider-order-up-',
   'provider-order-down-',
+  'data-testid="display-mode-merged"',
+  'data-testid="display-mode-separate"',
   'Settings',
   'Not connected',
 ];

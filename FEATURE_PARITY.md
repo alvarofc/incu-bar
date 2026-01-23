@@ -113,7 +113,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Tray | Dynamic icon | Not Started | Canvas rendering |
 | Tray | Dark/light adaptive | Not Started | |
 | Tray | Tooltip | Not Started | |
-| Popup | Provider tabs | Done | |
+| Popup | Provider tabs | Done | Tabs and icon switcher |
 | Popup | Provider card | Done | |
 | Popup | Empty onboarding | Done | |
 | Popup | Loading states | Done | |
@@ -122,6 +122,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Popup | Manual refresh | Done | |
 | Popup | Settings button | Done | |
 | Settings | Provider toggles | Done | Per-provider enable toggles in settings |
+| Settings | Provider switcher mode | Done | Tabs vs merged icon switcher |
 | Settings | Provider order | Done | Move controls persist ordering |
 | Settings | Refresh interval | Done | |
 | Settings | Show credits | Done | |

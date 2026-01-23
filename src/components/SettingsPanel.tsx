@@ -39,6 +39,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const providerOrder = useSettingsStore((s) => s.providerOrder);
   const setProviderOrder = useSettingsStore((s) => s.setProviderOrder);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
+  const displayMode = useSettingsStore((s) => s.displayMode);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
@@ -216,6 +217,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetShowNotifications = useCallback((show: boolean) => {
     useSettingsStore.getState().setShowNotifications(show);
+  }, []);
+
+  const handleSetDisplayMode = useCallback((mode: 'merged' | 'separate') => {
+    useSettingsStore.getState().setDisplayMode(mode);
   }, []);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
@@ -940,11 +945,48 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Display
           </h2>
-          <div className="space-y-1">
+          <div className="space-y-3">
+            <div>
+              <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
+                Provider Switcher
+              </span>
+              <div className="flex gap-1.5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => handleSetDisplayMode('separate')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    displayMode === 'separate'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="display-mode-separate"
+                >
+                  Tabs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetDisplayMode('merged')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    displayMode === 'merged'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="display-mode-merged"
+                >
+                  Icons
+                </button>
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                Choose tab labels or icon-only switcher.
+              </p>
+            </div>
+            <div className="divider" />
+            <div className="space-y-1">
             <ToggleOption label="Show Credits" enabled={showCredits} onChange={handleSetShowCredits} />
             <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
             <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
             <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
+            </div>
           </div>
         </section>
 

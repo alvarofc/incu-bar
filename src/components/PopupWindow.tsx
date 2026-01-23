@@ -2,8 +2,9 @@ import { useEffect, useRef, useCallback } from 'react';
 import { Settings, RefreshCw, Plug } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MenuCard } from './MenuCard';
-import { ProviderTabs } from './ProviderTabs';
+import { ProviderTabs, ProviderSwitcherButtons } from './ProviderTabs';
 import { useUsageStore, useActiveProvider, useEnabledProviders } from '../stores/usageStore';
+import { useSettingsStore } from '../stores/settingsStore';
 
 interface PopupWindowProps {
   onOpenSettings?: () => void;
@@ -14,6 +15,7 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const enabledProviders = useEnabledProviders();
   const isRefreshing = useUsageStore((s) => s.isRefreshing);
   const lastGlobalRefresh = useUsageStore((s) => s.lastGlobalRefresh);
+  const displayMode = useSettingsStore((s) => s.displayMode);
   const hasRefreshedRef = useRef(false);
 
   // Check if we're still loading (first refresh in progress)
@@ -58,7 +60,7 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   return (
     <div className="popup-container">
       {/* Provider tabs */}
-      <ProviderTabs />
+      {displayMode === 'merged' ? <ProviderSwitcherButtons /> : <ProviderTabs />}
 
       {/* Main content */}
       <div className="flex-1 overflow-y-auto">
