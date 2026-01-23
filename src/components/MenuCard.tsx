@@ -7,6 +7,7 @@ import type { ProviderState } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { useUsageStore } from '../stores/usageStore';
 import { useSettingsStore } from '../stores/settingsStore';
+import { getStaleAfterMs, isTimestampStale } from '../lib/staleness';
 
 interface MenuCardProps {
   provider: ProviderState;
@@ -19,6 +20,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
+  const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError, status } = provider;
@@ -31,6 +33,20 @@ export function MenuCard({ provider }: MenuCardProps) {
   const lastUpdatedText = usage?.updatedAt
     ? formatDistanceToNow(new Date(usage.updatedAt), { addSuffix: true })
     : 'Never';
+  const staleAfterMs = getStaleAfterMs(refreshIntervalSeconds);
+  const isStale = isTimestampStale(usage?.updatedAt, staleAfterMs);
+  const freshnessLabel = usage?.updatedAt ? (isStale ? 'Stale' : 'Fresh') : 'No data';
+
+  const statusLabel = (() => {
+    if (!status?.indicator || status.indicator === 'none') return 'Operational';
+    return status.indicator.charAt(0).toUpperCase() + status.indicator.slice(1);
+  })();
+  const statusUpdatedText = status?.updatedAt
+    ? formatDistanceToNow(new Date(status.updatedAt), { addSuffix: true })
+    : null;
+  const statusLine = `${statusLabel}${status?.description ? ` · ${status.description}` : ''}${
+    statusUpdatedText ? ` · ${statusUpdatedText}` : ''
+  }`;
 
   const paceDetail = useMemo(() => {
     if (!usage?.secondary || !usage.secondary.resetsAt) return null;
@@ -470,10 +486,19 @@ export function MenuCard({ provider }: MenuCardProps) {
       )}
 
       {/* Footer */}
-      <div className="mt-4 pt-3 border-t border-[var(--border-subtle)]">
-        <span className="text-[11px] text-[var(--text-quaternary)]">
-          Updated {lastUpdatedText}
-        </span>
+      <div className="mt-4 pt-3 border-t border-[var(--border-subtle)] space-y-1">
+        <div
+          className="text-[11px] text-[var(--text-quaternary)]"
+          data-testid="provider-freshness-line"
+        >
+          Updated {lastUpdatedText} · {freshnessLabel}
+        </div>
+        <div
+          className="text-[11px] text-[var(--text-quaternary)]"
+          data-testid="provider-status-line"
+        >
+          Status {statusLine}
+        </div>
       </div>
     </div>
   );
