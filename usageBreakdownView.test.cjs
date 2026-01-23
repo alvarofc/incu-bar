@@ -34,4 +34,8 @@ if (!menuCardFile.includes('Credits History')) {
   throw new Error('MenuCard missing credits history section.');
 }
 
+if (!menuCardFile.includes('On pace')) {
+  throw new Error('MenuCard missing pace detail text.');
+}
+
 console.log('Usage breakdown view checks passed.');

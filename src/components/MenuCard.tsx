@@ -32,29 +32,74 @@ export function MenuCard({ provider }: MenuCardProps) {
     ? formatDistanceToNow(new Date(usage.updatedAt), { addSuffix: true })
     : 'Never';
 
-  const paceDelta = useMemo(() => {
-    if (!usage?.secondary || !usage.secondary.windowMinutes || !usage.secondary.resetsAt) return null;
+  const paceDetail = useMemo(() => {
+    if (!usage?.secondary || !usage.secondary.resetsAt) return null;
+    if (!['codex', 'claude'].includes(provider.id)) return null;
     const resetsAt = new Date(usage.secondary.resetsAt).getTime();
     if (Number.isNaN(resetsAt)) return null;
-    const totalMinutes = usage.secondary.windowMinutes;
+    const totalMinutes = usage.secondary.windowMinutes ?? 10080;
     if (totalMinutes <= 0) return null;
     const minutesRemaining = Math.max(0, (resetsAt - Date.now()) / 60000);
+    if (minutesRemaining <= 0 || minutesRemaining > totalMinutes) return null;
     const elapsedMinutes = Math.max(0, totalMinutes - minutesRemaining);
     const expectedUsedPercent = (elapsedMinutes / totalMinutes) * 100;
     if (expectedUsedPercent < 3) return null;
-    const deltaPercent = usage.secondary.usedPercent - expectedUsedPercent;
+    const actualUsedPercent = Math.min(100, Math.max(0, usage.secondary.usedPercent));
+    if (elapsedMinutes === 0 && actualUsedPercent > 0) return null;
+    const deltaPercent = actualUsedPercent - expectedUsedPercent;
+    const onTrack = Math.abs(deltaPercent) <= 2;
+
+    let etaSeconds: number | null = null;
+    let willLastToReset = false;
+    if (elapsedMinutes > 0) {
+      if (actualUsedPercent > 0) {
+        const rate = actualUsedPercent / (elapsedMinutes * 60);
+        if (rate > 0) {
+          const remainingPercent = Math.max(0, 100 - actualUsedPercent);
+          const candidate = remainingPercent / rate;
+          if (candidate >= minutesRemaining * 60) {
+            willLastToReset = true;
+          } else {
+            etaSeconds = candidate;
+          }
+        }
+      } else {
+        willLastToReset = true;
+      }
+    }
+
+    const deltaValue = Math.round(Math.abs(deltaPercent));
+    const leftLabel = onTrack
+      ? 'On pace'
+      : deltaPercent >= 0
+        ? `${deltaValue}% in deficit`
+        : `${deltaValue}% in reserve`;
+
+    const rightLabel = (() => {
+      if (willLastToReset) return 'Lasts until reset';
+      if (etaSeconds === null) return null;
+      if (etaSeconds <= 0) return 'Runs out now';
+      const etaDate = new Date(Date.now() + etaSeconds * 1000);
+      const durationText = formatDistanceToNow(etaDate, { addSuffix: false });
+      return durationText === 'less than a minute' ? 'Runs out now' : `Runs out in ${durationText}`;
+    })();
+
     return {
-      deltaPercent,
+      leftLabel,
+      rightLabel,
       expectedUsedPercent,
+      deltaPercent,
+      onTrack,
     };
-  }, [usage]);
+  }, [provider.id, usage]);
 
   const paceText = useMemo(() => {
-    if (!paceDelta) return null;
-    const deltaValue = Math.round(Math.abs(paceDelta.deltaPercent));
-    const sign = paceDelta.deltaPercent >= 0 ? '+' : '-';
+    if (!paceDetail) return null;
+    if (paceDetail.onTrack) return 'On pace';
+    const deltaValue = Math.round(Math.abs(paceDetail.deltaPercent));
+    const sign = paceDetail.deltaPercent >= 0 ? '+' : '-';
     return `${sign}${deltaValue}%`;
-  }, [paceDelta]);
+  }, [paceDetail]);
 
   const weeklyLabel = metadata.weeklyLabel || 'Weekly';
   const sessionLabel = metadata.sessionLabel || 'Session';
@@ -218,15 +263,25 @@ export function MenuCard({ provider }: MenuCardProps) {
           )}
 
           {showSecondary && usage.secondary && (
-            <ProgressBar
-              percent={usage.secondary.usedPercent}
-              label={usage.secondary.label || weeklyLabel}
-              resetDescription={usage.secondary.resetDescription}
-              resetsAt={usage.secondary.resetsAt}
-              resetTimeDisplayMode={resetTimeDisplayMode}
-              size="md"
-              displayMode={usageBarDisplayMode}
-            />
+            <div className="space-y-1">
+              <ProgressBar
+                percent={usage.secondary.usedPercent}
+                label={usage.secondary.label || weeklyLabel}
+                resetDescription={usage.secondary.resetDescription}
+                resetsAt={usage.secondary.resetsAt}
+                resetTimeDisplayMode={resetTimeDisplayMode}
+                size="md"
+                displayMode={usageBarDisplayMode}
+              />
+              {paceDetail && (
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-[var(--text-secondary)]">{paceDetail.leftLabel}</span>
+                  {paceDetail.rightLabel && (
+                    <span className="text-[var(--text-quaternary)]">{paceDetail.rightLabel}</span>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {showExtraUsage && usage.tertiary && (
@@ -250,8 +305,15 @@ export function MenuCard({ provider }: MenuCardProps) {
                 </span>
               </div>
               <p className="text-[11px] text-[var(--text-quaternary)] mt-1">
-                {paceText ? `Expected usage ${Math.round(paceDelta?.expectedUsedPercent ?? 0)}% by now.` : 'Need a weekly window to estimate pace.'}
+                {paceDetail
+                  ? paceDetail.rightLabel ?? `Expected usage ${Math.round(paceDetail.expectedUsedPercent)}% by now.`
+                  : 'Need a weekly window to estimate pace.'}
               </p>
+              {paceDetail && paceDetail.leftLabel !== paceText && (
+                <p className="text-[11px] text-[var(--text-secondary)] mt-1">
+                  {paceDetail.leftLabel}
+                </p>
+              )}
             </div>
           )}
 
