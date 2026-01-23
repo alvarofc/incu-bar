@@ -68,9 +68,15 @@ function App() {
     };
 
     pollStatus();
+    if (refreshIntervalSeconds <= 0) {
+      return () => {
+        active = false;
+      };
+    }
+
     const interval = window.setInterval(
       pollStatus,
-      Math.max(refreshIntervalSeconds, 60) * 1000
+      refreshIntervalSeconds * 1000
     );
 
     return () => {

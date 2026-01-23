@@ -290,42 +290,49 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage('Could not import from browser. Opening login window…');
       }
 
-      if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax' || providerId === 'amp' || providerId === 'opencode') {
-        const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
-        setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
-          const importCommand = providerId === 'factory'
-            ? 'import_factory_browser_cookies_from_source'
-            : providerId === 'augment'
-              ? 'import_augment_browser_cookies_from_source'
-              : providerId === 'minimax'
-                ? 'import_minimax_browser_cookies_from_source'
-                : providerId === 'amp'
-                  ? 'import_amp_browser_cookies_from_source'
-                  : providerId === 'opencode'
-                    ? 'import_opencode_browser_cookies_from_source'
-                    : 'import_kimi_browser_cookies_from_source';
-        const importResult = await invoke<LoginResult>(importCommand, {
-          source: { source: cookieSource },
-        });
-
-        if (importResult.success) {
-          setLoginMessage(importResult.message);
-          const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-          setAuthStatus(status);
-          const settingsStore = useSettingsStore.getState();
-          settingsStore.enableProvider(providerId);
-          void settingsStore.syncProviderEnabled(providerId, true);
-          useUsageStore.getState().setProviderEnabled(providerId, true);
-          useUsageStore.getState().refreshProvider(providerId);
-          setLoggingIn(null);
-          return;
-        }
-
-        setLoginMessage('Could not import from browser. You can paste cookies manually below.');
+    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax' || providerId === 'amp' || providerId === 'opencode') {
+      const cookieSource = useSettingsStore.getState().getCookieSource(providerId as ProviderId);
+      if (cookieSource === 'manual') {
+        setLoginMessage('Paste your Cookie header below to continue.');
         setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
         setLoggingIn(null);
         return;
       }
+
+      setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
+      const importCommand = providerId === 'factory'
+        ? 'import_factory_browser_cookies_from_source'
+        : providerId === 'augment'
+          ? 'import_augment_browser_cookies_from_source'
+          : providerId === 'minimax'
+            ? 'import_minimax_browser_cookies_from_source'
+            : providerId === 'amp'
+              ? 'import_amp_browser_cookies_from_source'
+              : providerId === 'opencode'
+                ? 'import_opencode_browser_cookies_from_source'
+                : 'import_kimi_browser_cookies_from_source';
+      const importResult = await invoke<LoginResult>(importCommand, {
+        source: { source: cookieSource },
+      });
+
+      if (importResult.success) {
+        setLoginMessage(importResult.message);
+        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+        setAuthStatus(status);
+        const settingsStore = useSettingsStore.getState();
+        settingsStore.enableProvider(providerId);
+        void settingsStore.syncProviderEnabled(providerId, true);
+        useUsageStore.getState().setProviderEnabled(providerId, true);
+        useUsageStore.getState().refreshProvider(providerId);
+        setLoggingIn(null);
+        return;
+      }
+
+      setLoginMessage('Could not import from browser. You can paste cookies manually below.');
+      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
+      setLoggingIn(null);
+      return;
+    }
 
       if (providerId === 'kiro') {
         setLoginMessage('Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.');
@@ -385,7 +392,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                 ? 'store_amp_cookies'
                 : providerId === 'opencode'
                   ? 'store_opencode_cookies'
-                  : 'store_cursor_cookies';
+                  : providerId === 'codex'
+                    ? 'store_codex_cookies'
+                    : 'store_cursor_cookies';
       const result = await invoke<LoginResult>(storeCommand, { cookieHeader });
       if (result.success) {
         setLoginMessage(`${PROVIDERS[providerId].name} cookies saved!`);
@@ -439,7 +448,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleImportBrowserCookies = useCallback(async (providerId: ProviderId) => {
     setLoggingIn(providerId);
-    const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
+    const cookieSource = useSettingsStore.getState().getCookieSource(providerId as ProviderId);
+    if (cookieSource === 'manual') {
+      setLoginMessage('Paste your Cookie header below to continue.');
+      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
+      setLoggingIn(null);
+      return;
+    }
     setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
 
     const importCommand = providerId === 'factory'
@@ -454,7 +469,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               ? 'import_amp_browser_cookies_from_source'
               : providerId === 'opencode'
                 ? 'import_opencode_browser_cookies_from_source'
-                : 'import_cursor_browser_cookies_from_source';
+                : providerId === 'codex'
+                  ? 'import_codex_browser_cookies_from_source'
+                  : 'import_cursor_browser_cookies_from_source';
 
     try {
       const result = await invoke<LoginResult>(importCommand, {
@@ -540,17 +557,18 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, []);
 
   const refreshIntervals = [
+    { label: 'Manual', value: 0 },
     { label: '1m', value: 60 },
+    { label: '2m', value: 120 },
     { label: '5m', value: 300 },
     { label: '15m', value: 900 },
-    { label: '30m', value: 1800 },
   ];
 
   const selectedProvider = PROVIDERS[selectedProviderId];
   const selectedStatus = authStatus[selectedProviderId];
   const selectedIsAuthenticated = selectedStatus?.authenticated === true;
   const selectedIsEnabled = enabledProviders.includes(selectedProviderId);
-  const selectedUsesCookies = selectedProvider.authMethod === 'cookies';
+  const selectedUsesCookies = selectedProvider.authMethod === 'cookies' || selectedProviderId === 'codex';
   const selectedCookieSource = selectedUsesCookies
     ? cookieSources[selectedProviderId] ?? useSettingsStore.getState().getCookieSource(selectedProviderId)
     : null;
@@ -853,6 +871,14 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      onClick={() => handleImportBrowserCookies(selectedProviderId)}
+                      disabled={selectedCookieSource === 'manual' || loggingIn === selectedProviderId}
+                      className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50 disabled:hover:text-[var(--text-secondary)]"
+                    >
+                      Import now
+                    </button>
                     <button
                       type="button"
                       onClick={() => setManualCookiePanels((state) => ({

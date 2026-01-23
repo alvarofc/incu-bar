@@ -20,6 +20,11 @@ const requiredMarkers = [
   'data-testid="menu-bar-display-highest"',
   'data-testid="usage-bar-display-remaining"',
   'data-testid="usage-bar-display-used"',
+  'Manual',
+  '1m',
+  '2m',
+  '5m',
+  '15m',
   'Settings',
   'Not connected',
 ];
