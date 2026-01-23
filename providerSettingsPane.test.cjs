@@ -14,6 +14,9 @@ const requiredMarkers = [
   'provider-order-down-',
   'data-testid="display-mode-merged"',
   'data-testid="display-mode-separate"',
+  'data-testid="menu-bar-display-session"',
+  'data-testid="menu-bar-display-weekly"',
+  'data-testid="menu-bar-display-pace"',
   'Settings',
   'Not connected',
 ];

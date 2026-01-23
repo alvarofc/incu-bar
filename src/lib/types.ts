@@ -89,12 +89,15 @@ export interface ProviderMetadata {
 
 export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'brave' | 'opera';
 
+export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace';
+
 // Settings
 export interface AppSettings {
   refreshIntervalSeconds: number;
   enabledProviders: ProviderId[];
   providerOrder: ProviderId[];
   displayMode: 'merged' | 'separate';
+  menuBarDisplayMode: MenuBarDisplayMode;
   showNotifications: boolean;
   launchAtLogin: boolean;
   showCredits: boolean;

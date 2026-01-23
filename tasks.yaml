@@ -58,42 +58,45 @@ tasks:
     source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,
       ../IncuBar/Sources/CodexBar/ProviderCookieSourceUI.swift,
       src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: add manual cookie header input per provider and wire to runtime fetchers
     source: ../IncuBar/Sources/CodexBar/CookieHeaderStore.swift,
       ../IncuBar/Sources/CodexBar/ProviderCookieSourceUI.swift,
       src/components/SettingsPanel.tsx, src/stores/settingsStore.ts,
       src-tauri/src/storage
-    completed: false
+    completed: true
   - title: implement provider-specific settings panes mirroring IncuBar detail views
     source: ../IncuBar/Sources/CodexBar/PreferencesProviderDetailView.swift,
       src/components/SettingsPanel.tsx
-    completed: false
+    completed: true
   - title: add per-provider enable/disable toggles to settings with persistent order
     source: ../IncuBar/Sources/CodexBar/ProviderToggleStore.swift,
       ../IncuBar/Sources/CodexBar/ProviderRegistry.swift,
       src/components/SettingsPanel.tsx, src/stores/settingsStore.ts,
       src-tauri/src/commands/mod.rs
-    completed: false
+    completed: true
+  - title: "Fix error[E0603]: module `opencode` is private -->
+      src/commands/mod.rs:1210:35 error"
+    completed: true
   - title: implement provider ordering UI with drag-and-drop and persisted ordering
     source: ../IncuBar/Sources/CodexBar/PreferencesProvidersPane.swift,
       ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/components/SettingsPanel.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: add provider switcher buttons and merged icons mode parity
     source: ../IncuBar/Sources/CodexBar/ProviderSwitcherButtons.swift,
       ../IncuBar/Sources/CodexBar/StatusItemController+SwitcherViews.swift,
       src/components/ProviderTabs.tsx, src/components/PopupWindow.tsx
-    completed: false
+    completed: true
   - title: implement merged icons mode with provider switcher menu and usage view swap
     source: ../IncuBar/Sources/CodexBar/MenuDescriptor.swift,
       ../IncuBar/Sources/CodexBar/StatusItemController+SwitcherViews.swift,
       src/components/ProviderTabs.tsx, src/components/PopupWindow.tsx
-    completed: false
+    completed: true
   - title: implement menu bar display modes (session, weekly, pace) with switching
     source: ../IncuBar/Sources/CodexBar/MenuBarDisplayMode.swift,
       src/components/MenuCard.tsx, src/stores/settingsStore.ts
-    completed: false
+    completed: true
   - title: add "show highest usage" display mode with correct aggregation
     source: ../IncuBar/Sources/CodexBar/SettingsStore+MenuPreferences.swift,
       src/stores/settingsStore.ts, src/components/MenuCard.tsx

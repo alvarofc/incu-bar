@@ -250,6 +250,7 @@ export const DEFAULT_SETTINGS = {
   enabledProviders: DEFAULT_ENABLED_PROVIDERS,
   providerOrder: Object.keys(PROVIDERS) as ProviderId[],
   displayMode: 'merged' as const,
+  menuBarDisplayMode: 'session' as const,
   showNotifications: true,
   launchAtLogin: false,
   showCredits: true,

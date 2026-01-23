@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import type { MenuBarDisplayMode } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -40,6 +41,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const setProviderOrder = useSettingsStore((s) => s.setProviderOrder);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const displayMode = useSettingsStore((s) => s.displayMode);
+  const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
@@ -221,6 +223,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetDisplayMode = useCallback((mode: 'merged' | 'separate') => {
     useSettingsStore.getState().setDisplayMode(mode);
+  }, []);
+
+  const handleSetMenuBarDisplayMode = useCallback((mode: MenuBarDisplayMode) => {
+    useSettingsStore.getState().setMenuBarDisplayMode(mode);
   }, []);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
@@ -948,6 +954,53 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           <div className="space-y-3">
             <div>
               <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
+                Menu Bar Display
+              </span>
+              <div className="flex gap-1.5 mt-2">
+                <button
+                  type="button"
+                  onClick={() => handleSetMenuBarDisplayMode('session')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    menuBarDisplayMode === 'session'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="menu-bar-display-session"
+                >
+                  Session
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetMenuBarDisplayMode('weekly')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    menuBarDisplayMode === 'weekly'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="menu-bar-display-weekly"
+                >
+                  Weekly
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetMenuBarDisplayMode('pace')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    menuBarDisplayMode === 'pace'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="menu-bar-display-pace"
+                >
+                  Pace
+                </button>
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                Choose session usage, weekly usage, or weekly pace.
+              </p>
+            </div>
+            <div className="divider" />
+            <div>
+              <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
                 Provider Switcher
               </span>
               <div className="flex gap-1.5 mt-2">
@@ -982,10 +1035,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
             <div className="divider" />
             <div className="space-y-1">
-            <ToggleOption label="Show Credits" enabled={showCredits} onChange={handleSetShowCredits} />
-            <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
-            <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
-            <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
+              <ToggleOption label="Show Credits" enabled={showCredits} onChange={handleSetShowCredits} />
+              <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
+              <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
+              <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
             </div>
           </div>
         </section>

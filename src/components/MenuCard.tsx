@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
@@ -15,6 +15,7 @@ interface MenuCardProps {
 export function MenuCard({ provider }: MenuCardProps) {
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
+  const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError } = provider;
@@ -26,6 +27,46 @@ export function MenuCard({ provider }: MenuCardProps) {
   const lastUpdatedText = usage?.updatedAt
     ? formatDistanceToNow(new Date(usage.updatedAt), { addSuffix: true })
     : 'Never';
+
+  const paceDelta = useMemo(() => {
+    if (!usage?.secondary || !usage.secondary.windowMinutes || !usage.secondary.resetsAt) return null;
+    const resetsAt = new Date(usage.secondary.resetsAt).getTime();
+    if (Number.isNaN(resetsAt)) return null;
+    const totalMinutes = usage.secondary.windowMinutes;
+    if (totalMinutes <= 0) return null;
+    const minutesRemaining = Math.max(0, (resetsAt - Date.now()) / 60000);
+    const elapsedMinutes = Math.max(0, totalMinutes - minutesRemaining);
+    const expectedUsedPercent = (elapsedMinutes / totalMinutes) * 100;
+    if (expectedUsedPercent < 3) return null;
+    const deltaPercent = usage.secondary.usedPercent - expectedUsedPercent;
+    return {
+      deltaPercent,
+      expectedUsedPercent,
+    };
+  }, [usage]);
+
+  const paceText = useMemo(() => {
+    if (!paceDelta) return null;
+    const deltaValue = Math.round(Math.abs(paceDelta.deltaPercent));
+    const sign = paceDelta.deltaPercent >= 0 ? '+' : '-';
+    return `${sign}${deltaValue}%`;
+  }, [paceDelta]);
+
+  const weeklyLabel = metadata.weeklyLabel || 'Weekly';
+  const sessionLabel = metadata.sessionLabel || 'Session';
+
+  const primaryWindow = useMemo(() => {
+    if (!usage) return null;
+    if (menuBarDisplayMode === 'weekly') return usage.secondary ?? null;
+    return usage.primary ?? null;
+  }, [menuBarDisplayMode, usage]);
+
+  const primaryLabel = useMemo(() => {
+    if (menuBarDisplayMode === 'weekly') return weeklyLabel;
+    return sessionLabel;
+  }, [menuBarDisplayMode, sessionLabel, weeklyLabel]);
+
+  const showSecondary = menuBarDisplayMode === 'session' && !!usage?.secondary;
 
   return (
     <div 
@@ -87,19 +128,19 @@ export function MenuCard({ provider }: MenuCardProps) {
       {/* Usage Bars */}
       {usage && (
         <div className="space-y-4">
-          {usage.primary && (
+          {primaryWindow && (
             <ProgressBar
-              percent={usage.primary.usedPercent}
-              label={usage.primary.label || 'Session'}
-              resetDescription={usage.primary.resetDescription}
+              percent={primaryWindow.usedPercent}
+              label={primaryWindow.label || primaryLabel}
+              resetDescription={primaryWindow.resetDescription}
               size="md"
             />
           )}
 
-          {usage.secondary && (
+          {showSecondary && usage.secondary && (
             <ProgressBar
               percent={usage.secondary.usedPercent}
-              label={usage.secondary.label || 'Weekly'}
+              label={usage.secondary.label || weeklyLabel}
               resetDescription={usage.secondary.resetDescription}
               size="md"
             />
@@ -112,6 +153,20 @@ export function MenuCard({ provider }: MenuCardProps) {
               resetDescription={usage.tertiary.resetDescription}
               size="sm"
             />
+          )}
+
+          {menuBarDisplayMode === 'pace' && usage.secondary && (
+            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-medium text-[var(--text-secondary)]">Pace</span>
+                <span className="text-[13px] font-semibold text-[var(--text-primary)] tabular-nums">
+                  {paceText ?? '—'}
+                </span>
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-1">
+                {paceText ? `Expected usage ${Math.round(paceDelta?.expectedUsedPercent ?? 0)}% by now.` : 'Need a weekly window to estimate pace.'}
+              </p>
+            </div>
           )}
         </div>
       )}
