@@ -54,17 +54,34 @@ export function MenuCard({ provider }: MenuCardProps) {
 
   const weeklyLabel = metadata.weeklyLabel || 'Weekly';
   const sessionLabel = metadata.sessionLabel || 'Session';
+  const extraLabel = usage?.tertiary?.label || 'Extra';
+
+  const highestWindow = useMemo(() => {
+    if (!usage) return null;
+    const candidates = [
+      usage.primary ? { window: usage.primary, label: usage.primary.label || sessionLabel } : null,
+      usage.secondary ? { window: usage.secondary, label: usage.secondary.label || weeklyLabel } : null,
+      usage.tertiary ? { window: usage.tertiary, label: usage.tertiary.label || extraLabel } : null,
+    ].filter((candidate): candidate is { window: NonNullable<typeof usage.primary>; label: string } => !!candidate);
+
+    if (!candidates.length) return null;
+    return candidates.reduce((highest, current) =>
+      current.window.usedPercent > highest.window.usedPercent ? current : highest
+    );
+  }, [extraLabel, sessionLabel, usage, weeklyLabel]);
 
   const primaryWindow = useMemo(() => {
     if (!usage) return null;
+    if (menuBarDisplayMode === 'highest') return highestWindow?.window ?? null;
     if (menuBarDisplayMode === 'weekly') return usage.secondary ?? null;
     return usage.primary ?? null;
-  }, [menuBarDisplayMode, usage]);
+  }, [highestWindow, menuBarDisplayMode, usage]);
 
   const primaryLabel = useMemo(() => {
+    if (menuBarDisplayMode === 'highest') return highestWindow?.label || sessionLabel;
     if (menuBarDisplayMode === 'weekly') return weeklyLabel;
     return sessionLabel;
-  }, [menuBarDisplayMode, sessionLabel, weeklyLabel]);
+  }, [highestWindow, menuBarDisplayMode, sessionLabel, weeklyLabel]);
 
   const showSecondary = menuBarDisplayMode === 'session' && !!usage?.secondary;
 

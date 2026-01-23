@@ -993,9 +993,21 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                 >
                   Pace
                 </button>
+                <button
+                  type="button"
+                  onClick={() => handleSetMenuBarDisplayMode('highest')}
+                  className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    menuBarDisplayMode === 'highest'
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                  data-testid="menu-bar-display-highest"
+                >
+                  Highest
+                </button>
               </div>
               <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
-                Choose session usage, weekly usage, or weekly pace.
+                Choose session usage, weekly usage, weekly pace, or highest usage.
               </p>
             </div>
             <div className="divider" />

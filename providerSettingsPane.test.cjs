@@ -17,6 +17,7 @@ const requiredMarkers = [
   'data-testid="menu-bar-display-session"',
   'data-testid="menu-bar-display-weekly"',
   'data-testid="menu-bar-display-pace"',
+  'data-testid="menu-bar-display-highest"',
   'Settings',
   'Not connected',
 ];

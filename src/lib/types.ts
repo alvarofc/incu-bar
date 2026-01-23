@@ -89,7 +89,7 @@ export interface ProviderMetadata {
 
 export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'brave' | 'opera';
 
-export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace';
+export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace' | 'highest';
 
 // Settings
 export interface AppSettings {
