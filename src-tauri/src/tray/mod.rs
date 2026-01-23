@@ -54,12 +54,14 @@ enum TrayStatus {
 struct UsageRing {
     percent: f64,
     color: [u8; 4],
+    provider_id: ProviderId,
 }
 
 #[derive(Clone)]
 struct TrayRenderState {
     usage_rings: Vec<UsageRing>,
     status: TrayStatus,
+    primary_provider: Option<ProviderId>,
 }
 
 struct Canvas {
@@ -104,6 +106,15 @@ impl Canvas {
                 if (dx * dx + dy * dy) <= radius_sq {
                     self.set_pixel(x, y, color);
                 }
+            }
+        }
+    }
+
+    fn draw_square(&mut self, center_x: i32, center_y: i32, size: i32, color: [u8; 4]) {
+        let half = size / 2;
+        for y in (center_y - half)..=(center_y + half) {
+            for x in (center_x - half)..=(center_x + half) {
+                self.set_pixel(x, y, color);
             }
         }
     }
@@ -187,7 +198,7 @@ fn compute_render_state() -> TrayRenderState {
     let mut has_stale = false;
 
     if let Ok(state) = TRAY_USAGE_STATE.read() {
-        for usage in state.provider_usage.values() {
+        for (provider_id, usage) in state.provider_usage.iter() {
             if usage.error.is_some() {
                 has_error = true;
             }
@@ -198,6 +209,7 @@ fn compute_render_state() -> TrayRenderState {
                 rings.push(UsageRing {
                     percent,
                     color: usage_color(percent),
+                    provider_id: *provider_id,
                 });
             }
         }
@@ -209,6 +221,7 @@ fn compute_render_state() -> TrayRenderState {
             .unwrap_or(Ordering::Equal)
     });
     rings.truncate(MAX_RINGS);
+    let primary_provider = rings.first().map(|ring| ring.provider_id);
 
     let status = if has_error {
         TrayStatus::Error
@@ -223,6 +236,7 @@ fn compute_render_state() -> TrayRenderState {
     TrayRenderState {
         usage_rings: rings,
         status,
+        primary_provider,
     }
 }
 
@@ -283,7 +297,7 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
             );
         }
     }
-    canvas.draw_filled_circle(center.0, center.1, 5.5, [45, 45, 45, 255]);
+    draw_provider_icon(&mut canvas, state.primary_provider, center);
 
     let badge_color = match state.status {
         TrayStatus::Ok => None,
@@ -297,6 +311,70 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     }
 
     Image::new_owned(canvas.pixels, ICON_SIZE, ICON_SIZE)
+}
+
+fn draw_provider_icon(canvas: &mut Canvas, provider: Option<ProviderId>, center: (f64, f64)) {
+    match provider {
+        Some(ProviderId::Codex) => draw_codex_face(canvas, center),
+        Some(ProviderId::Claude) => draw_claude_crab(canvas, center),
+        Some(ProviderId::Gemini) => draw_gemini_sparkle(canvas, center),
+        Some(ProviderId::Factory) => draw_factory_gear(canvas, center),
+        _ => draw_generic_ring(canvas, center),
+    }
+}
+
+fn draw_codex_face(canvas: &mut Canvas, center: (f64, f64)) {
+    let face_color = [232, 198, 132, 255];
+    let eye_color = [42, 42, 42, 255];
+    let mouth_color = [90, 60, 50, 255];
+    canvas.draw_filled_circle(center.0, center.1, 6.0, face_color);
+    canvas.set_pixel(center.0 as i32 - 2, center.1 as i32 - 1, eye_color);
+    canvas.set_pixel(center.0 as i32 + 2, center.1 as i32 - 1, eye_color);
+    for x in (center.0 as i32 - 2)..=(center.0 as i32 + 2) {
+        canvas.set_pixel(x, center.1 as i32 + 2, mouth_color);
+    }
+}
+
+fn draw_claude_crab(canvas: &mut Canvas, center: (f64, f64)) {
+    let body_color = [230, 120, 88, 255];
+    let claw_color = [200, 92, 68, 255];
+    let eye_color = [36, 36, 36, 255];
+    canvas.draw_filled_circle(center.0, center.1 + 1.0, 4.5, body_color);
+    canvas.draw_filled_circle(center.0 - 5.0, center.1 - 2.0, 2.0, claw_color);
+    canvas.draw_filled_circle(center.0 + 5.0, center.1 - 2.0, 2.0, claw_color);
+    canvas.set_pixel(center.0 as i32 - 1, center.1 as i32 - 1, eye_color);
+    canvas.set_pixel(center.0 as i32 + 1, center.1 as i32 - 1, eye_color);
+}
+
+fn draw_gemini_sparkle(canvas: &mut Canvas, center: (f64, f64)) {
+    let sparkle_color = [118, 191, 246, 255];
+    let cx = center.0 as i32;
+    let cy = center.1 as i32;
+    for offset in -4_i32..=4 {
+        if offset.abs() <= 3 {
+            canvas.set_pixel(cx + offset, cy, sparkle_color);
+            canvas.set_pixel(cx, cy + offset, sparkle_color);
+        }
+    }
+    canvas.set_pixel(cx - 2, cy - 2, sparkle_color);
+    canvas.set_pixel(cx + 2, cy - 2, sparkle_color);
+    canvas.set_pixel(cx - 2, cy + 2, sparkle_color);
+    canvas.set_pixel(cx + 2, cy + 2, sparkle_color);
+}
+
+fn draw_factory_gear(canvas: &mut Canvas, center: (f64, f64)) {
+    let gear_color = [140, 140, 140, 255];
+    let tooth_color = [165, 165, 165, 255];
+    canvas.draw_ring(center.0, center.1, 6.0, 2.0, gear_color, None, None);
+    canvas.draw_square(center.0 as i32, center.1 as i32 - 7, 2, tooth_color);
+    canvas.draw_square(center.0 as i32, center.1 as i32 + 7, 2, tooth_color);
+    canvas.draw_square(center.0 as i32 - 7, center.1 as i32, 2, tooth_color);
+    canvas.draw_square(center.0 as i32 + 7, center.1 as i32, 2, tooth_color);
+}
+
+fn draw_generic_ring(canvas: &mut Canvas, center: (f64, f64)) {
+    let ring_color = [80, 80, 80, 255];
+    canvas.draw_ring(center.0, center.1, 6.0, 2.0, ring_color, None, None);
 }
 
 fn usage_color(percent: f64) -> [u8; 4] {
@@ -316,6 +394,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .icon(render_tray_icon(TrayRenderState {
             usage_rings: Vec::new(),
             status: TrayStatus::Inactive,
+            primary_provider: None,
         }))
         .icon_as_template(false)
         .on_tray_icon_event(|tray, event| {
@@ -680,8 +759,10 @@ mod tests {
             usage_rings: vec![UsageRing {
                 percent: 42.0,
                 color: [73, 177, 108, 255],
+                provider_id: ProviderId::Claude,
             }],
             status: TrayStatus::Ok,
+            primary_provider: Some(ProviderId::Claude),
         });
         assert_eq!(icon.width(), ICON_SIZE);
         assert_eq!(icon.height(), ICON_SIZE);
@@ -702,6 +783,7 @@ mod tests {
         assert_eq!(state.status, TrayStatus::Ok);
         assert_eq!(state.usage_rings.len(), 2);
         assert_eq!(state.usage_rings.first().map(|ring| ring.percent), Some(81.0));
+        assert_eq!(state.primary_provider, Some(ProviderId::Codex));
     }
 
     #[test]
