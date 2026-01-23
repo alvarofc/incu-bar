@@ -257,5 +257,6 @@ export const DEFAULT_SETTINGS = {
   launchAtLogin: false,
   showCredits: true,
   showCost: true,
+  showExtraUsage: true,
   cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
 };

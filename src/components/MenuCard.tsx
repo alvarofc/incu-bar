@@ -15,6 +15,7 @@ interface MenuCardProps {
 export function MenuCard({ provider }: MenuCardProps) {
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
+  const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
@@ -171,7 +172,7 @@ export function MenuCard({ provider }: MenuCardProps) {
             />
           )}
 
-          {usage.tertiary && (
+          {showExtraUsage && usage.tertiary && (
             <ProgressBar
               percent={usage.tertiary.usedPercent}
               label={usage.tertiary.label || 'Extra'}

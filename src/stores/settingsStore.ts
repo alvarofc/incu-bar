@@ -26,6 +26,7 @@ interface SettingsStore extends AppSettings {
   setLaunchAtLogin: (launch: boolean) => void;
   setShowCredits: (show: boolean) => void;
   setShowCost: (show: boolean) => void;
+  setShowExtraUsage: (show: boolean) => void;
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
@@ -83,6 +84,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setShowCredits: (show) => set({ showCredits: show }),
 
       setShowCost: (show) => set({ showCost: show }),
+
+      setShowExtraUsage: (show) => set({ showExtraUsage: show }),
 
       setCookieSource: (providerId, source) =>
         set((state) => ({

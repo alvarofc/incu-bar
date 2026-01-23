@@ -46,6 +46,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
+  const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
   const launchAtLogin = useSettingsStore((s) => s.launchAtLogin);
 
@@ -217,6 +218,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetShowCost = useCallback((show: boolean) => {
     useSettingsStore.getState().setShowCost(show);
+  }, []);
+
+  const handleSetShowExtraUsage = useCallback((show: boolean) => {
+    useSettingsStore.getState().setShowExtraUsage(show);
   }, []);
 
   const handleSetShowNotifications = useCallback((show: boolean) => {
@@ -1129,6 +1134,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             <div className="space-y-1">
               <ToggleOption label="Show Credits" enabled={showCredits} onChange={handleSetShowCredits} />
               <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
+              <ToggleOption label="Show Extra Usage" enabled={showExtraUsage} onChange={handleSetShowExtraUsage} />
               <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
               <ToggleOption label="Launch at Login" enabled={launchAtLogin} onChange={handleSetLaunchAtLogin} />
             </div>

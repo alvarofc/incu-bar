@@ -108,6 +108,7 @@ export interface AppSettings {
   launchAtLogin: boolean;
   showCredits: boolean;
   showCost: boolean;
+  showExtraUsage: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
 }
 
