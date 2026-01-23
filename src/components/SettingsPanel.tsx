@@ -35,6 +35,9 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onBack }: SettingsPanelProps) {
+  const initialProviderId = (Object.keys(PROVIDERS) as ProviderId[]).find(
+    (id) => PROVIDERS[id].implemented
+  ) ?? 'claude';
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const showCredits = useSettingsStore((s) => s.showCredits);
@@ -48,6 +51,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
   const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
   const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
+  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(initialProviderId);
   const cookieSources = useSettingsStore((s) => s.cookieSources);
   
   const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
@@ -406,6 +410,15 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     (id) => !PROVIDERS[id].implemented
   );
 
+  const selectedProvider = PROVIDERS[selectedProviderId];
+  const selectedStatus = authStatus[selectedProviderId];
+  const selectedIsAuthenticated = selectedStatus?.authenticated === true;
+  const selectedIsEnabled = enabledProviders.includes(selectedProviderId);
+  const selectedUsesCookies = selectedProvider.authMethod === 'cookies';
+  const selectedCookieSource = selectedUsesCookies
+    ? cookieSources[selectedProviderId] ?? useSettingsStore.getState().getCookieSource(selectedProviderId)
+    : null;
+
   const getAuthMethodLabel = (method: string) => {
     switch (method) {
       case 'oauth': return 'OAuth';
@@ -505,22 +518,24 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Providers
           </h2>
-          <div className="space-y-1.5">
+          <div className="space-y-1.5" data-testid="provider-settings-list">
             {implementedProviders.map((id) => {
               const provider = PROVIDERS[id];
               const status = authStatus[id];
-              const isLoggingIn = loggingIn === id;
               const isAuthenticated = status?.authenticated === true;
-              const isEnabled = enabledProviders.includes(id);
-              const usesCookies = provider.authMethod === 'cookies';
-              const cookieSource = usesCookies
-                ? cookieSources[id] ?? useSettingsStore.getState().getCookieSource(id)
-                : null;
+              const isSelected = selectedProviderId === id;
 
               return (
-                <div
+                <button
                   key={id}
-                  className="flex items-center justify-between px-3 py-2.5 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]"
+                  type="button"
+                  onClick={() => setSelectedProviderId(id)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors focus-ring ${
+                    isSelected
+                      ? 'bg-[var(--bg-subtle)] border-[var(--border-strong)]'
+                      : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-overlay)]'
+                  }`}
+                  aria-pressed={isSelected}
                 >
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     <ProviderIcon 
@@ -551,103 +566,188 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                           Not connected
                         </span>
                       )}
-                      {usesCookies && cookieSource && (
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <label
-                            htmlFor={`cookie-source-${id}`}
-                            className="text-[11px] text-[var(--text-quaternary)]"
-                          >
-                            Cookies
-                          </label>
-                          <select
-                            id={`cookie-source-${id}`}
-                            value={cookieSource}
-                            onChange={(event) => handleCookieSourceChange(id, event.target.value as CookieSource)}
-                            className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
-                          >
-                            {COOKIE_SOURCES.map((source) => (
-                              <option key={source} value={source}>
-                                {COOKIE_SOURCE_LABELS[source]}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => setManualCookiePanels((state) => ({ ...state, [id]: !state[id] }))}
-                            className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                          >
-                            {manualCookiePanels[id] ? 'Hide manual' : 'Paste cookies'}
-                          </button>
-                        </div>
-                      )}
                     </div>
                   </div>
+                </button>
+              );
+          })}
+          </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {isAuthenticated && (
-                      <button
-                        onClick={() => handleToggleProvider(id)}
-                        className="toggle focus-ring"
-                        data-state={isEnabled ? 'checked' : 'unchecked'}
-                        role="switch"
-                        aria-checked={isEnabled}
-                        aria-label={isEnabled ? `Hide ${provider.name}` : `Show ${provider.name}`}
-                      >
-                        <span className="toggle-thumb" />
-                      </button>
-                    )}
-                    
-                    <button
-                      onClick={() => handleLogin(id)}
-                      disabled={isLoggingIn}
-                      className="btn btn-ghost focus-ring text-[13px]"
-                    >
-                      {isLoggingIn ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
-                      )}
-                      <span>{isAuthenticated ? 'Reconnect' : 'Connect'}</span>
-                    </button>
-                </div>
-                {usesCookies && manualCookiePanels[id] && (
-                  <div className="mt-2 p-3 rounded-lg bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
-                    <p className="text-[12px] text-[var(--text-tertiary)] mb-2">
-                      Manual fallback: Copy Cookie header from DevTools Network tab
+          {selectedProvider && (
+            <div
+              className="mt-4 p-4 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]"
+              data-testid="provider-detail-pane"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <ProviderIcon
+                    providerId={selectedProviderId}
+                    className={`w-6 h-6 ${selectedIsAuthenticated ? 'opacity-100' : 'opacity-60'}`}
+                    aria-hidden="true"
+                  />
+                  <div>
+                    <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">
+                      {selectedProvider.name} Settings
+                    </h3>
+                    <p className="text-[12px] text-[var(--text-tertiary)] mt-1">
+                      {selectedIsAuthenticated
+                        ? `Connected · ${getAuthMethodLabel(selectedStatus?.method ?? selectedProvider.authMethod)}`
+                        : `Not connected · ${getAuthMethodLabel(selectedProvider.authMethod)}`}
                     </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={manualCookieInputs[id] ?? ''}
-                        onChange={(event) => setManualCookieInputs((state) => ({
-                          ...state,
-                          [id]: event.target.value,
-                        }))}
-                        placeholder="Paste Cookie header…"
-                        aria-label={`Cookie header value for ${provider.name}`}
-                        className="flex-1 px-3 py-2 text-[13px] bg-[var(--bg-base)] rounded-md border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
-                        autoComplete="off"
-                        spellCheck={false}
-                      />
-                      <button
-                        onClick={() => handleSubmitCookies(id)}
-                        disabled={loggingIn === id}
-                        className="btn btn-primary focus-ring"
-                        aria-label={`Submit cookies for ${provider.name}`}
-                      >
-                        {loggingIn === id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
-                        )}
-                      </button>
-                    </div>
+                    {selectedStatus?.email && (
+                      <p className="text-[12px] text-[var(--text-quaternary)] mt-1 truncate">
+                        {selectedStatus.email}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {selectedIsAuthenticated && (
+                  <button
+                    onClick={() => handleToggleProvider(selectedProviderId)}
+                    className="toggle focus-ring"
+                    data-state={selectedIsEnabled ? 'checked' : 'unchecked'}
+                    role="switch"
+                    aria-checked={selectedIsEnabled}
+                    aria-label={selectedIsEnabled ? `Hide ${selectedProvider.name}` : `Show ${selectedProvider.name}`}
+                  >
+                    <span className="toggle-thumb" />
+                  </button>
+                )}
+              </div>
+
+              {selectedStatus?.error && (
+                <div
+                  className="flex items-start gap-2.5 p-3 mt-3 rounded-lg bg-[var(--accent-warning)]/10 border border-[var(--accent-warning)]/20"
+                  role="alert"
+                >
+                  <AlertCircle className="w-4 h-4 text-[var(--accent-warning)] flex-shrink-0 mt-0.5" aria-hidden="true" />
+                  <p className="text-[12px] text-[var(--accent-warning)]/90">
+                    {selectedStatus.error}
+                  </p>
+                </div>
+              )}
+
+              <div className="mt-4 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => handleLogin(selectedProviderId)}
+                    disabled={loggingIn === selectedProviderId}
+                    className="btn btn-primary focus-ring"
+                  >
+                    {loggingIn === selectedProviderId ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                    <span>{selectedIsAuthenticated ? 'Reconnect' : 'Connect'}</span>
+                  </button>
+                  {selectedIsAuthenticated && (
+                    <span className="text-[11px] text-[var(--text-quaternary)]">
+                      Visible in popup tabs
+                    </span>
+                  )}
+                </div>
+
+                {selectedUsesCookies && selectedCookieSource && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label
+                      htmlFor={`cookie-source-${selectedProviderId}`}
+                      className="text-[11px] text-[var(--text-quaternary)]"
+                    >
+                      Cookies
+                    </label>
+                    <select
+                      id={`cookie-source-${selectedProviderId}`}
+                      value={selectedCookieSource}
+                      onChange={(event) => handleCookieSourceChange(selectedProviderId, event.target.value as CookieSource)}
+                      className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
+                    >
+                      {COOKIE_SOURCES.map((source) => (
+                        <option key={source} value={source}>
+                          {COOKIE_SOURCE_LABELS[source]}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setManualCookiePanels((state) => ({
+                        ...state,
+                        [selectedProviderId]: !state[selectedProviderId],
+                      }))}
+                      className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                    >
+                      {manualCookiePanels[selectedProviderId] ? 'Hide manual' : 'Paste cookies'}
+                    </button>
                   </div>
                 )}
               </div>
-            );
-          })}
-          </div>
+
+              {selectedUsesCookies && manualCookiePanels[selectedProviderId] && (
+                <div className="mt-3 p-3 rounded-lg bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
+                  <p className="text-[12px] text-[var(--text-tertiary)] mb-2">
+                    Manual fallback: Copy Cookie header from DevTools Network tab
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={manualCookieInputs[selectedProviderId] ?? ''}
+                      onChange={(event) => setManualCookieInputs((state) => ({
+                        ...state,
+                        [selectedProviderId]: event.target.value,
+                      }))}
+                      placeholder="Paste Cookie header…"
+                      aria-label={`Cookie header value for ${selectedProvider.name}`}
+                      className="flex-1 px-3 py-2 text-[13px] bg-[var(--bg-base)] rounded-md border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <button
+                      onClick={() => handleSubmitCookies(selectedProviderId)}
+                      disabled={loggingIn === selectedProviderId}
+                      className="btn btn-primary focus-ring"
+                      aria-label={`Submit cookies for ${selectedProvider.name}`}
+                    >
+                      {loggingIn === selectedProviderId ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {selectedProviderId === 'cursor' && cursorLoginOpen && (
+                <div className="mt-3 p-3 rounded-lg bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20">
+                  <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
+                    Login window open. Complete login in browser.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleImportBrowserCookies('cursor')}
+                      disabled={loggingIn === 'cursor'}
+                      className="btn btn-primary focus-ring flex-1 text-[12px]"
+                    >
+                      {loggingIn === 'cursor' ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Cookie className="w-3.5 h-3.5" aria-hidden="true" />
+                      )}
+                      <span>Import from Browser</span>
+                    </button>
+                    <button
+                      onClick={handleExtractCookies}
+                      disabled={loggingIn === 'cursor'}
+                      className="btn btn-ghost focus-ring flex-1 text-[12px]"
+                    >
+                      <span>Extract from Window</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           
           {/* Upcoming Providers */}
           {upcomingProviders.length > 0 && (
@@ -677,35 +777,6 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
           )}
           
-            {/* Cursor Login Helper */}
-            {cursorLoginOpen && (
-              <div className="mt-3 p-3 rounded-lg bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20">
-                <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
-                  Login window open. Complete login in browser.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => handleImportBrowserCookies('cursor')}
-                    disabled={loggingIn === 'cursor'}
-                    className="btn btn-primary focus-ring flex-1 text-[12px]"
-                  >
-                  {loggingIn === 'cursor' ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Cookie className="w-3.5 h-3.5" aria-hidden="true" />
-                  )}
-                  <span>Import from Browser</span>
-                </button>
-                <button
-                  onClick={handleExtractCookies}
-                  disabled={loggingIn === 'cursor'}
-                  className="btn btn-ghost focus-ring flex-1 text-[12px]"
-                >
-                  <span>Extract from Window</span>
-                </button>
-              </div>
-              </div>
-            )}
           </section>
 
         <div className="divider mx-4" />
