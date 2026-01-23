@@ -6,7 +6,8 @@ use super::{ProviderFetcher, ProviderIdentity, ProviderStatus, RateWindow, Statu
 use async_trait::async_trait;
 use chrono::Datelike;
 use regex::Regex;
-use tokio::io::AsyncReadExt;
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use std::io::Read;
 
 use crate::debug_settings;
 
@@ -304,6 +305,24 @@ fn usage_output_complete(output: &str) -> bool {
         || lowered.contains("bonus credits")
 }
 
+#[cfg(test)]
+mod pty_tests {
+    use super::spawn_pty_command;
+    use std::io::Read;
+
+    #[test]
+    #[cfg(unix)]
+    fn spawn_pty_command_captures_output() {
+        let (mut child, reader) = spawn_pty_command("/bin/sh", &["-c", "printf 'ok'"])
+            .expect("spawn");
+        let mut buffer = String::new();
+        let mut reader = reader;
+        let _ = reader.read_to_string(&mut buffer);
+        let _ = child.wait();
+        assert!(buffer.contains("ok"));
+    }
+}
+
 fn validate_whoami_output(stdout: &str, stderr: &str, status: i32) -> Result<(), KiroError> {
     let trimmed_stdout = stdout.trim();
     let trimmed_stderr = stderr.trim();
@@ -531,31 +550,13 @@ async fn run_command(
     idle_timeout: std::time::Duration,
 ) -> Result<CommandResult, KiroError> {
     let binary = which_cli().ok_or(KiroError::CliNotFound)?;
-    let mut command = tokio::process::Command::new(binary);
-    command.args(arguments);
-    command.stdin(std::process::Stdio::null());
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    command.env("TERM", "xterm-256color");
-
-    let mut child = command
-        .spawn()
-        .map_err(|err| KiroError::CliFailed(err.to_string()))?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| KiroError::CliFailed("Missing stdout".to_string()))?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| KiroError::CliFailed("Missing stderr".to_string()))?;
+    let (mut child, output_handle) = spawn_pty_command(&binary, arguments)?;
 
     let (stdout_sender, mut stdout_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let (stderr_sender, mut stderr_receiver) = tokio::sync::mpsc::unbounded_channel();
-
-    let stdout_task = tokio::spawn(async move { read_stream(stdout, stdout_sender).await });
-
-    let stderr_task = tokio::spawn(async move { read_stream(stderr, stderr_sender).await });
+    let output_task = tokio::task::spawn_blocking(move || {
+        read_stream_blocking(output_handle, stdout_sender)
+    });
+    let stderr_task = tokio::task::spawn_blocking(|| Vec::new());
 
     let start = std::time::Instant::now();
     let mut last_activity = start;
@@ -564,7 +565,8 @@ async fn run_command(
 
     loop {
         if start.elapsed() >= timeout {
-            let _ = child.kill().await;
+            let _ = child.kill();
+            let _ = child.wait();
             return Err(KiroError::Timeout);
         }
 
@@ -572,21 +574,18 @@ async fn run_command(
             .try_wait()
             .map_err(|err| KiroError::CliFailed(err.to_string()))?;
         if let Some(status) = status {
-            let stdout_bytes = stdout_task.await.unwrap_or_default();
+            let stdout_bytes = output_task.await.unwrap_or_default();
             let stderr_bytes = stderr_task.await.unwrap_or_default();
             return Ok(CommandResult {
                 stdout: String::from_utf8_lossy(&stdout_bytes).to_string(),
                 stderr: String::from_utf8_lossy(&stderr_bytes).to_string(),
-                status: status.code().unwrap_or(-1),
+                status: status.exit_code() as i32,
                 terminated_for_idle,
             });
         }
 
         let mut had_activity = false;
         while stdout_receiver.try_recv().is_ok() {
-            had_activity = true;
-        }
-        while stderr_receiver.try_recv().is_ok() {
             had_activity = true;
         }
         if had_activity {
@@ -596,9 +595,9 @@ async fn run_command(
 
         if last_activity.elapsed() >= idle_timeout && saw_activity {
             terminated_for_idle = true;
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            let stdout_bytes = stdout_task.await.unwrap_or_default();
+            let _ = child.kill();
+            let _ = child.wait();
+            let stdout_bytes = output_task.await.unwrap_or_default();
             let stderr_bytes = stderr_task.await.unwrap_or_default();
             return Ok(CommandResult {
                 stdout: String::from_utf8_lossy(&stdout_bytes).to_string(),
@@ -612,14 +611,42 @@ async fn run_command(
     }
 }
 
-async fn read_stream<S>(mut stream: S, sender: tokio::sync::mpsc::UnboundedSender<()>) -> Vec<u8>
-where
-    S: tokio::io::AsyncRead + Unpin,
-{
+fn spawn_pty_command(
+    binary: &str,
+    arguments: &[&str],
+) -> Result<(Box<dyn portable_pty::Child + Send + Sync>, Box<dyn Read + Send>), KiroError> {
+    let pty_system = native_pty_system();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|err| KiroError::CliFailed(err.to_string()))?;
+
+    let mut command = CommandBuilder::new(binary);
+    command.args(arguments);
+    command.env("TERM", "xterm-256color");
+
+    let child = pair
+        .slave
+        .spawn_command(command)
+        .map_err(|err| KiroError::CliFailed(err.to_string()))?;
+    let reader = pair
+        .master
+        .try_clone_reader()
+        .map_err(|err| KiroError::CliFailed(err.to_string()))?;
+    Ok((child, reader))
+}
+fn read_stream_blocking(
+    mut stream: impl Read,
+    sender: tokio::sync::mpsc::UnboundedSender<()>,
+) -> Vec<u8> {
     let mut buffer = Vec::new();
     let mut temp = [0u8; 1024];
     loop {
-        match stream.read(&mut temp).await {
+        match stream.read(&mut temp) {
             Ok(0) => break,
             Ok(n) => {
                 buffer.extend_from_slice(&temp[..n]);

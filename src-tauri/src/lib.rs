@@ -11,7 +11,7 @@ pub mod providers;
 pub mod storage;
 pub mod tray;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -44,7 +44,7 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec!["--minimized"]),
         ))
-        .plugin(tauri_plugin_global_shortcut::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // Initialize the tray icon
             tray::setup_tray(app.handle())?;
@@ -62,7 +62,7 @@ pub fn run() {
                 providers::start_refresh_loop(handle).await;
             });
 
-            app.global_shortcut().register("CmdOrCtrl+R", move |app, _| {
+            app.global_shortcut().on_shortcut("CmdOrCtrl+R", move |app, _, _| {
                 let _ = app.emit("refresh-requested", ());
             })?;
 

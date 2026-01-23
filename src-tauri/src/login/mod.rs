@@ -6,8 +6,9 @@
 //! 3. Device Flow (Copilot) - GitHub OAuth device authorization
 //! 4. Browser cookie import - Extracts cookies from installed browsers
 
+use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
-use std::process::Stdio;
+use std::io::Read;
 use tokio::process::Command;
 
 /// Login result returned to frontend
@@ -28,6 +29,69 @@ pub enum LoginPhase {
     Processing,
     Success,
     Failed,
+}
+
+struct CliRunResult {
+    success: bool,
+    exit_code: i32,
+    output: String,
+}
+
+async fn run_cli_with_pty(
+    binary: &str,
+    args: &[&str],
+    timeout: std::time::Duration,
+) -> Result<CliRunResult, anyhow::Error> {
+    let pty_system = native_pty_system();
+    let pair = pty_system.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
+
+    let mut command = CommandBuilder::new(binary);
+    command.args(args);
+    command.env("TERM", "xterm-256color");
+
+    let mut child = pair.slave.spawn_command(command)?;
+    let reader = pair.master.try_clone_reader()?;
+
+    let output_task = tokio::task::spawn_blocking(move || read_stream_blocking(reader));
+    let mut killer = child.clone_killer();
+    let wait_task = tokio::task::spawn_blocking(move || child.wait());
+
+    let status = match tokio::time::timeout(timeout, wait_task).await {
+        Ok(result) => result.map_err(|err| anyhow::anyhow!(err.to_string()))??,
+        Err(_) => {
+            let _ = killer.kill();
+            return Err(anyhow::anyhow!(
+                "CLI timed out after {} seconds",
+                timeout.as_secs()
+            ));
+        }
+    };
+
+    let output_bytes = output_task.await.unwrap_or_default();
+    let exit_code = i32::try_from(status.exit_code()).unwrap_or(-1);
+    Ok(CliRunResult {
+        success: status.success(),
+        exit_code,
+        output: String::from_utf8_lossy(&output_bytes).to_string(),
+    })
+}
+
+fn read_stream_blocking(mut stream: impl Read) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let mut temp = [0u8; 1024];
+    loop {
+        match stream.read(&mut temp) {
+            Ok(0) => break,
+            Ok(n) => buffer.extend_from_slice(&temp[..n]),
+            Err(_) => break,
+        }
+    }
+    buffer
 }
 
 /// Device code response from GitHub
@@ -51,32 +115,22 @@ pub struct AccessTokenResponse {
 }
 
 /// Run Claude CLI login
-/// 
+///
 /// Claude CLI stores credentials at ~/.claude/.credentials.json
 pub async fn run_claude_login() -> Result<LoginResult, anyhow::Error> {
     tracing::info!("Starting Claude login flow");
-    
+
     // Find claude binary
     let claude_path = find_binary("claude").await?;
-    
+
     tracing::debug!("Found claude at: {}", claude_path);
-    
-    // Run claude /login
-    let mut child = Command::new(&claude_path)
-        .arg("/login")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn claude: {}", e))?;
-    
-    // Wait for completion with timeout
+
     let timeout = tokio::time::Duration::from_secs(120);
-    let result = tokio::time::timeout(timeout, child.wait()).await;
-    
+    let result = run_cli_with_pty(&claude_path, &["/login"], timeout).await;
+
     match result {
-        Ok(Ok(status)) => {
-            if status.success() {
+        Ok(output) => {
+            if output.success {
                 tracing::info!("Claude login successful");
                 Ok(LoginResult {
                     success: true,
@@ -84,30 +138,25 @@ pub async fn run_claude_login() -> Result<LoginResult, anyhow::Error> {
                     provider_id: "claude".to_string(),
                 })
             } else {
-                let code = status.code().unwrap_or(-1);
-                tracing::warn!("Claude login failed with code {}", code);
+                let trimmed = output.output.trim();
+                let message = if trimmed.is_empty() {
+                    format!("Claude login failed with exit code {}", output.exit_code)
+                } else {
+                    format!("Claude login failed: {}", trimmed)
+                };
+                tracing::warn!("Claude login failed with code {}", output.exit_code);
                 Ok(LoginResult {
                     success: false,
-                    message: format!("Claude login failed with exit code {}", code),
+                    message,
                     provider_id: "claude".to_string(),
                 })
             }
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             tracing::error!("Claude login error: {}", e);
             Ok(LoginResult {
                 success: false,
                 message: format!("Claude login error: {}", e),
-                provider_id: "claude".to_string(),
-            })
-        }
-        Err(_) => {
-            // Timeout - kill the process
-            let _ = child.kill().await;
-            tracing::warn!("Claude login timed out");
-            Ok(LoginResult {
-                success: false,
-                message: "Claude login timed out after 2 minutes".to_string(),
                 provider_id: "claude".to_string(),
             })
         }
@@ -119,28 +168,18 @@ pub async fn run_claude_login() -> Result<LoginResult, anyhow::Error> {
 /// Codex CLI stores credentials at ~/.codex/auth.json
 pub async fn run_codex_login() -> Result<LoginResult, anyhow::Error> {
     tracing::info!("Starting Codex login flow");
-    
+
     // Find codex binary
     let codex_path = find_binary("codex").await?;
-    
+
     tracing::debug!("Found codex at: {}", codex_path);
-    
-    // Run codex login
-    let mut child = Command::new(&codex_path)
-        .arg("login")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn codex: {}", e))?;
-    
-    // Wait for completion with timeout
+
     let timeout = tokio::time::Duration::from_secs(120);
-    let result = tokio::time::timeout(timeout, child.wait()).await;
-    
+    let result = run_cli_with_pty(&codex_path, &["login"], timeout).await;
+
     match result {
-        Ok(Ok(status)) => {
-            if status.success() {
+        Ok(output) => {
+            if output.success {
                 tracing::info!("Codex login successful");
                 Ok(LoginResult {
                     success: true,
@@ -148,29 +187,25 @@ pub async fn run_codex_login() -> Result<LoginResult, anyhow::Error> {
                     provider_id: "codex".to_string(),
                 })
             } else {
-                let code = status.code().unwrap_or(-1);
-                tracing::warn!("Codex login failed with code {}", code);
+                let trimmed = output.output.trim();
+                let message = if trimmed.is_empty() {
+                    format!("Codex login failed with exit code {}", output.exit_code)
+                } else {
+                    format!("Codex login failed: {}", trimmed)
+                };
+                tracing::warn!("Codex login failed with code {}", output.exit_code);
                 Ok(LoginResult {
                     success: false,
-                    message: format!("Codex login failed with exit code {}", code),
+                    message,
                     provider_id: "codex".to_string(),
                 })
             }
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             tracing::error!("Codex login error: {}", e);
             Ok(LoginResult {
                 success: false,
                 message: format!("Codex login error: {}", e),
-                provider_id: "codex".to_string(),
-            })
-        }
-        Err(_) => {
-            let _ = child.kill().await;
-            tracing::warn!("Codex login timed out");
-            Ok(LoginResult {
-                success: false,
-                message: "Codex login timed out after 2 minutes".to_string(),
                 provider_id: "codex".to_string(),
             })
         }
@@ -215,16 +250,18 @@ pub struct AuthStatus {
 async fn check_claude_auth() -> AuthStatus {
     let home = match dirs::home_dir() {
         Some(h) => h,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find home directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find home directory".to_string()),
+            }
+        }
     };
-    
+
     let creds_path = home.join(".claude").join(".credentials.json");
-    
+
     if creds_path.exists() {
         // Try to parse and validate
         match tokio::fs::read_to_string(&creds_path).await {
@@ -265,16 +302,18 @@ async fn check_claude_auth() -> AuthStatus {
 async fn check_codex_auth() -> AuthStatus {
     let home = match dirs::home_dir() {
         Some(h) => h,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find home directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find home directory".to_string()),
+            }
+        }
     };
-    
+
     let auth_path = home.join(".codex").join("auth.json");
-    
+
     if auth_path.exists() {
         match tokio::fs::read_to_string(&auth_path).await {
             Ok(content) => {
@@ -314,16 +353,18 @@ async fn check_codex_auth() -> AuthStatus {
 async fn check_cursor_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
-    
+
     let session_path = data_dir.join("IncuBar").join("cursor-session.json");
-    
+
     if session_path.exists() {
         AuthStatus {
             authenticated: true,
@@ -344,12 +385,14 @@ async fn check_cursor_auth() -> AuthStatus {
 async fn check_factory_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
 
     let session_path = data_dir.join("IncuBar").join("factory-session.json");
@@ -374,12 +417,14 @@ async fn check_factory_auth() -> AuthStatus {
 async fn check_augment_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
 
     let session_path = data_dir.join("IncuBar").join("augment-session.json");
@@ -404,12 +449,14 @@ async fn check_augment_auth() -> AuthStatus {
 async fn check_kimi_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
 
     let session_path = data_dir.join("IncuBar").join("kimi-session.json");
@@ -434,12 +481,14 @@ async fn check_kimi_auth() -> AuthStatus {
 async fn check_minimax_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
 
     let session_path = data_dir.join("IncuBar").join("minimax-session.json");
@@ -464,16 +513,18 @@ async fn check_minimax_auth() -> AuthStatus {
 async fn check_copilot_auth() -> AuthStatus {
     let data_dir = match dirs::data_dir() {
         Some(d) => d,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find data directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find data directory".to_string()),
+            }
+        }
     };
-    
+
     let token_path = data_dir.join("IncuBar").join("copilot-token.json");
-    
+
     if token_path.exists() {
         match tokio::fs::read_to_string(&token_path).await {
             Ok(content) => {
@@ -513,16 +564,18 @@ async fn check_copilot_auth() -> AuthStatus {
 async fn check_gemini_auth() -> AuthStatus {
     let home = match dirs::home_dir() {
         Some(h) => h,
-        None => return AuthStatus {
-            authenticated: false,
-            method: None,
-            email: None,
-            error: Some("Could not find home directory".to_string()),
-        },
+        None => {
+            return AuthStatus {
+                authenticated: false,
+                method: None,
+                email: None,
+                error: Some("Could not find home directory".to_string()),
+            }
+        }
     };
-    
+
     let creds_path = home.join(".gemini").join("oauth_creds.json");
-    
+
     if creds_path.exists() {
         match tokio::fs::read_to_string(&creds_path).await {
             Ok(content) => {
@@ -580,9 +633,10 @@ async fn check_zai_auth() -> AuthStatus {
 
 async fn check_kimi_k2_auth() -> AuthStatus {
     // Kimi K2 uses KIMI_K2_API_KEY, KIMI_API_KEY, or KIMI_KEY environment variable
-    if std::env::var("KIMI_K2_API_KEY").is_ok() 
-        || std::env::var("KIMI_API_KEY").is_ok() 
-        || std::env::var("KIMI_KEY").is_ok() {
+    if std::env::var("KIMI_K2_API_KEY").is_ok()
+        || std::env::var("KIMI_API_KEY").is_ok()
+        || std::env::var("KIMI_KEY").is_ok()
+    {
         AuthStatus {
             authenticated: true,
             method: Some("api_key".to_string()),
@@ -744,7 +798,10 @@ async fn find_kiro_cli() -> Option<String> {
     let candidates = [
         "/usr/local/bin/kiro-cli",
         "/opt/homebrew/bin/kiro-cli",
-        &format!("{}/.local/bin/kiro-cli", std::env::var("HOME").unwrap_or_default()),
+        &format!(
+            "{}/.local/bin/kiro-cli",
+            std::env::var("HOME").unwrap_or_default()
+        ),
     ];
     candidates
         .iter()
@@ -755,11 +812,8 @@ async fn find_kiro_cli() -> Option<String> {
 /// Find a binary in PATH or common locations
 async fn find_binary(name: &str) -> Result<String, anyhow::Error> {
     // Try which first
-    let output = Command::new("which")
-        .arg(name)
-        .output()
-        .await;
-    
+    let output = Command::new("which").arg(name).output().await;
+
     if let Ok(output) = output {
         if output.status.success() {
             let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -768,16 +822,28 @@ async fn find_binary(name: &str) -> Result<String, anyhow::Error> {
             }
         }
     }
-    
+
     // Try common paths
     let common_paths = [
         format!("/usr/local/bin/{}", name),
         format!("/opt/homebrew/bin/{}", name),
-        format!("{}/.local/bin/{}", std::env::var("HOME").unwrap_or_default(), name),
-        format!("{}/.npm-global/bin/{}", std::env::var("HOME").unwrap_or_default(), name),
-        format!("{}/.nvm/versions/node/*/bin/{}", std::env::var("HOME").unwrap_or_default(), name),
+        format!(
+            "{}/.local/bin/{}",
+            std::env::var("HOME").unwrap_or_default(),
+            name
+        ),
+        format!(
+            "{}/.npm-global/bin/{}",
+            std::env::var("HOME").unwrap_or_default(),
+            name
+        ),
+        format!(
+            "{}/.nvm/versions/node/*/bin/{}",
+            std::env::var("HOME").unwrap_or_default(),
+            name
+        ),
     ];
-    
+
     for path in &common_paths {
         // Handle glob patterns
         if path.contains('*') {
@@ -792,7 +858,7 @@ async fn find_binary(name: &str) -> Result<String, anyhow::Error> {
             return Ok(path.clone());
         }
     }
-    
+
     Err(anyhow::anyhow!(
         "{} not found. Please install it first:\n\
         - Claude: Install Claude CLI from https://claude.ai/cli\n\
@@ -803,27 +869,29 @@ async fn find_binary(name: &str) -> Result<String, anyhow::Error> {
 
 /// Store Cursor session cookies
 pub async fn store_cursor_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
-    
+
     // Create directory if needed
     tokio::fs::create_dir_all(&session_dir).await?;
-    
+
     let session_path = session_dir.join("cursor-session.json");
     let content = serde_json::json!({
         "cookieHeader": cookie_header,
         "savedAt": chrono::Utc::now().to_rfc3339(),
     });
-    
+
     tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
-    
+
     tracing::info!("Saved Cursor session to {:?}", session_path);
     Ok(())
 }
 
 /// Store Factory session cookies
 pub async fn store_factory_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -842,7 +910,8 @@ pub async fn store_factory_session(cookie_header: String) -> Result<(), anyhow::
 
 /// Store Augment session cookies
 pub async fn store_augment_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -861,7 +930,8 @@ pub async fn store_augment_session(cookie_header: String) -> Result<(), anyhow::
 
 /// Store Kimi session cookies
 pub async fn store_kimi_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -880,7 +950,8 @@ pub async fn store_kimi_session(cookie_header: String) -> Result<(), anyhow::Err
 
 /// Store MiniMax session cookies
 pub async fn store_minimax_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -899,7 +970,8 @@ pub async fn store_minimax_session(cookie_header: String) -> Result<(), anyhow::
 
 /// Store Amp session cookies
 pub async fn store_amp_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -918,7 +990,8 @@ pub async fn store_amp_session(cookie_header: String) -> Result<(), anyhow::Erro
 
 /// Store OpenCode session cookies
 pub async fn store_opencode_session(cookie_header: String) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;
@@ -932,6 +1005,26 @@ pub async fn store_opencode_session(cookie_header: String) -> Result<(), anyhow:
     tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
 
     tracing::info!("Saved OpenCode session to {:?}", session_path);
+    Ok(())
+}
+
+/// Store Codex session cookies
+pub async fn store_codex_session(cookie_header: String) -> Result<(), anyhow::Error> {
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+    let session_dir = data_dir.join("IncuBar");
+
+    tokio::fs::create_dir_all(&session_dir).await?;
+
+    let session_path = session_dir.join("codex-session.json");
+    let content = serde_json::json!({
+        "cookieHeader": cookie_header,
+        "savedAt": chrono::Utc::now().to_rfc3339(),
+    });
+
+    tokio::fs::write(&session_path, serde_json::to_string_pretty(&content)?).await?;
+
+    tracing::info!("Saved Codex session to {:?}", session_path);
     Ok(())
 }
 
@@ -958,31 +1051,38 @@ pub struct CopilotDeviceCode {
 /// 5. Store token to copilot-token.json
 pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
     tracing::info!("Starting Copilot login via GitHub Device Flow");
-    
+
     // Step 1: Request device code
     let client = reqwest::Client::new();
     let device_code_response = client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
         .header("Content-Type", "application/x-www-form-urlencoded")
-        .body(format!("client_id={}&scope={}", COPILOT_CLIENT_ID, COPILOT_SCOPES))
+        .body(format!(
+            "client_id={}&scope={}",
+            COPILOT_CLIENT_ID, COPILOT_SCOPES
+        ))
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to request device code: {}", e))?;
-    
+
     if !device_code_response.status().is_success() {
         let status = device_code_response.status();
         let body = device_code_response.text().await.unwrap_or_default();
-        return Err(anyhow::anyhow!("Device code request failed ({}): {}", status, body));
+        return Err(anyhow::anyhow!(
+            "Device code request failed ({}): {}",
+            status,
+            body
+        ));
     }
-    
+
     let device_code: DeviceCodeResponse = device_code_response
         .json()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to parse device code response: {}", e))?;
-    
+
     tracing::info!("Got device code. User code: {}", device_code.user_code);
-    
+
     // Step 2: Copy user code to clipboard and open browser
     #[cfg(target_os = "macos")]
     {
@@ -993,21 +1093,22 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
             .output()
             .await;
     }
-    
+
     // Open verification URL in browser
     let _ = Command::new("open")
         .arg(&device_code.verification_uri)
         .spawn();
-    
+
     tracing::info!("Opened browser to {}", device_code.verification_uri);
-    
+
     // Step 3: Poll for access token
     let poll_interval = std::cmp::max(device_code.interval, 5) as u64;
-    let expires_at = std::time::Instant::now() + std::time::Duration::from_secs(device_code.expires_in as u64);
-    
+    let expires_at =
+        std::time::Instant::now() + std::time::Duration::from_secs(device_code.expires_in as u64);
+
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(poll_interval)).await;
-        
+
         if std::time::Instant::now() > expires_at {
             return Ok(LoginResult {
                 success: false,
@@ -1015,7 +1116,7 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                 provider_id: "copilot".to_string(),
             });
         }
-        
+
         let token_response = client
             .post("https://github.com/login/oauth/access_token")
             .header("Accept", "application/json")
@@ -1027,7 +1128,7 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
             ))
             .send()
             .await;
-        
+
         let token_response = match token_response {
             Ok(r) => r,
             Err(e) => {
@@ -1035,7 +1136,7 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                 continue;
             }
         };
-        
+
         let token_result: AccessTokenResponse = match token_response.json().await {
             Ok(r) => r,
             Err(e) => {
@@ -1043,7 +1144,7 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                 continue;
             }
         };
-        
+
         // Check for errors
         if let Some(error) = &token_result.error {
             match error.as_str() {
@@ -1071,7 +1172,10 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                     });
                 }
                 _ => {
-                    let desc = token_result.error_description.as_deref().unwrap_or("Unknown error");
+                    let desc = token_result
+                        .error_description
+                        .as_deref()
+                        .unwrap_or("Unknown error");
                     return Ok(LoginResult {
                         success: false,
                         message: format!("Login failed: {} - {}", error, desc),
@@ -1080,16 +1184,17 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                 }
             }
         }
-        
+
         // Got access token!
         if let Some(access_token) = token_result.access_token {
             tracing::info!("Copilot login successful!");
-            
+
             // Store the token
-            let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
+            let data_dir =
+                dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not find data directory"))?;
             let session_dir = data_dir.join("IncuBar");
             tokio::fs::create_dir_all(&session_dir).await?;
-            
+
             let token_path = session_dir.join("copilot-token.json");
             let content = serde_json::json!({
                 "access_token": access_token,
@@ -1097,11 +1202,11 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
                 "scope": token_result.scope,
                 "saved_at": chrono::Utc::now().to_rfc3339(),
             });
-            
+
             tokio::fs::write(&token_path, serde_json::to_string_pretty(&content)?).await?;
-            
+
             tracing::info!("Saved Copilot token to {:?}", token_path);
-            
+
             return Ok(LoginResult {
                 success: true,
                 message: "Copilot login successful! Token saved.".to_string(),
@@ -1118,50 +1223,53 @@ pub async fn run_copilot_login() -> Result<LoginResult, anyhow::Error> {
 /// Gemini CLI stores credentials at ~/.gemini/oauth_creds.json
 pub async fn run_gemini_login() -> Result<LoginResult, anyhow::Error> {
     tracing::info!("Starting Gemini login flow");
-    
+
     // Find gemini binary
     let gemini_path = find_binary("gemini").await?;
-    
+
     tracing::debug!("Found gemini at: {}", gemini_path);
-    
-    // Run gemini (it will prompt for OAuth login)
-    // Note: Gemini CLI doesn't have a dedicated login command,
-    // running any command will trigger auth if not logged in
-    let mut child = Command::new(&gemini_path)
-        .arg("--help") // Use help as a benign command to trigger auth
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("Failed to spawn gemini: {}", e))?;
-    
-    // Wait for completion with timeout
+
     let timeout = tokio::time::Duration::from_secs(120);
-    let result = tokio::time::timeout(timeout, child.wait()).await;
-    
+    let result = run_cli_with_pty(&gemini_path, &["--help"], timeout).await;
+
     // Check if credentials file was created
     let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Could not find home directory"))?;
     let creds_path = home.join(".gemini").join("oauth_creds.json");
-    
+
     match result {
-        Ok(Ok(_)) => {
-            if creds_path.exists() {
-                tracing::info!("Gemini login successful");
-                Ok(LoginResult {
-                    success: true,
-                    message: "Gemini login successful! Credentials saved.".to_string(),
-                    provider_id: "gemini".to_string(),
-                })
+        Ok(output) => {
+            if output.success {
+                if creds_path.exists() {
+                    tracing::info!("Gemini login successful");
+                    Ok(LoginResult {
+                        success: true,
+                        message: "Gemini login successful! Credentials saved.".to_string(),
+                        provider_id: "gemini".to_string(),
+                    })
+                } else {
+                    tracing::warn!("Gemini command completed but no credentials found");
+                    Ok(LoginResult {
+                        success: false,
+                        message: "Gemini CLI ran but no credentials were saved. Try running 'gemini' manually in terminal.".to_string(),
+                        provider_id: "gemini".to_string(),
+                    })
+                }
             } else {
-                tracing::warn!("Gemini command completed but no credentials found");
+                let trimmed = output.output.trim();
+                let message = if trimmed.is_empty() {
+                    format!("Gemini login failed with exit code {}", output.exit_code)
+                } else {
+                    format!("Gemini login failed: {}", trimmed)
+                };
+                tracing::warn!("Gemini login failed with code {}", output.exit_code);
                 Ok(LoginResult {
                     success: false,
-                    message: "Gemini CLI ran but no credentials were saved. Try running 'gemini' manually in terminal.".to_string(),
+                    message,
                     provider_id: "gemini".to_string(),
                 })
             }
         }
-        Ok(Err(e)) => {
+        Err(e) => {
             tracing::error!("Gemini login error: {}", e);
             Ok(LoginResult {
                 success: false,
@@ -1169,14 +1277,25 @@ pub async fn run_gemini_login() -> Result<LoginResult, anyhow::Error> {
                 provider_id: "gemini".to_string(),
             })
         }
-        Err(_) => {
-            let _ = child.kill().await;
-            tracing::warn!("Gemini login timed out");
-            Ok(LoginResult {
-                success: false,
-                message: "Gemini login timed out after 2 minutes".to_string(),
-                provider_id: "gemini".to_string(),
-            })
-        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_cli_with_pty;
+
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn run_cli_with_pty_returns_output() {
+        let result = run_cli_with_pty(
+            "/bin/sh",
+            &["-c", "printf 'ok'"],
+            std::time::Duration::from_secs(5),
+        )
+        .await
+        .expect("pty run");
+
+        assert!(result.success);
+        assert!(result.output.contains("ok"));
     }
 }
