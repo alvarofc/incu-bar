@@ -21,6 +21,7 @@ interface UsageStore {
   refreshProvider: (id: ProviderId) => Promise<void>;
   refreshAllProviders: () => Promise<void>;
   initializeProviders: (enabledIds: ProviderId[]) => void;
+  resetState: () => void;
 }
 
 // Initialize provider states
@@ -140,6 +141,13 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         ])
       ) as Record<ProviderId, ProviderState>,
     })),
+
+  resetState: () => set({
+    providers: initialProviders,
+    activeProvider: DEFAULT_ENABLED_PROVIDERS[0] || 'claude',
+    isRefreshing: false,
+    lastGlobalRefresh: null,
+  }),
 }));
 
 // Selectors

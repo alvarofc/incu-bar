@@ -104,7 +104,7 @@ Baseline expectation: usage, reset, and auth parity with CodexBar.
 | Core | Launch at login | Done | tauri-plugin-autostart |
 | Core | Background refresh | Done | Rust async loop |
 | Core | Sleep/wake handling | Not Started | Need system events |
-| Core | Crash recovery | Not Started | |
+| Core | Crash recovery | Done | Safe state restore on startup |
 | Core | Debug logging | Done | tracing crate |
 | Tray | Icon present | Done | |
 | Tray | Left click popup | Done | |

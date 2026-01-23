@@ -1,6 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { CRASH_RECOVERY_KEY } from './lib/crashRecovery';
 
 // Error boundary to catch React errors
 interface ErrorBoundaryState {
@@ -20,6 +21,11 @@ class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundaryStat
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error('React error:', error, errorInfo);
+    try {
+      localStorage.setItem(CRASH_RECOVERY_KEY, new Date().toISOString());
+    } catch (storageError) {
+      console.warn('Failed to store crash recovery flag:', storageError);
+    }
   }
 
   render() {

@@ -110,6 +110,7 @@ export interface AppSettings {
   showCost: boolean;
   showExtraUsage: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
+  crashRecoveryAt?: string;
 }
 
 // Event payloads from Rust

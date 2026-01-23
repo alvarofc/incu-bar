@@ -5,6 +5,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
 import type { UsageUpdateEvent } from './lib/types';
+import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
 
 type View = 'main' | 'settings';
@@ -21,6 +22,7 @@ function App() {
   useEffect(() => {
     if (!initializedRef.current) {
       initializedRef.current = true;
+      restoreSafeStateAfterCrash();
       initializeProviders(enabledProviders);
       // Sync autostart status from system
       initAutostart();

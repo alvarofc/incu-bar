@@ -32,6 +32,7 @@ interface SettingsStore extends AppSettings {
   resetToDefaults: () => void;
   // Initialization
   initAutostart: () => Promise<void>;
+  setCrashRecoveryAt: (timestamp: string) => void;
 }
 
 export const useSettingsStore = create<SettingsStore>()(
@@ -99,6 +100,8 @@ export const useSettingsStore = create<SettingsStore>()(
         get().cookieSources[providerId] ?? DEFAULT_COOKIE_SOURCE,
 
       resetToDefaults: () => set(DEFAULT_SETTINGS),
+
+      setCrashRecoveryAt: (timestamp) => set({ crashRecoveryAt: timestamp }),
 
       initAutostart: async () => {
         try {
