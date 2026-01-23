@@ -9,7 +9,7 @@ use std::sync::RwLock;
 use tauri::{
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_positioner::{Position, WindowExt};
 use url::Url;
@@ -25,19 +25,31 @@ const MAX_RINGS: usize = 3;
 const STALE_THRESHOLD_SECS: i64 = 600;
 const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
-const LOADING_SPINNER_COLOR: [u8; 4] = [86, 157, 226, 255];
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
     RwLock::new(TrayUsageState::default())
 });
 
-#[derive(Default)]
 struct TrayUsageState {
     provider_usage: HashMap<ProviderId, UsageSnapshot>,
     disabled_providers: HashSet<ProviderId>,
     loading_count: usize,
     animation_phase: u8,
     blinking: bool,
+    theme: Theme,
+}
+
+impl Default for TrayUsageState {
+    fn default() -> Self {
+        Self {
+            provider_usage: HashMap::new(),
+            disabled_providers: HashSet::new(),
+            loading_count: 0,
+            animation_phase: 0,
+            blinking: false,
+            theme: Theme::Light,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -70,6 +82,7 @@ struct TrayRenderState {
     primary_provider: Option<ProviderId>,
     animation_phase: u8,
     blink_enabled: bool,
+    theme: Theme,
 }
 
 impl TrayRenderState {
@@ -82,6 +95,97 @@ struct Canvas {
     width: u32,
     height: u32,
     pixels: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct TrayPalette {
+    track: [u8; 4],
+    track_disabled: [u8; 4],
+    generic_ring: [u8; 4],
+    loading_spinner: [u8; 4],
+    badge_disabled: [u8; 4],
+    badge_stale: [u8; 4],
+    badge_error: [u8; 4],
+    usage_good: [u8; 4],
+    usage_warn: [u8; 4],
+    usage_critical: [u8; 4],
+    codex_face: [u8; 4],
+    codex_eye: [u8; 4],
+    codex_mouth: [u8; 4],
+    claude_body: [u8; 4],
+    claude_claw: [u8; 4],
+    claude_eye: [u8; 4],
+    gemini: [u8; 4],
+    factory_gear: [u8; 4],
+    factory_tooth: [u8; 4],
+}
+
+fn palette_for_theme(theme: Theme) -> TrayPalette {
+    match theme {
+        Theme::Dark => TrayPalette {
+            track: [224, 224, 224, 220],
+            track_disabled: [178, 178, 178, 180],
+            generic_ring: [238, 238, 238, 255],
+            loading_spinner: [114, 186, 255, 255],
+            badge_disabled: [185, 185, 185, 255],
+            badge_stale: [248, 193, 102, 255],
+            badge_error: [242, 124, 112, 255],
+            usage_good: [96, 200, 130, 255],
+            usage_warn: [248, 193, 102, 255],
+            usage_critical: [242, 124, 112, 255],
+            codex_face: [245, 216, 156, 255],
+            codex_eye: [30, 30, 30, 255],
+            codex_mouth: [110, 72, 60, 255],
+            claude_body: [244, 146, 110, 255],
+            claude_claw: [224, 122, 90, 255],
+            claude_eye: [30, 30, 30, 255],
+            gemini: [140, 210, 255, 255],
+            factory_gear: [200, 200, 200, 255],
+            factory_tooth: [225, 225, 225, 255],
+        },
+        Theme::Light => TrayPalette {
+            track: [190, 190, 190, 220],
+            track_disabled: [165, 165, 165, 180],
+            generic_ring: [80, 80, 80, 255],
+            loading_spinner: [86, 157, 226, 255],
+            badge_disabled: [120, 120, 120, 255],
+            badge_stale: [234, 167, 77, 255],
+            badge_error: [220, 70, 60, 255],
+            usage_good: [73, 177, 108, 255],
+            usage_warn: [234, 167, 77, 255],
+            usage_critical: [220, 85, 73, 255],
+            codex_face: [232, 198, 132, 255],
+            codex_eye: [42, 42, 42, 255],
+            codex_mouth: [90, 60, 50, 255],
+            claude_body: [230, 120, 88, 255],
+            claude_claw: [200, 92, 68, 255],
+            claude_eye: [36, 36, 36, 255],
+            gemini: [118, 191, 246, 255],
+            factory_gear: [140, 140, 140, 255],
+            factory_tooth: [165, 165, 165, 255],
+        },
+        _ => TrayPalette {
+            track: [190, 190, 190, 220],
+            track_disabled: [165, 165, 165, 180],
+            generic_ring: [80, 80, 80, 255],
+            loading_spinner: [86, 157, 226, 255],
+            badge_disabled: [120, 120, 120, 255],
+            badge_stale: [234, 167, 77, 255],
+            badge_error: [220, 70, 60, 255],
+            usage_good: [73, 177, 108, 255],
+            usage_warn: [234, 167, 77, 255],
+            usage_critical: [220, 85, 73, 255],
+            codex_face: [232, 198, 132, 255],
+            codex_eye: [42, 42, 42, 255],
+            codex_mouth: [90, 60, 50, 255],
+            claude_body: [230, 120, 88, 255],
+            claude_claw: [200, 92, 68, 255],
+            claude_eye: [36, 36, 36, 255],
+            gemini: [118, 191, 246, 255],
+            factory_gear: [140, 140, 140, 255],
+            factory_tooth: [165, 165, 165, 255],
+        },
+    }
 }
 
 impl Canvas {
@@ -263,6 +367,15 @@ pub fn set_blinking_state(app: &AppHandle, enabled: bool) -> Result<()> {
     update_tray_icon(app)
 }
 
+pub fn set_tray_theme(app: &AppHandle, theme: Theme) -> Result<()> {
+    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
+        state.theme = theme;
+    } else {
+        tracing::warn!("Tray usage state lock poisoned");
+    }
+    update_tray_icon(app)
+}
+
 pub fn set_provider_disabled(app: &AppHandle, provider_id: ProviderId, disabled: bool) -> Result<()> {
     if let Ok(mut state) = TRAY_USAGE_STATE.write() {
         if disabled {
@@ -322,12 +435,14 @@ fn compute_render_state() -> TrayRenderState {
     let mut animation_phase = 0;
     let mut blinking = false;
     let mut has_disabled = false;
+    let mut theme = Theme::Light;
 
     if let Ok(state) = TRAY_USAGE_STATE.read() {
         loading_count = state.loading_count;
         animation_phase = state.animation_phase;
         blinking = state.blinking;
         has_disabled = !state.disabled_providers.is_empty();
+        theme = state.theme;
         for (provider_id, usage) in state.provider_usage.iter() {
             if usage.error.is_some() {
                 has_error = true;
@@ -338,7 +453,7 @@ fn compute_render_state() -> TrayRenderState {
             if let Some(percent) = usage_percent_from_snapshot(usage) {
                 rings.push(UsageRing {
                     percent,
-                    color: usage_color(percent),
+                    color: usage_color(percent, theme),
                     provider_id: *provider_id,
                 });
             }
@@ -373,6 +488,7 @@ fn compute_render_state() -> TrayRenderState {
         primary_provider,
         animation_phase,
         blink_enabled: blinking,
+        theme,
     }
 }
 
@@ -403,10 +519,11 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     let mut canvas = Canvas::new(ICON_SIZE, ICON_SIZE);
     let center = (ICON_SIZE as f64 / 2.0, ICON_SIZE as f64 / 2.0);
     let outer_radius = (ICON_SIZE as f64 / 2.0) - 1.0;
+    let palette = palette_for_theme(state.theme);
     let track_color = if matches!(state.status, TrayStatus::Disabled) {
-        [165, 165, 165, 180]
+        palette.track_disabled
     } else {
-        [190, 190, 190, 220]
+        palette.track
     };
 
     if state.usage_rings.is_empty() {
@@ -439,9 +556,9 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     }
 
     if !matches!(state.status, TrayStatus::Disabled) {
-        draw_provider_icon(&mut canvas, state.primary_provider, center);
+        draw_provider_icon(&mut canvas, state.primary_provider, center, palette);
     } else {
-        draw_generic_ring(&mut canvas, center);
+        draw_generic_ring(&mut canvas, center, palette);
     }
 
     if matches!(state.status, TrayStatus::Loading) {
@@ -454,7 +571,7 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
             RING_THICKNESS,
             start_fraction,
             0.25,
-            LOADING_SPINNER_COLOR,
+            palette.loading_spinner,
         );
     }
 
@@ -464,10 +581,10 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     } else {
         match state.status {
             TrayStatus::Ok => None,
-            TrayStatus::Loading => Some(LOADING_SPINNER_COLOR),
-            TrayStatus::Disabled => Some([120, 120, 120, 255]),
-            TrayStatus::Stale => Some([234, 167, 77, 255]),
-            TrayStatus::Error => Some([220, 70, 60, 255]),
+            TrayStatus::Loading => Some(palette.loading_spinner),
+            TrayStatus::Disabled => Some(palette.badge_disabled),
+            TrayStatus::Stale => Some(palette.badge_stale),
+            TrayStatus::Error => Some(palette.badge_error),
         }
     };
 
@@ -478,20 +595,25 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
     Image::new_owned(canvas.pixels, ICON_SIZE, ICON_SIZE)
 }
 
-fn draw_provider_icon(canvas: &mut Canvas, provider: Option<ProviderId>, center: (f64, f64)) {
+fn draw_provider_icon(
+    canvas: &mut Canvas,
+    provider: Option<ProviderId>,
+    center: (f64, f64),
+    palette: TrayPalette,
+) {
     match provider {
-        Some(ProviderId::Codex) => draw_codex_face(canvas, center),
-        Some(ProviderId::Claude) => draw_claude_crab(canvas, center),
-        Some(ProviderId::Gemini) => draw_gemini_sparkle(canvas, center),
-        Some(ProviderId::Factory) => draw_factory_gear(canvas, center),
-        _ => draw_generic_ring(canvas, center),
+        Some(ProviderId::Codex) => draw_codex_face(canvas, center, palette),
+        Some(ProviderId::Claude) => draw_claude_crab(canvas, center, palette),
+        Some(ProviderId::Gemini) => draw_gemini_sparkle(canvas, center, palette),
+        Some(ProviderId::Factory) => draw_factory_gear(canvas, center, palette),
+        _ => draw_generic_ring(canvas, center, palette),
     }
 }
 
-fn draw_codex_face(canvas: &mut Canvas, center: (f64, f64)) {
-    let face_color = [232, 198, 132, 255];
-    let eye_color = [42, 42, 42, 255];
-    let mouth_color = [90, 60, 50, 255];
+fn draw_codex_face(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalette) {
+    let face_color = palette.codex_face;
+    let eye_color = palette.codex_eye;
+    let mouth_color = palette.codex_mouth;
     canvas.draw_filled_circle(center.0, center.1, 6.0, face_color);
     canvas.set_pixel(center.0 as i32 - 2, center.1 as i32 - 1, eye_color);
     canvas.set_pixel(center.0 as i32 + 2, center.1 as i32 - 1, eye_color);
@@ -500,10 +622,10 @@ fn draw_codex_face(canvas: &mut Canvas, center: (f64, f64)) {
     }
 }
 
-fn draw_claude_crab(canvas: &mut Canvas, center: (f64, f64)) {
-    let body_color = [230, 120, 88, 255];
-    let claw_color = [200, 92, 68, 255];
-    let eye_color = [36, 36, 36, 255];
+fn draw_claude_crab(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalette) {
+    let body_color = palette.claude_body;
+    let claw_color = palette.claude_claw;
+    let eye_color = palette.claude_eye;
     canvas.draw_filled_circle(center.0, center.1 + 1.0, 4.5, body_color);
     canvas.draw_filled_circle(center.0 - 5.0, center.1 - 2.0, 2.0, claw_color);
     canvas.draw_filled_circle(center.0 + 5.0, center.1 - 2.0, 2.0, claw_color);
@@ -511,8 +633,8 @@ fn draw_claude_crab(canvas: &mut Canvas, center: (f64, f64)) {
     canvas.set_pixel(center.0 as i32 + 1, center.1 as i32 - 1, eye_color);
 }
 
-fn draw_gemini_sparkle(canvas: &mut Canvas, center: (f64, f64)) {
-    let sparkle_color = [118, 191, 246, 255];
+fn draw_gemini_sparkle(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalette) {
+    let sparkle_color = palette.gemini;
     let cx = center.0 as i32;
     let cy = center.1 as i32;
     for offset in -4_i32..=4 {
@@ -527,9 +649,9 @@ fn draw_gemini_sparkle(canvas: &mut Canvas, center: (f64, f64)) {
     canvas.set_pixel(cx + 2, cy + 2, sparkle_color);
 }
 
-fn draw_factory_gear(canvas: &mut Canvas, center: (f64, f64)) {
-    let gear_color = [140, 140, 140, 255];
-    let tooth_color = [165, 165, 165, 255];
+fn draw_factory_gear(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalette) {
+    let gear_color = palette.factory_gear;
+    let tooth_color = palette.factory_tooth;
     canvas.draw_ring(center.0, center.1, 6.0, 2.0, gear_color, None, None);
     canvas.draw_square(center.0 as i32, center.1 as i32 - 7, 2, tooth_color);
     canvas.draw_square(center.0 as i32, center.1 as i32 + 7, 2, tooth_color);
@@ -537,18 +659,19 @@ fn draw_factory_gear(canvas: &mut Canvas, center: (f64, f64)) {
     canvas.draw_square(center.0 as i32 + 7, center.1 as i32, 2, tooth_color);
 }
 
-fn draw_generic_ring(canvas: &mut Canvas, center: (f64, f64)) {
-    let ring_color = [80, 80, 80, 255];
+fn draw_generic_ring(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalette) {
+    let ring_color = palette.generic_ring;
     canvas.draw_ring(center.0, center.1, 6.0, 2.0, ring_color, None, None);
 }
 
-fn usage_color(percent: f64) -> [u8; 4] {
+fn usage_color(percent: f64, theme: Theme) -> [u8; 4] {
+    let palette = palette_for_theme(theme);
     if percent < 50.0 {
-        [73, 177, 108, 255]
+        palette.usage_good
     } else if percent < 80.0 {
-        [234, 167, 77, 255]
+        palette.usage_warn
     } else {
-        [220, 85, 73, 255]
+        palette.usage_critical
     }
 }
 
@@ -562,6 +685,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
             primary_provider: None,
             animation_phase: 0,
             blink_enabled: false,
+            theme: Theme::Light,
         }))
         .icon_as_template(false)
         .on_tray_icon_event(|tray, event| {
@@ -602,6 +726,17 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
         .skip_taskbar(true)
         .focused(true)
         .build()?;
+
+    if let Ok(theme) = window.theme() {
+        let _ = set_tray_theme(app, theme);
+    }
+
+    let app_handle = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let _ = set_tray_theme(&app_handle, *theme);
+        }
+    });
 
     // Open devtools in debug mode
     #[cfg(debug_assertions)]
@@ -890,11 +1025,12 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_render_state, render_tray_icon, reset_tray_usage_state, TrayRenderState,
-        TrayStatus, UsageRing, ICON_SIZE, STALE_THRESHOLD_SECS, TRAY_USAGE_STATE,
+        compute_render_state, palette_for_theme, render_tray_icon, reset_tray_usage_state,
+        TrayRenderState, TrayStatus, UsageRing, ICON_SIZE, STALE_THRESHOLD_SECS, TRAY_USAGE_STATE,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
     use std::collections::HashMap;
+    use tauri::Theme;
 
     fn sample_usage(percent: f64) -> UsageSnapshot {
         sample_usage_with_time(percent, &chrono::Utc::now().to_rfc3339())
@@ -932,6 +1068,7 @@ mod tests {
             primary_provider: Some(ProviderId::Claude),
             animation_phase: 0,
             blink_enabled: false,
+            theme: Theme::Light,
         });
         assert_eq!(icon.width(), ICON_SIZE);
         assert_eq!(icon.height(), ICON_SIZE);
@@ -1016,6 +1153,7 @@ mod tests {
             primary_provider: None,
             animation_phase: 0,
             blink_enabled: false,
+            theme: Theme::Light,
         });
         let blinking_icon = render_tray_icon(TrayRenderState {
             usage_rings: Vec::new(),
@@ -1023,6 +1161,7 @@ mod tests {
             primary_provider: None,
             animation_phase: 1,
             blink_enabled: true,
+            theme: Theme::Light,
         });
 
         let idx = ((6 * ICON_SIZE + (ICON_SIZE - 6)) * 4) as usize;
@@ -1030,5 +1169,23 @@ mod tests {
         let blinking_alpha = blinking_icon.rgba()[idx + 3];
         assert_eq!(steady_alpha, 255);
         assert_eq!(blinking_alpha, 180);
+    }
+
+    #[test]
+    fn render_tray_icon_uses_dark_palette() {
+        reset_tray_usage_state();
+        let icon = render_tray_icon(TrayRenderState {
+            usage_rings: Vec::new(),
+            status: TrayStatus::Disabled,
+            primary_provider: None,
+            animation_phase: 0,
+            blink_enabled: false,
+            theme: Theme::Dark,
+        });
+        let palette = palette_for_theme(Theme::Dark);
+        let center = (ICON_SIZE / 2) as usize;
+        let idx = ((center - 6) * ICON_SIZE as usize + center) * 4;
+        let pixel = &icon.rgba()[idx..idx + 4];
+        assert_eq!(pixel, palette.generic_ring);
     }
 }
