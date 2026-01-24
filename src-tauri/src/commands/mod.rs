@@ -9,6 +9,7 @@ use crate::browser_cookies::BrowserCookieSource;
 use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
+use crate::storage::widget_snapshot;
 use crate::tray;
 
 struct LoadingGuard {
@@ -124,6 +125,9 @@ pub async fn refresh_provider(
                 }),
             );
 
+            if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage) {
+                tracing::warn!("Failed to write widget snapshot: {}", err);
+            }
             tray::handle_usage_update(&app, provider_id, usage.clone()).map_err(|e| e.to_string())?;
 
             Ok(usage)
@@ -156,6 +160,9 @@ pub async fn refresh_provider(
                 }),
             );
 
+            if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage) {
+                tracing::warn!("Failed to write widget snapshot: {}", err);
+            }
             if let Err(e) = tray::handle_usage_update(&app, provider_id, usage) {
                 tracing::warn!("Failed to update tray icon: {}", e);
             }
@@ -199,6 +206,9 @@ pub async fn refresh_all_providers(
                         "status": status,
                     }),
                 );
+                if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage) {
+                    tracing::warn!("Failed to write widget snapshot: {}", err);
+                }
                 if let Err(e) = tray::handle_usage_update(&app, provider_id, usage.clone()) {
                     tracing::warn!("Failed to update tray icon: {}", e);
                 }
@@ -227,6 +237,9 @@ pub async fn refresh_all_providers(
                         "status": status,
                     }),
                 );
+                if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage) {
+                    tracing::warn!("Failed to write widget snapshot: {}", err);
+                }
                 if let Err(e) = tray::handle_usage_update(&app, provider_id, usage) {
                     tracing::warn!("Failed to update tray icon: {}", e);
                 }
