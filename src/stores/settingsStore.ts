@@ -11,6 +11,32 @@ import type {
 import { DEFAULT_COOKIE_SOURCE } from '../lib/cookieSources';
 import { DEFAULT_SETTINGS } from '../lib/providers';
 
+const SETTINGS_STORAGE_KEY = 'incubar-settings';
+const LEGACY_SETTINGS_STORAGE_KEYS = ['codexbar-settings'];
+
+const migrateLegacySettingsStorage = () => {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  const currentValue = localStorage.getItem(SETTINGS_STORAGE_KEY);
+
+  LEGACY_SETTINGS_STORAGE_KEYS.forEach((legacyKey) => {
+    const legacyValue = localStorage.getItem(legacyKey);
+    if (legacyValue === null) {
+      return;
+    }
+
+    if (currentValue === null) {
+      localStorage.setItem(SETTINGS_STORAGE_KEY, legacyValue);
+    }
+
+    localStorage.removeItem(legacyKey);
+  });
+};
+
+migrateLegacySettingsStorage();
+
 interface SettingsStore extends AppSettings {
   // Actions
   setRefreshInterval: (seconds: number) => void;
@@ -150,7 +176,7 @@ export const useSettingsStore = create<SettingsStore>()(
       },
     }),
     {
-      name: 'incubar-settings',
+      name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
     }
   )
