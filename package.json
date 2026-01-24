@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "node FEATURE_PARITY.test.cjs && node cookieSources.test.cjs && node providerSettingsPane.test.cjs && node menuBarHighestUsage.test.cjs && node usageBarDisplay.test.cjs && node resetTimeDisplay.test.cjs && node optionalCreditsExtraUsage.test.cjs && node usageBreakdownView.test.cjs && node launchAtLogin.test.cjs && node crashRecovery.test.cjs && node trayIconStates.test.cjs && node statusPollingBadges.test.cjs && node manualRefreshHotkey.test.cjs && node sessionQuotaNotifications.test.cjs && node lowCreditsNotifications.test.cjs && node refreshFailureNotifications.test.cjs && node staleUsageNotifications.test.cjs && node notificationPreferences.test.cjs && node debugMenuSettings.test.cjs && node freshnessStatusLine.test.cjs && node providerErrorDetailView.test.cjs && node providerEnableEmptyState.test.cjs && node privacyPreferences.test.cjs && node settingsPersistenceMigration.test.cjs && node widgetSnapshotPipeline.test.cjs && node codexbarCliParity.test.cjs && node linuxCliPipeline.test.cjs",
+    "test": "node FEATURE_PARITY.test.cjs && node cookieSources.test.cjs && node providerSettingsPane.test.cjs && node menuBarHighestUsage.test.cjs && node usageBarDisplay.test.cjs && node resetTimeDisplay.test.cjs && node optionalCreditsExtraUsage.test.cjs && node usageBreakdownView.test.cjs && node launchAtLogin.test.cjs && node crashRecovery.test.cjs && node trayIconStates.test.cjs && node statusPollingBadges.test.cjs && node manualRefreshHotkey.test.cjs && node sessionQuotaNotifications.test.cjs && node lowCreditsNotifications.test.cjs && node refreshFailureNotifications.test.cjs && node staleUsageNotifications.test.cjs && node notificationPreferences.test.cjs && node debugMenuSettings.test.cjs && node freshnessStatusLine.test.cjs && node providerErrorDetailView.test.cjs && node providerEnableEmptyState.test.cjs && node privacyPreferences.test.cjs && node settingsPersistenceMigration.test.cjs && node widgetSnapshotPipeline.test.cjs && node updateChannelParity.test.cjs && node codexbarCliParity.test.cjs && node linuxCliPipeline.test.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +17,7 @@
     "@tauri-apps/plugin-http": "^2.5.6",
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-store": "^2.4.2",
     "@tauri-apps/plugin-updater": "^2.9.0",
     "date-fns": "^4.1.0",

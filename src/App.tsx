@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { check } from '@tauri-apps/plugin-updater';
+import { relaunch } from '@tauri-apps/plugin-process';
 import { sendNotification } from '@tauri-apps/plugin-notification';
 import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
-import type { ProviderId, ProviderIncident, RefreshingEvent, UsageUpdateEvent } from './lib/types';
+import type { ProviderId, ProviderIncident, RefreshingEvent, UpdateChannel, UsageUpdateEvent } from './lib/types';
 import type {
   CreditsNotificationState,
   RefreshFailureNotificationState,
@@ -34,6 +36,8 @@ function App() {
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
+  const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
+  const updateChannel = useSettingsStore((s) => s.updateChannel);
   const notifySessionUsage = useSettingsStore((s) => s.notifySessionUsage);
   const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
   const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
@@ -52,6 +56,7 @@ function App() {
     new Map<ProviderId, RefreshFailureNotificationState>()
   );
   const staleUsageNotificationRef = useRef(new Map<ProviderId, StaleUsageNotificationState>());
+  const lastUpdateCheckChannelRef = useRef<UpdateChannel | null>(null);
 
   // Initialize enabled providers from settings (only once on mount)
   useEffect(() => {
@@ -63,6 +68,33 @@ function App() {
       initAutostart();
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!autoUpdateEnabled) {
+      lastUpdateCheckChannelRef.current = null;
+      return;
+    }
+
+    if (lastUpdateCheckChannelRef.current === updateChannel) {
+      return;
+    }
+
+    const checkForUpdates = async () => {
+      lastUpdateCheckChannelRef.current = updateChannel;
+      try {
+        const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
+        if (!update) {
+          return;
+        }
+        await update.downloadAndInstall();
+        await relaunch();
+      } catch (error) {
+        console.warn('Auto-update check failed', error);
+      }
+    };
+
+    void checkForUpdates();
+  }, [autoUpdateEnabled, updateChannel]);
 
   useEffect(() => {
     void invoke('set_debug_file_logging', { enabled: debugFileLogging });
