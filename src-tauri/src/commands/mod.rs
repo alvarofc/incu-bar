@@ -403,6 +403,39 @@ pub async fn send_test_notification(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Export diagnostics bundle for support
+#[command]
+pub async fn export_support_bundle(
+    app: AppHandle,
+    payload: serde_json::Value,
+) -> Result<String, String> {
+    let file_name = format!(
+        "incubar-support-{}.json",
+        chrono::Utc::now().format("%Y%m%d-%H%M%S")
+    );
+    let export_dir = app
+        .path()
+        .download_dir()
+        .ok()
+        .or_else(|| app.path().app_data_dir().ok())
+        .ok_or_else(|| "Could not determine export directory".to_string())?;
+
+    if let Err(err) = std::fs::create_dir_all(&export_dir) {
+        return Err(format!("Failed to create export directory: {}", err));
+    }
+
+    let bundle = serde_json::json!({
+        "generatedAt": chrono::Utc::now().to_rfc3339(),
+        "payload": payload,
+    });
+    let contents =
+        serde_json::to_string_pretty(&bundle).map_err(|e| format!("Encode failed: {}", e))?;
+    let path = export_dir.join(file_name);
+    std::fs::write(&path, contents)
+        .map_err(|e| format!("Failed to write support bundle: {}", e))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[command]
 pub async fn get_install_origin() -> Result<String, String> {
     install_origin::read_or_record_install_origin().map_err(|e| e.to_string())

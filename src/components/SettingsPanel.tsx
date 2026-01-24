@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
-import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
+import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
   MenuBarDisplayTextMode,
@@ -88,9 +88,33 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
   const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
   const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
+  const [supportExportPath, setSupportExportPath] = useState<string | null>(null);
+  const [supportExporting, setSupportExporting] = useState(false);
   const cookieSources = useSettingsStore((s) => s.cookieSources);
   const [draggingProviderId, setDraggingProviderId] = useState<ProviderId | null>(null);
   const [dragOverProviderId, setDragOverProviderId] = useState<ProviderId | null>(null);
+
+  const syncAuthStatus = useCallback((status: Record<string, AuthStatus>) => {
+    setAuthStatus(status);
+    const settingsStore = useSettingsStore.getState();
+    const usageStore = useUsageStore.getState();
+
+    Object.entries(status).forEach(([id, providerStatus]) => {
+      if (providerStatus?.authenticated !== true) {
+        return;
+      }
+      if (!(id in PROVIDERS)) {
+        return;
+      }
+      const providerId = id as ProviderId;
+      if (settingsStore.enabledProviders.includes(providerId)) {
+        return;
+      }
+      settingsStore.enableProvider(providerId);
+      void settingsStore.syncProviderEnabled(providerId, true);
+      usageStore.setProviderEnabled(providerId, true);
+    });
+  }, []);
 
   const orderedProviderIds = useMemo(() => {
     const allProviders = Object.keys(PROVIDERS) as ProviderId[];
@@ -121,13 +145,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     const checkAuth = async () => {
       try {
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
       } catch (e) {
         console.error('Failed to check auth status:', e);
       }
     };
     checkAuth();
-  }, []);
+  }, [syncAuthStatus]);
 
   useEffect(() => {
     if (orderedProviderIds.join('|') !== providerOrder.join('|')) {
@@ -151,7 +175,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           setCursorLoginOpen(false);
           setManualCookiePanels((state) => ({ ...state, cursor: false }));
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-          setAuthStatus(status);
+          syncAuthStatus(status);
           const settingsStore = useSettingsStore.getState();
           settingsStore.enableProvider('cursor');
           void settingsStore.syncProviderEnabled('cursor', true);
@@ -171,7 +195,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setCursorLoginOpen(false);
         setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId as ProviderId);
         void settingsStore.syncProviderEnabled(providerId as ProviderId, true);
@@ -429,7 +453,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         if (importResult.success) {
           setLoginMessage(importResult.message);
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-          setAuthStatus(status);
+          syncAuthStatus(status);
           const settingsStore = useSettingsStore.getState();
           settingsStore.enableProvider('cursor');
           void settingsStore.syncProviderEnabled('cursor', true);
@@ -470,7 +494,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       if (importResult.success) {
         setLoginMessage(importResult.message);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId);
         void settingsStore.syncProviderEnabled(providerId, true);
@@ -507,7 +531,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       if (result.success) {
         setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId);
         void settingsStore.syncProviderEnabled(providerId, true);
@@ -557,7 +581,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           await invoke('close_cursor_login');
         }
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId);
         void settingsStore.syncProviderEnabled(providerId, true);
@@ -584,7 +608,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setCursorLoginOpen(false);
         setManualCookiePanels((state) => ({ ...state, cursor: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         useUsageStore.getState().refreshProvider('cursor');
       } else {
         setLoginMessage(result.message);
@@ -639,7 +663,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setCursorLoginOpen(false);
         setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId);
         void settingsStore.syncProviderEnabled(providerId, true);
@@ -692,7 +716,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         setLoginMessage(result.message);
         setCopilotDeviceCode(null);
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        setAuthStatus(status);
+        syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider('copilot');
         void settingsStore.syncProviderEnabled('copilot', true);
@@ -712,6 +736,90 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     setCopilotDeviceCode(null);
     setLoginMessage(null);
   }, []);
+
+  const handleExportSupportBundle = useCallback(async () => {
+    if (supportExporting) return;
+    setSupportExporting(true);
+    setSupportExportPath(null);
+
+    try {
+      const settings = useSettingsStore.getState();
+      const usage = useUsageStore.getState();
+      const providerSnapshots = Object.fromEntries(
+        (Object.keys(usage.providers) as ProviderId[]).map((providerId) => {
+          const provider = usage.providers[providerId];
+          const usageSnapshot = provider.usage ? {
+            ...provider.usage,
+            identity: provider.usage.identity
+              ? { ...provider.usage.identity, email: undefined, name: undefined }
+              : undefined,
+          } : undefined;
+
+          return [
+            providerId,
+            {
+              enabled: provider.enabled,
+              isLoading: provider.isLoading,
+              lastError: provider.lastError,
+              status: provider.status,
+              usage: usageSnapshot,
+              usageHistoryCount: provider.usageHistory?.length ?? 0,
+              lastUsageHistoryPoint: provider.usageHistory?.slice(-1)[0] ?? null,
+            },
+          ];
+        })
+      );
+
+      const payload = {
+        appVersion: import.meta.env.PACKAGE_VERSION,
+        platform: navigator.platform,
+        locale: navigator.language,
+        settings: {
+          refreshIntervalSeconds: settings.refreshIntervalSeconds,
+          enabledProviders: settings.enabledProviders,
+          providerOrder: settings.providerOrder,
+          displayMode: settings.displayMode,
+          menuBarDisplayMode: settings.menuBarDisplayMode,
+          menuBarDisplayTextEnabled: settings.menuBarDisplayTextEnabled,
+          menuBarDisplayTextMode: settings.menuBarDisplayTextMode,
+          usageBarDisplayMode: settings.usageBarDisplayMode,
+          resetTimeDisplayMode: settings.resetTimeDisplayMode,
+          switcherShowsIcons: settings.switcherShowsIcons,
+          showAllTokenAccountsInMenu: settings.showAllTokenAccountsInMenu,
+          autoUpdateEnabled: settings.autoUpdateEnabled,
+          updateChannel: settings.updateChannel,
+          showNotifications: settings.showNotifications,
+          notifySessionUsage: settings.notifySessionUsage,
+          notifyCreditsLow: settings.notifyCreditsLow,
+          notifyRefreshFailure: settings.notifyRefreshFailure,
+          notifyStaleUsage: settings.notifyStaleUsage,
+          launchAtLogin: settings.launchAtLogin,
+          showCredits: settings.showCredits,
+          showCost: settings.showCost,
+          showExtraUsage: settings.showExtraUsage,
+          storeUsageHistory: settings.storeUsageHistory,
+          pollProviderStatus: settings.pollProviderStatus,
+          redactPersonalInfo: settings.redactPersonalInfo,
+          debugMenuEnabled: settings.debugMenuEnabled,
+          debugFileLogging: settings.debugFileLogging,
+          debugKeepCliSessionsAlive: settings.debugKeepCliSessionsAlive,
+          debugRandomBlink: settings.debugRandomBlink,
+          hidePersonalInfo: settings.hidePersonalInfo,
+          debugDisableKeychainAccess: settings.debugDisableKeychainAccess,
+        },
+        providers: providerSnapshots,
+      };
+
+      const path = await invoke<string>('export_support_bundle', { payload });
+      setSupportExportPath(path);
+      setLoginMessage('Support bundle exported. Share it with support.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLoginMessage(`Support bundle export failed: ${message}`);
+    } finally {
+      setSupportExporting(false);
+    }
+  }, [supportExporting]);
 
   const refreshIntervals = [
     { label: 'Manual', value: 0 },
@@ -1590,6 +1698,30 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                   enabled={debugRandomBlink}
                   onChange={handleSetDebugRandomBlink}
                 />
+                <div className="mt-2 space-y-2 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 py-2">
+                  <div className="text-[13px] text-[var(--text-secondary)]">Support Bundle</div>
+                  <p className="text-[11px] text-[var(--text-quaternary)]">
+                    Export usage snapshots, settings, and status info for support.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleExportSupportBundle}
+                    disabled={supportExporting}
+                    className="btn btn-ghost focus-ring w-full justify-center text-[12px]"
+                  >
+                    {supportExporting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                    )}
+                    <span>{supportExporting ? 'Exporting…' : 'Export Support Bundle'}</span>
+                  </button>
+                  {supportExportPath && (
+                    <p className="text-[11px] text-[var(--text-quaternary)] break-all">
+                      Saved to {supportExportPath}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>

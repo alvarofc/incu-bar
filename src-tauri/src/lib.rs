@@ -88,6 +88,7 @@ pub fn run() {
             commands::set_debug_keep_cli_sessions_alive,
             commands::set_debug_random_blink,
             commands::set_redact_personal_info,
+            commands::export_support_bundle,
             commands::start_login,
             commands::check_auth,
             commands::check_all_auth,
