@@ -20,6 +20,7 @@ import {
   evaluateStaleUsageNotifications,
 } from './lib/notifications';
 import { PROVIDERS } from './lib/providers';
+import { getStaleAfterMs, isTimestampStale } from './lib/staleness';
 import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
 
@@ -37,6 +38,7 @@ function App() {
   const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
   const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
   const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
+  const pollProviderStatus = useSettingsStore((s) => s.pollProviderStatus);
   const debugFileLogging = useSettingsStore((s) => s.debugFileLogging);
   const debugKeepCliSessionsAlive = useSettingsStore(
     (s) => s.debugKeepCliSessionsAlive
@@ -173,12 +175,13 @@ function App() {
       Object.values(providers).forEach((provider) => {
         if (!provider.enabled || !provider.usage?.updatedAt) return;
         const metadata = PROVIDERS[provider.id];
+        const staleAfterMs = getStaleAfterMs(refreshIntervalSeconds);
         evaluateStaleUsageNotifications({
           providerId: provider.id,
           providerName: metadata.name,
           updatedAt: provider.usage.updatedAt,
           showNotifications: showNotifications && notifyStaleUsage,
-          staleAfterMs: intervalMs * 2,
+          staleAfterMs,
           stateMap: staleUsageNotificationRef.current,
           notify: (title, body) => void sendNotification({ title, body }),
         });
@@ -194,13 +197,26 @@ function App() {
   useEffect(() => {
     let active = true;
 
+    if (!pollProviderStatus) {
+      (Object.keys(PROVIDERS) as ProviderId[]).forEach((providerId) => {
+        setProviderStatus(providerId, null);
+      });
+      return () => {
+        active = false;
+      };
+    }
+
     const pollStatus = async () => {
       try {
         const statuses = await invoke<Record<ProviderId, ProviderIncident | null>>(
           'poll_provider_statuses'
         );
         if (!active) return;
+        const staleAfterMs = getStaleAfterMs(refreshIntervalSeconds);
         Object.entries(statuses).forEach(([providerId, status]) => {
+          if (status?.updatedAt && isTimestampStale(status.updatedAt, staleAfterMs)) {
+            return;
+          }
           setProviderStatus(providerId as ProviderId, status);
         });
       } catch (e) {
@@ -224,7 +240,7 @@ function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [refreshIntervalSeconds, setProviderStatus]);
+  }, [pollProviderStatus, refreshIntervalSeconds, setProviderStatus]);
 
   const handleOpenSettings = () => {
     setCurrentView('settings');

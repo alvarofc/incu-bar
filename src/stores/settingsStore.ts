@@ -31,6 +31,8 @@ interface SettingsStore extends AppSettings {
   setShowCredits: (show: boolean) => void;
   setShowCost: (show: boolean) => void;
   setShowExtraUsage: (show: boolean) => void;
+  setStoreUsageHistory: (enabled: boolean) => void;
+  setPollProviderStatus: (enabled: boolean) => void;
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
@@ -103,6 +105,10 @@ export const useSettingsStore = create<SettingsStore>()(
       setShowCost: (show) => set({ showCost: show }),
 
       setShowExtraUsage: (show) => set({ showExtraUsage: show }),
+
+      setStoreUsageHistory: (enabled) => set({ storeUsageHistory: enabled }),
+
+      setPollProviderStatus: (enabled) => set({ pollProviderStatus: enabled }),
 
       setDebugFileLogging: (enabled) => set({ debugFileLogging: enabled }),
 

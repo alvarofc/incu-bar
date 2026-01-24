@@ -47,6 +47,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
+  const storeUsageHistory = useSettingsStore((s) => s.storeUsageHistory);
+  const pollProviderStatus = useSettingsStore((s) => s.pollProviderStatus);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
   const notifySessionUsage = useSettingsStore((s) => s.notifySessionUsage);
   const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
@@ -241,6 +243,17 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetShowExtraUsage = useCallback((show: boolean) => {
     useSettingsStore.getState().setShowExtraUsage(show);
+  }, []);
+
+  const handleSetStoreUsageHistory = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setStoreUsageHistory(enabled);
+    if (!enabled) {
+      useUsageStore.getState().clearUsageHistory();
+    }
+  }, []);
+
+  const handleSetPollProviderStatus = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setPollProviderStatus(enabled);
   }, []);
 
   const handleSetShowNotifications = useCallback((show: boolean) => {
@@ -1235,6 +1248,29 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               <ToggleOption label="Show Credits" enabled={showCredits} onChange={handleSetShowCredits} />
               <ToggleOption label="Show Cost" enabled={showCost} onChange={handleSetShowCost} />
               <ToggleOption label="Show Extra Usage" enabled={showExtraUsage} onChange={handleSetShowExtraUsage} />
+              <div className="mt-3">
+                <span className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider">
+                  Privacy
+                </span>
+                <p className="mt-2 text-[11px] text-[var(--text-quaternary)]">
+                  Incubar keeps all usage data on-device. Disable history to avoid storing usage snapshots.
+                </p>
+                <div className="mt-2 space-y-1" data-testid="privacy-preferences">
+                  <ToggleOption
+                    label="Store usage history"
+                    enabled={storeUsageHistory}
+                    onChange={handleSetStoreUsageHistory}
+                  />
+                  <ToggleOption
+                    label="Poll provider status"
+                    enabled={pollProviderStatus}
+                    onChange={handleSetPollProviderStatus}
+                  />
+                </div>
+                <p className="mt-2 text-[11px] text-[var(--text-quaternary)]">
+                  Status polling checks provider health pages and never sends your usage data.
+                </p>
+              </div>
               <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
               {showNotifications && (
                 <div className="space-y-1 pl-2" data-testid="notification-preferences">

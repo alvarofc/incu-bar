@@ -29,6 +29,7 @@ interface UsageStore {
   refreshProvider: (id: ProviderId) => Promise<void>;
   refreshAllProviders: () => Promise<void>;
   initializeProviders: (enabledIds: ProviderId[]) => void;
+  clearUsageHistory: () => void;
   resetState: () => void;
 }
 
@@ -70,6 +71,21 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
     set((state) => {
       const previous = state.providers[id];
       const history = previous.usageHistory ?? [];
+      const storeUsageHistory = useSettingsStore.getState().storeUsageHistory;
+      if (!storeUsageHistory) {
+        return {
+          providers: {
+            ...state.providers,
+            [id]: {
+              ...previous,
+              usage,
+              usageHistory: [] as ProviderState['usageHistory'],
+              isLoading: false,
+              lastError: usage.error,
+            },
+          },
+        };
+      }
       const nextPoint = {
         timestamp: usage.updatedAt,
         cost: usage.cost?.todayAmount ?? usage.cost?.monthAmount,
@@ -177,6 +193,21 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         ])
       ) as Record<ProviderId, ProviderState>,
     })),
+
+  clearUsageHistory: () =>
+    set((state) => {
+      const nextProviders = Object.fromEntries(
+        (Object.keys(state.providers) as ProviderId[]).map((id) => [
+          id,
+          {
+            ...state.providers[id],
+            usageHistory: [] as ProviderState['usageHistory'],
+          },
+        ])
+      ) as Record<ProviderId, ProviderState>;
+
+      return { providers: nextProviders };
+    }),
 
   resetState: () => set({
     providers: initialProviders,

@@ -129,6 +129,8 @@ export interface AppSettings {
   showCredits: boolean;
   showCost: boolean;
   showExtraUsage: boolean;
+  storeUsageHistory: boolean;
+  pollProviderStatus: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
   crashRecoveryAt?: string;
   debugFileLogging: boolean;

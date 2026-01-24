@@ -262,6 +262,8 @@ export const DEFAULT_SETTINGS = {
   showCredits: true,
   showCost: true,
   showExtraUsage: true,
+  storeUsageHistory: true,
+  pollProviderStatus: true,
   cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
   debugFileLogging: false,
   debugKeepCliSessionsAlive: false,
