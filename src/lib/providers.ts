@@ -289,6 +289,7 @@ export const DEFAULT_SETTINGS = {
   showExtraUsage: true,
   storeUsageHistory: true,
   pollProviderStatus: true,
+  redactPersonalInfo: false,
   cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
   debugMenuEnabled: false,
   debugFileLogging: false,

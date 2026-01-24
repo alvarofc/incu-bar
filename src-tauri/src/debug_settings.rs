@@ -10,6 +10,7 @@ use tracing_subscriber::fmt::MakeWriter;
 static FILE_LOGGING_ENABLED: AtomicBool = AtomicBool::new(false);
 static KEEP_CLI_SESSIONS_ALIVE: AtomicBool = AtomicBool::new(false);
 static RANDOM_BLINK_ENABLED: AtomicBool = AtomicBool::new(false);
+static REDACT_PERSONAL_INFO: AtomicBool = AtomicBool::new(false);
 
 static DEBUG_LOG_FILE: Lazy<Arc<Mutex<std::fs::File>>> = Lazy::new(|| {
     let file = open_debug_log_file().unwrap_or_else(|_| open_fallback_log_file());
@@ -38,6 +39,29 @@ pub fn set_random_blink(enabled: bool) {
 
 pub fn random_blink_enabled() -> bool {
     RANDOM_BLINK_ENABLED.load(Ordering::Relaxed)
+}
+
+pub fn set_redact_personal_info(enabled: bool) {
+    REDACT_PERSONAL_INFO.store(enabled, Ordering::Relaxed);
+}
+
+pub fn redact_personal_info_enabled() -> bool {
+    REDACT_PERSONAL_INFO.load(Ordering::Relaxed)
+}
+
+pub fn redact_value(value: &str) -> String {
+    if redact_personal_info_enabled() {
+        "[redacted]".to_string()
+    } else {
+        value.to_string()
+    }
+}
+
+pub fn redact_option(value: Option<&str>) -> String {
+    match value {
+        Some(raw) => redact_value(raw),
+        None => "None".to_string(),
+    }
 }
 
 pub fn file_writer() -> DebugFileWriter {

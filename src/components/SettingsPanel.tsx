@@ -51,6 +51,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const storeUsageHistory = useSettingsStore((s) => s.storeUsageHistory);
   const pollProviderStatus = useSettingsStore((s) => s.pollProviderStatus);
+  const redactPersonalInfo = useSettingsStore((s) => s.redactPersonalInfo);
   const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
   const updateChannel = useSettingsStore((s) => s.updateChannel);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
@@ -66,6 +67,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
   const hidePersonalInfo = useSettingsStore((s) => s.hidePersonalInfo);
+  const setHidePersonalInfo = useSettingsStore((s) => s.setHidePersonalInfo);
+  const setRedactPersonalInfo = useSettingsStore((s) => s.setRedactPersonalInfo);
   const debugDisableKeychainAccess = useSettingsStore((s) => s.debugDisableKeychainAccess);
   const installOrigin = useSettingsStore((s) => s.installOrigin);
 
@@ -341,10 +344,6 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetDebugRandomBlink = useCallback((enabled: boolean) => {
     useSettingsStore.getState().setDebugRandomBlink(enabled);
-  }, []);
-
-  const handleSetHidePersonalInfo = useCallback((enabled: boolean) => {
-    useSettingsStore.getState().setHidePersonalInfo(enabled);
   }, []);
 
   const handleSetDebugDisableKeychainAccess = useCallback((enabled: boolean) => {
@@ -1345,8 +1344,16 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                 <ToggleOption
                   label="Hide Personal Info"
                   enabled={hidePersonalInfo}
-                  onChange={handleSetHidePersonalInfo}
+                  onChange={setHidePersonalInfo}
                 />
+                <ToggleOption
+                  label="Redact Personal Info in Logs"
+                  enabled={redactPersonalInfo}
+                  onChange={setRedactPersonalInfo}
+                />
+                <p className="text-[11px] text-[var(--text-quaternary)]">
+                  Redacts emails, names, and raw usage responses from debug logs.
+                </p>
                 <div className="mt-2 space-y-1" data-testid="privacy-preferences">
                   <ToggleOption
                     label="Store usage history"

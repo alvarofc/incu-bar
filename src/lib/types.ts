@@ -137,6 +137,7 @@ export interface AppSettings {
   showExtraUsage: boolean;
   storeUsageHistory: boolean;
   pollProviderStatus: boolean;
+  redactPersonalInfo: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
   crashRecoveryAt?: string;
   debugMenuEnabled: boolean;

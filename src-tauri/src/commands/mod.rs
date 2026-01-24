@@ -8,6 +8,7 @@ use tauri_plugin_autostart::AutoLaunchManager;
 use crate::browser_cookies::BrowserCookieSource;
 use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
+use crate::debug_settings;
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
 use crate::storage::widget_snapshot;
 use crate::storage::install_origin;
@@ -70,6 +71,7 @@ pub struct AppSettings {
     pub debug_file_logging: bool,
     pub debug_keep_cli_sessions_alive: bool,
     pub debug_random_blink: bool,
+    pub redact_personal_info: bool,
 }
 
 impl Default for AppSettings {
@@ -86,6 +88,7 @@ impl Default for AppSettings {
             debug_file_logging: false,
             debug_keep_cli_sessions_alive: false,
             debug_random_blink: false,
+            redact_personal_info: false,
         }
     }
 }
@@ -314,7 +317,21 @@ pub async fn get_settings() -> Result<AppSettings, String> {
 #[command]
 pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
     // TODO: Save to tauri-plugin-store
-    tracing::debug!("Saving settings: {:?}", settings);
+    tracing::debug!(
+        "Saving settings: AppSettings {{ refresh_interval_seconds: {}, enabled_providers: {:?}, provider_order: {:?}, display_mode: {}, show_notifications: {}, launch_at_login: {}, show_credits: {}, show_cost: {}, debug_file_logging: {}, debug_keep_cli_sessions_alive: {}, debug_random_blink: {}, redact_personal_info: {} }}",
+        settings.refresh_interval_seconds,
+        settings.enabled_providers,
+        settings.provider_order,
+        settings.display_mode,
+        settings.show_notifications,
+        settings.launch_at_login,
+        settings.show_credits,
+        settings.show_cost,
+        settings.debug_file_logging,
+        settings.debug_keep_cli_sessions_alive,
+        settings.debug_random_blink,
+        settings.redact_personal_info
+    );
     Ok(())
 }
 
@@ -333,6 +350,12 @@ pub async fn set_debug_keep_cli_sessions_alive(enabled: bool) -> Result<(), Stri
 #[command]
 pub async fn set_debug_random_blink(enabled: bool) -> Result<(), String> {
     debug_settings::set_random_blink(enabled);
+    Ok(())
+}
+
+#[command]
+pub async fn set_redact_personal_info(enabled: bool) -> Result<(), String> {
+    debug_settings::set_redact_personal_info(enabled);
     Ok(())
 }
 
@@ -1667,7 +1690,10 @@ pub async fn copilot_request_device_code() -> Result<CopilotDeviceCodeResponse, 
         .await
         .map_err(|e| format!("Failed to parse device code response: {}", e))?;
 
-    tracing::info!("Got device code. User code: {}", device_code.user_code);
+    tracing::info!(
+        "Got device code. User code: {}",
+        debug_settings::redact_value(&device_code.user_code)
+    );
 
     Ok(CopilotDeviceCodeResponse {
         user_code: device_code.user_code,

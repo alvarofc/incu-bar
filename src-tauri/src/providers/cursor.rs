@@ -1,13 +1,14 @@
 //! Cursor provider implementation
-//! 
+//!
 //! Uses cookie-based authentication via browser cookie import.
 //! Endpoints:
 //! - /api/usage-summary - Token-based usage
 //! - /api/auth/me - User info
 
+use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
+use crate::debug_settings;
 use async_trait::async_trait;
 use serde::Deserialize;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity, Credits};
 
 const USAGE_SUMMARY_URL: &str = "https://cursor.com/api/usage-summary";
 const AUTH_ME_URL: &str = "https://cursor.com/api/auth/me";
@@ -22,14 +23,18 @@ impl CursorProvider {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .unwrap_or_default();
-        
+
         Self { client }
     }
 
     /// Fetch usage with a cookie header
-    async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<UsageSnapshot, anyhow::Error> {
+    async fn fetch_with_cookies(
+        &self,
+        cookie_header: &str,
+    ) -> Result<UsageSnapshot, anyhow::Error> {
         // Fetch usage summary
-        let usage_response = self.client
+        let usage_response = self
+            .client
             .get(USAGE_SUMMARY_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -38,20 +43,30 @@ impl CursorProvider {
             .await?;
 
         if !usage_response.status().is_success() {
-            return Err(anyhow::anyhow!("Cursor API returned status: {}", usage_response.status()));
+            return Err(anyhow::anyhow!(
+                "Cursor API returned status: {}",
+                usage_response.status()
+            ));
         }
 
         // Get the raw JSON for debugging
         let raw_json = usage_response.text().await?;
-        tracing::debug!("Cursor usage-summary response: {}", &raw_json);
-        
+        tracing::debug!(
+            "Cursor usage-summary response: {}",
+            debug_settings::redact_value(&raw_json)
+        );
+
         let usage: CursorUsageSummary = serde_json::from_str(&raw_json)?;
         tracing::debug!("Parsed membership_type: {:?}", usage.membership_type);
 
         // Fetch user info
         let user_info = self.fetch_user_info(cookie_header).await.ok();
         if let Some(ref info) = user_info {
-            tracing::debug!("User info: email={:?}, name={:?}", info.email, info.name);
+            tracing::debug!(
+                "User info: email={}, name={}",
+                debug_settings::redact_option(info.email.as_deref()),
+                debug_settings::redact_option(info.name.as_deref())
+            );
         }
 
         Ok(self.convert_response(usage, user_info))
@@ -59,7 +74,8 @@ impl CursorProvider {
 
     /// Fetch user info
     async fn fetch_user_info(&self, cookie_header: &str) -> Result<CursorUserInfo, anyhow::Error> {
-        let response = self.client
+        let response = self
+            .client
             .get(AUTH_ME_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -68,7 +84,10 @@ impl CursorProvider {
             .await?;
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Cursor auth API returned status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Cursor auth API returned status: {}",
+                response.status()
+            ));
         }
 
         Ok(response.json().await?)
@@ -76,31 +95,41 @@ impl CursorProvider {
 
     /// Convert API response to UsageSnapshot
     /// This matches the parsing logic from the original CodexBar Swift implementation
-    fn convert_response(&self, usage: CursorUsageSummary, user_info: Option<CursorUserInfo>) -> UsageSnapshot {
+    fn convert_response(
+        &self,
+        usage: CursorUsageSummary,
+        user_info: Option<CursorUserInfo>,
+    ) -> UsageSnapshot {
         // Parse billing cycle end date
-        let billing_cycle_end = usage.billing_cycle_end.as_ref()
+        let billing_cycle_end = usage
+            .billing_cycle_end
+            .as_ref()
             .and_then(|d| self.parse_iso_date(d));
-        
+
         // Calculate plan usage from individual usage
         let (primary, credits) = if let Some(individual) = &usage.individual_usage {
             if let Some(plan) = &individual.plan {
                 // Get raw values in cents
                 let used_cents = plan.used.unwrap_or(0) as f64;
-                
+
                 // Use plan.limit as the total allowance
                 // Note: breakdown.total is NOT the limit - it's a breakdown of usage categories
                 let limit_cents = plan.limit.unwrap_or(0) as f64;
-                
+
                 // Calculate percentage from raw values (more accurate than total_percent_used)
                 let used_percent = if limit_cents > 0.0 {
                     (used_cents / limit_cents) * 100.0
                 } else if let Some(total_pct) = plan.total_percent_used {
                     // Fallback to API-provided value, normalize if needed
-                    if total_pct <= 1.0 { total_pct * 100.0 } else { total_pct }
+                    if total_pct <= 1.0 {
+                        total_pct * 100.0
+                    } else {
+                        total_pct
+                    }
                 } else {
                     0.0
                 };
-                
+
                 // Convert cents to USD
                 let used_usd = used_cents / 100.0;
                 let limit_usd = limit_cents / 100.0;
@@ -137,14 +166,14 @@ impl CursorProvider {
                 if on_demand.enabled.unwrap_or(false) {
                     let used_cents = on_demand.used.unwrap_or(0) as f64;
                     let limit_cents = on_demand.limit.map(|l| l as f64);
-                    
+
                     let used_percent = match limit_cents {
                         Some(limit) if limit > 0.0 => (used_cents / limit) * 100.0,
                         _ => 0.0, // Unlimited or no limit
                     };
-                    
+
                     let used_usd = used_cents / 100.0;
-                    
+
                     // Only show if there's actual usage or it's enabled
                     if used_usd > 0.0 || on_demand.enabled.unwrap_or(false) {
                         Some(RateWindow {
@@ -173,14 +202,14 @@ impl CursorProvider {
                 if on_demand.enabled.unwrap_or(false) {
                     let used_cents = on_demand.used.unwrap_or(0) as f64;
                     let limit_cents = on_demand.limit.map(|l| l as f64);
-                    
+
                     let used_percent = match limit_cents {
                         Some(limit) if limit > 0.0 => (used_cents / limit) * 100.0,
                         _ => 0.0,
                     };
-                    
+
                     let used_usd = used_cents / 100.0;
-                    
+
                     if used_usd > 0.0 {
                         Some(RateWindow {
                             used_percent,
@@ -203,7 +232,10 @@ impl CursorProvider {
         };
 
         // Format membership type
-        let plan = usage.membership_type.as_ref().map(|t| self.format_membership_type(t));
+        let plan = usage
+            .membership_type
+            .as_ref()
+            .map(|t| self.format_membership_type(t));
 
         let email = user_info.as_ref().and_then(|u| u.email.clone());
         let name = user_info.as_ref().and_then(|u| u.name.clone());
@@ -224,11 +256,11 @@ impl CursorProvider {
             error: None,
         }
     }
-    
+
     /// Format membership type to display name
     fn format_membership_type(&self, membership_type: &str) -> String {
         match membership_type.to_lowercase().as_str() {
-            "pro" => "Pro+".to_string(),        // Pro is marketed as Pro+
+            "pro" => "Pro+".to_string(), // Pro is marketed as Pro+
             "pro_plus" => "Pro+".to_string(),
             "enterprise" => "Enterprise".to_string(),
             "team" => "Team".to_string(),
@@ -275,7 +307,7 @@ impl CursorProvider {
     async fn load_stored_cookies(&self) -> Result<String, anyhow::Error> {
         // Check for stored session in app data
         let session_path = self.get_session_path()?;
-        
+
         if session_path.exists() {
             let content = tokio::fs::read_to_string(&session_path).await?;
             let session: CursorSession = serde_json::from_str(&content)?;
@@ -286,7 +318,8 @@ impl CursorProvider {
     }
 
     fn get_session_path(&self) -> Result<std::path::PathBuf, anyhow::Error> {
-        let data_dir = dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+        let data_dir = dirs::data_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
         Ok(data_dir.join("IncuBar").join("cursor-session.json"))
     }
 }
@@ -306,17 +339,15 @@ impl ProviderFetcher for CursorProvider {
 
         // Try to load stored cookies
         match self.load_stored_cookies().await {
-            Ok(cookies) => {
-                match self.fetch_with_cookies(&cookies).await {
-                    Ok(usage) => {
-                        tracing::debug!("Cursor fetch successful");
-                        return Ok(usage);
-                    }
-                    Err(e) => {
-                        tracing::debug!("Cursor fetch with stored cookies failed: {}", e);
-                    }
+            Ok(cookies) => match self.fetch_with_cookies(&cookies).await {
+                Ok(usage) => {
+                    tracing::debug!("Cursor fetch successful");
+                    return Ok(usage);
                 }
-            }
+                Err(e) => {
+                    tracing::debug!("Cursor fetch with stored cookies failed: {}", e);
+                }
+            },
             Err(e) => {
                 tracing::debug!("No stored Cursor cookies: {}", e);
             }
@@ -329,9 +360,7 @@ impl ProviderFetcher for CursorProvider {
             primary: Some(RateWindow {
                 used_percent: 62.0,
                 window_minutes: None,
-                resets_at: Some(
-                    (chrono::Utc::now() + chrono::Duration::days(12)).to_rfc3339()
-                ),
+                resets_at: Some((chrono::Utc::now() + chrono::Duration::days(12)).to_rfc3339()),
                 reset_description: Some("Resets in 12 days".to_string()),
                 label: Some("Monthly".to_string()),
             }),
@@ -394,8 +423,8 @@ struct CursorTeamUsage {
 #[serde(rename_all = "camelCase")]
 struct CursorPlanUsage {
     enabled: Option<bool>,
-    used: Option<i32>,          // In cents
-    limit: Option<i32>,         // In cents
+    used: Option<i32>,  // In cents
+    limit: Option<i32>, // In cents
     remaining: Option<i32>,
     breakdown: Option<CursorPlanBreakdown>,
     total_percent_used: Option<f64>,
@@ -409,7 +438,7 @@ struct CursorPlanUsage {
 struct CursorPlanBreakdown {
     included: Option<i32>,
     bonus: Option<i32>,
-    total: Option<i32>,         // included + bonus
+    total: Option<i32>, // included + bonus
 }
 
 #[allow(dead_code)]

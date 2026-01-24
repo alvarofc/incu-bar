@@ -48,6 +48,7 @@ function App() {
     (s) => s.debugKeepCliSessionsAlive
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
+  const redactPersonalInfo = useSettingsStore((s) => s.redactPersonalInfo);
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const setInstallOrigin = useSettingsStore((s) => s.setInstallOrigin);
   const initializedRef = useRef(false);
@@ -118,6 +119,10 @@ function App() {
   useEffect(() => {
     void invoke('set_debug_random_blink', { enabled: debugRandomBlink });
   }, [debugRandomBlink]);
+
+  useEffect(() => {
+    void invoke('set_redact_personal_info', { enabled: redactPersonalInfo });
+  }, [redactPersonalInfo]);
 
   // Sync enabled providers when settings change
   useEffect(() => {

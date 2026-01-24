@@ -213,6 +213,7 @@ interface SettingsStore extends AppSettings {
   setShowExtraUsage: (show: boolean) => void;
   setStoreUsageHistory: (enabled: boolean) => void;
   setPollProviderStatus: (enabled: boolean) => void;
+  setRedactPersonalInfo: (enabled: boolean) => void;
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
@@ -302,6 +303,8 @@ export const useSettingsStore = create<SettingsStore>()(
       setStoreUsageHistory: (enabled) => set({ storeUsageHistory: enabled }),
 
       setPollProviderStatus: (enabled) => set({ pollProviderStatus: enabled }),
+
+      setRedactPersonalInfo: (enabled) => set({ redactPersonalInfo: enabled }),
 
       setDebugMenuEnabled: (enabled) => set({ debugMenuEnabled: enabled }),
 
