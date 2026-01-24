@@ -275,10 +275,10 @@ tasks:
     completed: true
   - title: implement bundled CLI (codexbar) parity with status and cost commands
     source: ../IncuBar/Sources/CodexBarCLI, src-tauri/src/main.rs, src-tauri/src/lib.rs
-    completed: false
+    completed: true
   - title: add Linux CLI build pipeline parity (if supported by Tauri build system)
     source: ../IncuBar/README.md, src-tauri/Cargo.toml
-    completed: false
+    completed: true
   - title: implement auto-update channel parity (Sparkle equivalent or Tauri updater)
     source: ../IncuBar/Sources/CodexBar/UpdateChannel.swift,
       ../IncuBar/docs/sparkle.md, src-tauri/tauri.conf.json
