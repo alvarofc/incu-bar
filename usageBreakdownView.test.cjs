@@ -22,6 +22,14 @@ if (!usageStoreFile.includes('usageHistory')) {
   throw new Error('Usage store missing usageHistory updates.');
 }
 
+if (!usageStoreFile.includes('USAGE_HISTORY_STORAGE_KEY')) {
+  throw new Error('Usage store missing usage history storage key.');
+}
+
+if (!usageStoreFile.includes('syncUsageHistoryStorage')) {
+  throw new Error('Usage store missing usage history persistence hook.');
+}
+
 if (!menuCardFile.includes('Usage Breakdown')) {
   throw new Error('MenuCard missing usage breakdown section.');
 }

@@ -11,6 +11,64 @@ import { PROVIDERS, DEFAULT_ENABLED_PROVIDERS } from '../lib/providers';
 import { useSettingsStore } from './settingsStore';
 
 const MAX_HISTORY_POINTS = 30;
+const USAGE_HISTORY_STORAGE_KEY = 'incubar-usage-history';
+
+type UsageHistoryStorage = Partial<Record<ProviderId, ProviderState['usageHistory']>>;
+
+const loadUsageHistoryStorage = (): UsageHistoryStorage => {
+  if (typeof localStorage === 'undefined') {
+    return {};
+  }
+  const stored = localStorage.getItem(USAGE_HISTORY_STORAGE_KEY);
+  if (!stored) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(stored) as UsageHistoryStorage;
+    return parsed ?? {};
+  } catch (error) {
+    console.warn('Failed to parse usage history storage', error);
+    return {};
+  }
+};
+
+const saveUsageHistoryStorage = (next: UsageHistoryStorage) => {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  localStorage.setItem(USAGE_HISTORY_STORAGE_KEY, JSON.stringify(next));
+};
+
+const clearUsageHistoryStorage = () => {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+  localStorage.removeItem(USAGE_HISTORY_STORAGE_KEY);
+};
+
+const shouldStoreUsageHistory = () => useSettingsStore.getState().storeUsageHistory;
+
+const persistUsageHistory = (providers: Record<ProviderId, ProviderState>) => {
+  if (!shouldStoreUsageHistory()) {
+    clearUsageHistoryStorage();
+    return;
+  }
+  const nextStorage = Object.fromEntries(
+    (Object.keys(providers) as ProviderId[])
+      .map((providerId) => [
+        providerId,
+        (providers[providerId].usageHistory ?? []).slice(-MAX_HISTORY_POINTS),
+      ])
+      .filter(([, points]) => points.length > 0)
+  ) as UsageHistoryStorage;
+  saveUsageHistoryStorage(nextStorage);
+};
+
+let storedUsageHistory = loadUsageHistoryStorage();
+if (!shouldStoreUsageHistory()) {
+  clearUsageHistoryStorage();
+  storedUsageHistory = {};
+}
 
 interface UsageStore {
   // State
@@ -30,6 +88,7 @@ interface UsageStore {
   refreshAllProviders: () => Promise<void>;
   initializeProviders: (enabledIds: ProviderId[]) => void;
   clearUsageHistory: () => void;
+  syncUsageHistoryStorage: () => void;
   resetState: () => void;
 }
 
@@ -39,7 +98,9 @@ const createInitialProviderState = (id: ProviderId, enabled: boolean): ProviderS
   name: PROVIDERS[id].name,
   enabled,
   isLoading: false,
-  usageHistory: [],
+  usageHistory: shouldStoreUsageHistory()
+    ? (storedUsageHistory[id] ?? []).slice(-MAX_HISTORY_POINTS)
+    : [],
 });
 
 const initialProviders: Record<ProviderId, ProviderState> = Object.fromEntries(
@@ -71,7 +132,7 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
     set((state) => {
       const previous = state.providers[id];
       const history = previous.usageHistory ?? [];
-      const storeUsageHistory = useSettingsStore.getState().storeUsageHistory;
+      const storeUsageHistory = shouldStoreUsageHistory();
       if (!storeUsageHistory) {
         return {
           providers: {
@@ -97,7 +158,7 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         ? [...history, nextPoint].slice(-MAX_HISTORY_POINTS)
         : history;
 
-      return {
+      const nextProviders = {
         providers: {
           ...state.providers,
           [id]: {
@@ -109,6 +170,10 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
           },
         },
       };
+
+      persistUsageHistory(nextProviders.providers);
+
+      return nextProviders;
     }),
 
   setProviderStatus: (id, status) =>
@@ -206,7 +271,19 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         ])
       ) as Record<ProviderId, ProviderState>;
 
+      clearUsageHistoryStorage();
+
       return { providers: nextProviders };
+    }),
+
+  syncUsageHistoryStorage: () =>
+    set((state) => {
+      if (!shouldStoreUsageHistory()) {
+        clearUsageHistoryStorage();
+        return state;
+      }
+      persistUsageHistory(state.providers);
+      return state;
     }),
 
   resetState: () => set({

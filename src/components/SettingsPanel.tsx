@@ -250,6 +250,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     if (!enabled) {
       useUsageStore.getState().clearUsageHistory();
     }
+    useUsageStore.getState().syncUsageHistoryStorage();
   }, []);
 
   const handleSetPollProviderStatus = useCallback((enabled: boolean) => {
