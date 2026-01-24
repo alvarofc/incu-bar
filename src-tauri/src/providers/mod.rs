@@ -255,6 +255,10 @@ impl UsageSnapshot {
     }
 }
 
+pub async fn load_cost_snapshot(provider: ProviderId) -> Option<CostSnapshot> {
+    cost_usage::load_cost_snapshot(provider).await
+}
+
 /// Provider state
 #[allow(dead_code)]
 struct ProviderState {
