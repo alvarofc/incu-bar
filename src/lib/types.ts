@@ -122,6 +122,8 @@ export interface AppSettings {
   menuBarDisplayMode: MenuBarDisplayMode;
   usageBarDisplayMode: UsageBarDisplayMode;
   resetTimeDisplayMode: ResetTimeDisplayMode;
+  switcherShowsIcons: boolean;
+  showAllTokenAccountsInMenu: boolean;
   autoUpdateEnabled: boolean;
   updateChannel: UpdateChannel;
   showNotifications: boolean;
@@ -137,9 +139,12 @@ export interface AppSettings {
   pollProviderStatus: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
   crashRecoveryAt?: string;
+  debugMenuEnabled: boolean;
   debugFileLogging: boolean;
   debugKeepCliSessionsAlive: boolean;
   debugRandomBlink: boolean;
+  hidePersonalInfo: boolean;
+  debugDisableKeychainAccess: boolean;
   installOrigin?: string;
 }
 

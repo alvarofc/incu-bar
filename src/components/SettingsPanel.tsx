@@ -44,6 +44,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
+  const switcherShowsIcons = useSettingsStore((s) => s.switcherShowsIcons);
+  const showAllTokenAccountsInMenu = useSettingsStore((s) => s.showAllTokenAccountsInMenu);
   const showCredits = useSettingsStore((s) => s.showCredits);
   const showCost = useSettingsStore((s) => s.showCost);
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
@@ -57,11 +59,14 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const notifyRefreshFailure = useSettingsStore((s) => s.notifyRefreshFailure);
   const notifyStaleUsage = useSettingsStore((s) => s.notifyStaleUsage);
   const launchAtLogin = useSettingsStore((s) => s.launchAtLogin);
+  const debugMenuEnabled = useSettingsStore((s) => s.debugMenuEnabled);
   const debugFileLogging = useSettingsStore((s) => s.debugFileLogging);
   const debugKeepCliSessionsAlive = useSettingsStore(
     (s) => s.debugKeepCliSessionsAlive
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
+  const hidePersonalInfo = useSettingsStore((s) => s.hidePersonalInfo);
+  const debugDisableKeychainAccess = useSettingsStore((s) => s.debugDisableKeychainAccess);
   const installOrigin = useSettingsStore((s) => s.installOrigin);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
@@ -296,6 +301,14 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     useSettingsStore.getState().setResetTimeDisplayMode(mode);
   }, []);
 
+  const handleSetSwitcherShowsIcons = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setSwitcherShowsIcons(enabled);
+  }, []);
+
+  const handleSetShowAllTokenAccountsInMenu = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setShowAllTokenAccountsInMenu(enabled);
+  }, []);
+
   const handleSetAutoUpdateEnabled = useCallback((enabled: boolean) => {
     useSettingsStore.getState().setAutoUpdateEnabled(enabled);
   }, []);
@@ -308,6 +321,16 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     useSettingsStore.getState().setLaunchAtLogin(launch);
   }, []);
 
+  const handleSetDebugMenuEnabled = useCallback((enabled: boolean) => {
+    const store = useSettingsStore.getState();
+    store.setDebugMenuEnabled(enabled);
+    if (!enabled) {
+      store.setDebugFileLogging(false);
+      store.setDebugKeepCliSessionsAlive(false);
+      store.setDebugRandomBlink(false);
+    }
+  }, []);
+
   const handleSetDebugFileLogging = useCallback((enabled: boolean) => {
     useSettingsStore.getState().setDebugFileLogging(enabled);
   }, []);
@@ -318,6 +341,14 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetDebugRandomBlink = useCallback((enabled: boolean) => {
     useSettingsStore.getState().setDebugRandomBlink(enabled);
+  }, []);
+
+  const handleSetHidePersonalInfo = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setHidePersonalInfo(enabled);
+  }, []);
+
+  const handleSetDebugDisableKeychainAccess = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setDebugDisableKeychainAccess(enabled);
   }, []);
 
   const handleResetToDefaults = useCallback(() => {
@@ -509,6 +540,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, []);
 
   const handleImportBrowserCookies = useCallback(async (providerId: ProviderId) => {
+    if (debugDisableKeychainAccess) {
+      setLoginMessage('Keychain access is disabled. Paste cookies manually to continue.');
+      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
+      return;
+    }
     setLoggingIn(providerId);
     const cookieSource = useSettingsStore.getState().getCookieSource(providerId as ProviderId);
     if (cookieSource === 'manual') {
@@ -866,7 +902,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                         ? `Connected · ${getAuthMethodLabel(selectedStatus?.method ?? selectedProvider.authMethod)}`
                         : `Not connected · ${getAuthMethodLabel(selectedProvider.authMethod)}`}
                     </p>
-                    {selectedStatus?.email && (
+                    {selectedStatus?.email && !hidePersonalInfo && (
                       <p className="text-[12px] text-[var(--text-quaternary)] mt-1 truncate">
                         {selectedStatus.email}
                       </p>
@@ -929,6 +965,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                       id={`cookie-source-${selectedProviderId}`}
                       value={selectedCookieSource}
                       onChange={(event) => handleCookieSourceChange(selectedProviderId, event.target.value as CookieSource)}
+                      disabled={debugDisableKeychainAccess}
                       className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
                     >
                       {COOKIE_SOURCES.map((source) => (
@@ -940,7 +977,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                     <button
                       type="button"
                       onClick={() => handleImportBrowserCookies(selectedProviderId)}
-                      disabled={selectedCookieSource === 'manual' || loggingIn === selectedProviderId}
+                      disabled={
+                        debugDisableKeychainAccess
+                        || selectedCookieSource === 'manual'
+                        || loggingIn === selectedProviderId
+                      }
                       className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50 disabled:hover:text-[var(--text-secondary)]"
                     >
                       Import now
@@ -955,10 +996,19 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                     >
                       {manualCookiePanels[selectedProviderId] ? 'Hide manual' : 'Paste cookies'}
                     </button>
-                    {showKeychainGuidance && (
-                      <p className="text-[11px] text-[var(--text-quaternary)]">
-                        On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.
-                      </p>
+                    {(debugDisableKeychainAccess || showKeychainGuidance) && (
+                      <div className="w-full space-y-1">
+                        {debugDisableKeychainAccess && (
+                          <p className="text-[11px] text-[var(--text-quaternary)]">
+                            Keychain access is disabled. Paste cookies manually.
+                          </p>
+                        )}
+                        {showKeychainGuidance && (
+                          <p className="text-[11px] text-[var(--text-quaternary)]">
+                            On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1007,7 +1057,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                   <div className="flex gap-2">
                     <button
                       onClick={() => handleImportBrowserCookies('cursor')}
-                      disabled={loggingIn === 'cursor'}
+                      disabled={loggingIn === 'cursor' || debugDisableKeychainAccess}
                       className="btn btn-primary focus-ring flex-1 text-[12px]"
                     >
                       {loggingIn === 'cursor' ? (
@@ -1254,6 +1304,31 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
                 Choose tab labels or icon-only switcher.
               </p>
+              {displayMode === 'merged' && (
+                <div className="mt-2">
+                  <ToggleOption
+                    label="Switcher shows icons"
+                    enabled={switcherShowsIcons}
+                    onChange={handleSetSwitcherShowsIcons}
+                  />
+                </div>
+              )}
+            </div>
+            <div className="divider" />
+            <div>
+              <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
+                Token Accounts
+              </span>
+              <div className="mt-2">
+                <ToggleOption
+                  label="Show all token accounts"
+                  enabled={showAllTokenAccountsInMenu}
+                  onChange={handleSetShowAllTokenAccountsInMenu}
+                />
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                Stack token accounts in the menu instead of showing a switcher bar.
+              </p>
             </div>
             <div className="divider" />
             <div className="space-y-1">
@@ -1267,6 +1342,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
                 <p className="mt-2 text-[11px] text-[var(--text-quaternary)]">
                   Incubar keeps all usage data on-device. Disable history to avoid storing usage snapshots.
                 </p>
+                <ToggleOption
+                  label="Hide Personal Info"
+                  enabled={hidePersonalInfo}
+                  onChange={handleSetHidePersonalInfo}
+                />
                 <div className="mt-2 space-y-1" data-testid="privacy-preferences">
                   <ToggleOption
                     label="Store usage history"
@@ -1358,26 +1438,71 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         <div className="divider mx-4" />
 
         {/* Debug */}
-        <section className="p-4">
+        <section className="p-4" data-testid="debug-settings">
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Debug
           </h2>
-          <div className="space-y-1" data-testid="debug-settings">
+          <div className="space-y-1">
             <ToggleOption
-              label="File Logging"
-              enabled={debugFileLogging}
-              onChange={handleSetDebugFileLogging}
+              label="Show Debug Settings"
+              enabled={debugMenuEnabled}
+              onChange={handleSetDebugMenuEnabled}
             />
+            {debugMenuEnabled && (
+              <div className="space-y-1">
+                <ToggleOption
+                  label="File Logging"
+                  enabled={debugFileLogging}
+                  onChange={handleSetDebugFileLogging}
+                />
+                <ToggleOption
+                  label="Keep CLI Sessions Alive"
+                  enabled={debugKeepCliSessionsAlive}
+                  onChange={handleSetDebugKeepCliSessionsAlive}
+                />
+                <ToggleOption
+                  label="Random Blink"
+                  enabled={debugRandomBlink}
+                  onChange={handleSetDebugRandomBlink}
+                />
+              </div>
+            )}
+          </div>
+        </section>
+
+        <div className="divider mx-4" />
+
+        <section className="p-4">
+          <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
+            Advanced
+          </h2>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+              <div>
+                <div className="text-[13px] text-[var(--text-secondary)]">Global shortcut</div>
+                <div className="text-[11px] text-[var(--text-quaternary)]">
+                  Trigger the menu bar popup from anywhere.
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-[var(--text-primary)]">Cmd/Ctrl+R</span>
+            </div>
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+              <div>
+                <div className="text-[13px] text-[var(--text-secondary)]">CLI status</div>
+                <div className="text-[11px] text-[var(--text-quaternary)]">
+                  Bundled CLI supports status + cost commands.
+                </div>
+              </div>
+              <span className="text-[11px] text-[var(--text-quaternary)]">codexbar</span>
+            </div>
             <ToggleOption
-              label="Keep CLI Sessions Alive"
-              enabled={debugKeepCliSessionsAlive}
-              onChange={handleSetDebugKeepCliSessionsAlive}
+              label="Disable Keychain Access"
+              enabled={debugDisableKeychainAccess}
+              onChange={handleSetDebugDisableKeychainAccess}
             />
-            <ToggleOption
-              label="Random Blink"
-              enabled={debugRandomBlink}
-              onChange={handleSetDebugRandomBlink}
-            />
+            <p className="text-[11px] text-[var(--text-quaternary)]">
+              Disable Keychain access to require manual cookie paste for browser providers.
+            </p>
           </div>
         </section>
 

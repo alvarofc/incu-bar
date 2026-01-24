@@ -21,6 +21,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
+  const hidePersonalInfo = useSettingsStore((s) => s.hidePersonalInfo);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError, status } = provider;
@@ -225,13 +226,13 @@ export function MenuCard({ provider }: MenuCardProps) {
             <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
               {metadata.name}
             </h2>
-            {usage?.identity?.plan && (
+            {usage?.identity?.plan && !hidePersonalInfo && (
               <span className="badge">
                 {usage.identity.plan}
               </span>
             )}
           </div>
-          {usage?.identity?.email && (
+          {usage?.identity?.email && !hidePersonalInfo && (
             <p className="text-[12px] text-[var(--text-tertiary)] mt-1 truncate">
               {usage.identity.email}
             </p>

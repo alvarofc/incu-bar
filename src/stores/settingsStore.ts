@@ -29,6 +29,8 @@ const LEGACY_SETTINGS_KEYS = {
   providerOrder: 'providerOrder',
   providerToggles: 'providerToggles',
   menuBarShowsHighestUsage: 'menuBarShowsHighestUsage',
+  debugMenuEnabled: 'debugMenuEnabled',
+  showAllTokenAccountsInMenu: 'showAllTokenAccountsInMenu',
 };
 
 const LEGACY_REFRESH_FREQUENCY_TO_SECONDS: Record<string, number> = {
@@ -97,9 +99,12 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
   const mergeIcons = stored[LEGACY_SETTINGS_KEYS.mergeIcons];
   const showOptionalCreditsAndExtraUsage = stored[LEGACY_SETTINGS_KEYS.showOptionalCreditsAndExtraUsage];
   const tokenCostUsageEnabled = stored[LEGACY_SETTINGS_KEYS.tokenCostUsageEnabled];
+  const switcherShowsIcons = stored[LEGACY_SETTINGS_KEYS.switcherShowsIcons];
   const providerOrder = stored[LEGACY_SETTINGS_KEYS.providerOrder];
   const providerToggles = stored[LEGACY_SETTINGS_KEYS.providerToggles];
   const menuBarShowsHighestUsage = stored[LEGACY_SETTINGS_KEYS.menuBarShowsHighestUsage];
+  const debugMenuEnabled = stored[LEGACY_SETTINGS_KEYS.debugMenuEnabled];
+  const showAllTokenAccountsInMenu = stored[LEGACY_SETTINGS_KEYS.showAllTokenAccountsInMenu];
 
   const updates: Partial<AppSettings> = {};
 
@@ -131,8 +136,16 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
     updates.displayMode = mergeIcons ? 'merged' : 'separate';
   }
 
+  if (typeof switcherShowsIcons === 'boolean') {
+    updates.switcherShowsIcons = switcherShowsIcons;
+  }
+
   if (typeof showOptionalCreditsAndExtraUsage === 'boolean') {
     updates.showExtraUsage = showOptionalCreditsAndExtraUsage;
+  }
+
+  if (typeof debugMenuEnabled === 'boolean') {
+    updates.debugMenuEnabled = debugMenuEnabled;
   }
 
   if (typeof tokenCostUsageEnabled === 'boolean') {
@@ -162,6 +175,10 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
     updates.menuBarDisplayMode = 'highest';
   }
 
+  if (typeof showAllTokenAccountsInMenu === 'boolean') {
+    updates.showAllTokenAccountsInMenu = showAllTokenAccountsInMenu;
+  }
+
   return {
     ...settings,
     ...updates,
@@ -181,6 +198,8 @@ interface SettingsStore extends AppSettings {
   setMenuBarDisplayMode: (mode: MenuBarDisplayMode) => void;
   setUsageBarDisplayMode: (mode: UsageBarDisplayMode) => void;
   setResetTimeDisplayMode: (mode: 'relative' | 'absolute') => void;
+  setSwitcherShowsIcons: (enabled: boolean) => void;
+  setShowAllTokenAccountsInMenu: (enabled: boolean) => void;
   setAutoUpdateEnabled: (enabled: boolean) => void;
   setUpdateChannel: (channel: UpdateChannel) => void;
   setShowNotifications: (show: boolean) => void;
@@ -197,9 +216,12 @@ interface SettingsStore extends AppSettings {
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
+  setDebugMenuEnabled: (enabled: boolean) => void;
   setDebugFileLogging: (enabled: boolean) => void;
   setDebugKeepCliSessionsAlive: (enabled: boolean) => void;
   setDebugRandomBlink: (enabled: boolean) => void;
+  setHidePersonalInfo: (enabled: boolean) => void;
+  setDebugDisableKeychainAccess: (enabled: boolean) => void;
   setInstallOrigin: (origin: string | null) => void;
   // Initialization
   initAutostart: () => Promise<void>;
@@ -243,6 +265,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setResetTimeDisplayMode: (mode) => set({ resetTimeDisplayMode: mode }),
 
+      setSwitcherShowsIcons: (enabled) => set({ switcherShowsIcons: enabled }),
+
+      setShowAllTokenAccountsInMenu: (enabled) =>
+        set({ showAllTokenAccountsInMenu: enabled }),
+
       setAutoUpdateEnabled: (enabled) => set({ autoUpdateEnabled: enabled }),
 
       setUpdateChannel: (channel) => set({ updateChannel: channel }),
@@ -276,12 +303,19 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setPollProviderStatus: (enabled) => set({ pollProviderStatus: enabled }),
 
+      setDebugMenuEnabled: (enabled) => set({ debugMenuEnabled: enabled }),
+
       setDebugFileLogging: (enabled) => set({ debugFileLogging: enabled }),
 
       setDebugKeepCliSessionsAlive: (enabled) =>
         set({ debugKeepCliSessionsAlive: enabled }),
 
       setDebugRandomBlink: (enabled) => set({ debugRandomBlink: enabled }),
+
+      setHidePersonalInfo: (enabled) => set({ hidePersonalInfo: enabled }),
+
+      setDebugDisableKeychainAccess: (enabled) =>
+        set({ debugDisableKeychainAccess: enabled }),
 
       setInstallOrigin: (origin) => set({ installOrigin: origin ?? undefined }),
 

@@ -243,16 +243,41 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
   },
 };
 
-export const DEFAULT_ENABLED_PROVIDERS: ProviderId[] = [];
+export const DEFAULT_ENABLED_PROVIDERS: ProviderId[] = ['codex'];
+
+export const DEFAULT_PROVIDER_ORDER: ProviderId[] = [
+  'codex',
+  'claude',
+  'cursor',
+  'opencode',
+  'factory',
+  'gemini',
+  'antigravity',
+  'copilot',
+  'zai',
+  'minimax',
+  'kimi',
+  'kiro',
+  'vertexai',
+  'augment',
+  'jetbrains',
+  'kimi_k2',
+  'amp',
+  'synthetic',
+];
 
 export const DEFAULT_SETTINGS = {
   refreshIntervalSeconds: 300,
   enabledProviders: DEFAULT_ENABLED_PROVIDERS,
-  providerOrder: Object.keys(PROVIDERS) as ProviderId[],
+  providerOrder: DEFAULT_PROVIDER_ORDER,
   displayMode: 'merged' as const,
   menuBarDisplayMode: 'session' as const,
   usageBarDisplayMode: 'remaining' as const,
   resetTimeDisplayMode: 'relative' as const,
+  switcherShowsIcons: true,
+  showAllTokenAccountsInMenu: false,
+  autoUpdateEnabled: true,
+  updateChannel: 'stable' as const,
   showNotifications: true,
   notifySessionUsage: true,
   notifyCreditsLow: true,
@@ -260,12 +285,15 @@ export const DEFAULT_SETTINGS = {
   notifyStaleUsage: true,
   launchAtLogin: false,
   showCredits: true,
-  showCost: true,
+  showCost: false,
   showExtraUsage: true,
   storeUsageHistory: true,
   pollProviderStatus: true,
   cookieSources: {} as Partial<Record<ProviderId, CookieSource>>,
+  debugMenuEnabled: false,
   debugFileLogging: false,
   debugKeepCliSessionsAlive: false,
   debugRandomBlink: false,
+  hidePersonalInfo: false,
+  debugDisableKeychainAccess: false,
 };
