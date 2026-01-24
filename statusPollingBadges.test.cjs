@@ -36,6 +36,14 @@ if (!menuCardFile.includes('ProviderIconWithOverlay')) {
   throw new Error('MenuCard missing incident badge overlay.');
 }
 
+if (!menuCardFile.includes('provider-status-section')) {
+  throw new Error('MenuCard missing provider status section test id.');
+}
+
+if (!menuCardFile.includes('provider-status-link')) {
+  throw new Error('MenuCard missing provider status link test id.');
+}
+
 if (!providerTabsFile.includes('ProviderIconWithOverlay')) {
   throw new Error('ProviderTabs missing incident badge overlay.');
 }

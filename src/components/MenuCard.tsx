@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { formatDistanceToNow } from 'date-fns';
-import { RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
 import { ProviderIcon, ProviderIconWithOverlay } from './ProviderIcons';
 import type { ProviderState } from '../lib/types';
@@ -26,6 +26,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError, status } = provider;
   const usageHistory = provider.usageHistory ?? [];
+  const statusPageUrl = metadata.statusPageUrl;
 
   const handleRefresh = useCallback(() => {
     useUsageStore.getState().refreshProvider(provider.id);
@@ -334,8 +335,11 @@ export function MenuCard({ provider }: MenuCardProps) {
             </div>
           )}
 
-          {status && status.indicator !== 'none' && (
-            <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5">
+          {status && status.indicator !== 'none' && statusPageUrl && (
+            <div
+              className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5"
+              data-testid="provider-status-section"
+            >
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-medium text-[var(--text-secondary)]">Status</span>
                 <span className="text-[12px] font-semibold uppercase text-[var(--text-primary)]">
@@ -347,6 +351,16 @@ export function MenuCard({ provider }: MenuCardProps) {
                   {status.description}
                 </p>
               )}
+              <a
+                href={statusPageUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex items-center gap-1 text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                data-testid="provider-status-link"
+              >
+                <ExternalLink className="w-3 h-3" aria-hidden="true" />
+                <span>View status page</span>
+              </a>
             </div>
           )}
         </div>
