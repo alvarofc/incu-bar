@@ -3,7 +3,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
 import { ProviderIcon, ProviderIconWithOverlay } from './ProviderIcons';
-import type { ProviderState } from '../lib/types';
+import type { MenuBarDisplayTextPayload, ProviderState } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { useUsageStore } from '../stores/usageStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -18,6 +18,8 @@ export function MenuCard({ provider }: MenuCardProps) {
   const showCost = useSettingsStore((s) => s.showCost);
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
+  const menuBarDisplayTextEnabled = useSettingsStore((s) => s.menuBarDisplayTextEnabled);
+  const menuBarDisplayTextMode = useSettingsStore((s) => s.menuBarDisplayTextMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
@@ -113,7 +115,6 @@ export function MenuCard({ provider }: MenuCardProps) {
 
   const paceText = useMemo(() => {
     if (!paceDetail) return null;
-    if (paceDetail.onTrack) return 'On pace';
     const deltaValue = Math.round(Math.abs(paceDetail.deltaPercent));
     const sign = paceDetail.deltaPercent >= 0 ? '+' : '-';
     return `${sign}${deltaValue}%`;
@@ -143,6 +144,35 @@ export function MenuCard({ provider }: MenuCardProps) {
     if (menuBarDisplayMode === 'weekly') return usage.secondary ?? null;
     return usage.primary ?? null;
   }, [highestWindow, menuBarDisplayMode, usage]);
+
+  const menuBarDisplayText = useMemo(() => {
+    const config: MenuBarDisplayTextPayload = {
+      enabled: menuBarDisplayTextEnabled,
+      mode: menuBarDisplayTextMode,
+    };
+    if (!config.enabled || !usage) return null;
+
+    if (config.mode !== 'percent') {
+      if (!usage.secondary?.resetsAt || !usage.secondary?.windowMinutes || !paceDetail) {
+        return null;
+      }
+    }
+
+    const showUsed = usageBarDisplayMode === 'used';
+    const percentText = primaryWindow?.usedPercent !== undefined
+      ? (() => {
+          const clamped = Math.min(100, Math.max(0, primaryWindow.usedPercent));
+          const shown = showUsed ? clamped : 100 - clamped;
+          return `${Math.round(Math.min(100, Math.max(0, shown)))}%`;
+        })()
+      : null;
+    const paceValue = paceDetail ? paceText : null;
+
+    if (config.mode === 'percent') return percentText;
+    if (config.mode === 'pace') return paceValue;
+    if (!percentText || !paceValue) return null;
+    return `${percentText} · ${paceValue}`;
+  }, [menuBarDisplayTextEnabled, menuBarDisplayTextMode, paceDetail, paceText, primaryWindow, usage, usageBarDisplayMode]);
 
   const primaryLabel = useMemo(() => {
     if (menuBarDisplayMode === 'highest') return highestWindow?.label || sessionLabel;
@@ -514,6 +544,14 @@ export function MenuCard({ provider }: MenuCardProps) {
         >
           Status {statusLine}
         </div>
+        {menuBarDisplayText && (
+          <div
+            className="text-[11px] text-[var(--text-quaternary)]"
+            data-testid="menu-bar-display-text"
+          >
+            Menu bar text {menuBarDisplayText}
+          </div>
+        )}
       </div>
     </div>
   );

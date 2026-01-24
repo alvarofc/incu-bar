@@ -272,6 +272,8 @@ export const DEFAULT_SETTINGS = {
   providerOrder: DEFAULT_PROVIDER_ORDER,
   displayMode: 'merged' as const,
   menuBarDisplayMode: 'session' as const,
+  menuBarDisplayTextEnabled: false,
+  menuBarDisplayTextMode: 'percent' as const,
   usageBarDisplayMode: 'remaining' as const,
   resetTimeDisplayMode: 'relative' as const,
   switcherShowsIcons: true,

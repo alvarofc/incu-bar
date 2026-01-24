@@ -81,6 +81,7 @@ pub fn run() {
             commands::set_provider_enabled,
             commands::get_settings,
             commands::save_settings,
+            commands::save_menu_bar_display_settings,
             commands::send_test_notification,
             commands::get_install_origin,
             commands::set_debug_file_logging,

@@ -37,6 +37,10 @@ static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
     RwLock::new(TrayUsageState::default())
 });
 
+static TRAY_DISPLAY_TEXT_STATE: Lazy<RwLock<TrayDisplayTextState>> = Lazy::new(|| {
+    RwLock::new(TrayDisplayTextState::default())
+});
+
 struct TrayUsageState {
     provider_usage: HashMap<ProviderId, UsageSnapshot>,
     disabled_providers: HashSet<ProviderId>,
@@ -44,6 +48,27 @@ struct TrayUsageState {
     animation_phase: u8,
     blinking: bool,
     theme: Theme,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TrayDisplayTextMode {
+    Percent,
+    Pace,
+    Both,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TrayPercentWindowMode {
+    Session,
+    Weekly,
+    Highest,
+}
+
+struct TrayDisplayTextState {
+    enabled: bool,
+    mode: TrayDisplayTextMode,
+    percent_window_mode: TrayPercentWindowMode,
+    show_used: bool,
 }
 
 impl Default for TrayUsageState {
@@ -59,10 +84,24 @@ impl Default for TrayUsageState {
     }
 }
 
+impl Default for TrayDisplayTextState {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: TrayDisplayTextMode::Percent,
+            percent_window_mode: TrayPercentWindowMode::Session,
+            show_used: true,
+        }
+    }
+}
+
 #[cfg(test)]
 fn reset_tray_usage_state() {
     if let Ok(mut state) = TRAY_USAGE_STATE.write() {
         *state = TrayUsageState::default();
+    }
+    if let Ok(mut state) = TRAY_DISPLAY_TEXT_STATE.write() {
+        *state = TrayDisplayTextState::default();
     }
 }
 
@@ -383,6 +422,46 @@ pub fn set_tray_theme(app: &AppHandle, theme: Theme) -> Result<()> {
     update_tray_icon(app)
 }
 
+pub fn set_display_text(
+    app: &AppHandle,
+    enabled: bool,
+    mode: TrayDisplayTextMode,
+    percent_window_mode: TrayPercentWindowMode,
+    show_used: bool,
+) -> Result<()> {
+    if let Ok(mut state) = TRAY_DISPLAY_TEXT_STATE.write() {
+        state.enabled = enabled;
+        state.mode = mode;
+        state.percent_window_mode = percent_window_mode;
+        state.show_used = show_used;
+    } else {
+        tracing::warn!("Tray display text state lock poisoned");
+    }
+    update_tray_icon(app)
+}
+
+pub fn set_display_text_for_provider(
+    app: &AppHandle,
+    display_mode: &str,
+    text_enabled: bool,
+    text_mode: &str,
+    show_used: bool,
+) -> Result<()> {
+    let percent_window_mode = match display_mode {
+        "session" => TrayPercentWindowMode::Session,
+        "weekly" => TrayPercentWindowMode::Weekly,
+        "highest" => TrayPercentWindowMode::Highest,
+        _ => TrayPercentWindowMode::Session,
+    };
+    let text_mode = match text_mode {
+        "pace" => TrayDisplayTextMode::Pace,
+        "both" => TrayDisplayTextMode::Both,
+        _ => TrayDisplayTextMode::Percent,
+    };
+    set_display_text(app, text_enabled, text_mode, percent_window_mode, show_used)
+}
+
+
 pub fn set_provider_disabled(app: &AppHandle, provider_id: ProviderId, disabled: bool) -> Result<()> {
     if let Ok(mut state) = TRAY_USAGE_STATE.write() {
         if disabled {
@@ -410,6 +489,7 @@ fn update_tray_icon(app: &AppHandle) -> Result<()> {
     tray.set_icon(Some(icon))?;
     tray.set_icon_as_template(false)?;
     tray.set_tooltip(Some(build_tray_tooltip()))?;
+    tray.set_title(build_tray_title(&state))?;
 
     if state.needs_animation() {
         let app_handle = app.clone();
@@ -498,6 +578,114 @@ fn compute_render_state() -> TrayRenderState {
         blink_enabled: blinking,
         theme,
     }
+}
+
+fn build_tray_title(state: &TrayRenderState) -> Option<String> {
+    let Ok(display_state) = TRAY_DISPLAY_TEXT_STATE.read() else {
+        return None;
+    };
+    if !display_state.enabled {
+        return None;
+    }
+    format_tray_display_text(state, *display_state)
+}
+
+fn format_tray_display_text(
+    state: &TrayRenderState,
+    display_state: TrayDisplayTextState,
+) -> Option<String> {
+    let primary_provider = state.primary_provider?;
+    let Ok(usage_state) = TRAY_USAGE_STATE.read() else {
+        return None;
+    };
+    let usage = usage_state.provider_usage.get(&primary_provider)?;
+    let percent_text = resolve_percent_window(display_state, usage).and_then(|value| {
+        if !value.is_finite() {
+            return None;
+        }
+        let clamped = value.clamp(0.0, 100.0);
+        let shown = if display_state.show_used {
+            clamped
+        } else {
+            (100.0 - clamped).clamp(0.0, 100.0)
+        };
+        Some(format!("{:.0}%", shown))
+    });
+
+    let pace_text = format_tray_pace_text(primary_provider, usage);
+
+    match display_state.mode {
+        TrayDisplayTextMode::Percent => percent_text,
+        TrayDisplayTextMode::Pace => pace_text,
+        TrayDisplayTextMode::Both => {
+            let percent_text = percent_text?;
+            let pace_text = pace_text?;
+            Some(format!("{} · {}", percent_text, pace_text))
+        }
+    }
+}
+
+fn resolve_percent_window(
+    display_state: TrayDisplayTextState,
+    usage: &UsageSnapshot,
+) -> Option<f64> {
+    match display_state.percent_window_mode {
+        TrayPercentWindowMode::Session => usage.primary.as_ref().map(|window| window.used_percent),
+        TrayPercentWindowMode::Weekly => usage.secondary.as_ref().map(|window| window.used_percent),
+        TrayPercentWindowMode::Highest => {
+            let mut best: Option<f64> = None;
+            for window in [&usage.primary, &usage.secondary, &usage.tertiary] {
+                if let Some(window) = window.as_ref() {
+                    let percent = window.used_percent;
+                    if percent.is_finite() {
+                        best = Some(best.map_or(percent, |current| current.max(percent)));
+                    }
+                }
+            }
+            best
+        }
+    }
+}
+
+fn format_tray_pace_text(provider_id: ProviderId, usage: &UsageSnapshot) -> Option<String> {
+    if !matches!(provider_id, ProviderId::Codex | ProviderId::Claude) {
+        return None;
+    }
+    let window = usage.secondary.as_ref()?;
+    let resets_at = window.resets_at.as_ref()?;
+    let window_minutes = window.window_minutes?;
+    if window_minutes <= 0 {
+        return None;
+    }
+    let parsed = DateTime::parse_from_rfc3339(resets_at).ok()?;
+    let now = Utc::now();
+    let resets_at = parsed.with_timezone(&Utc);
+    let duration_minutes = window_minutes as f64;
+    if duration_minutes <= 0.0 {
+        return None;
+    }
+    let duration_seconds = duration_minutes * 60.0;
+    let time_until_reset = (resets_at - now).num_seconds() as f64;
+    if time_until_reset <= 0.0 || time_until_reset > duration_seconds {
+        return None;
+    }
+    let elapsed = (duration_seconds - time_until_reset).clamp(0.0, duration_seconds);
+    let expected_used_percent = (elapsed / duration_seconds) * 100.0;
+    if expected_used_percent < 3.0 {
+        return None;
+    }
+    let actual_used_percent = window.used_percent.clamp(0.0, 100.0);
+    let remaining_percent = 100.0 - actual_used_percent;
+    if remaining_percent <= 0.0 {
+        return None;
+    }
+    if elapsed == 0.0 && actual_used_percent > 0.0 {
+        return None;
+    }
+    let delta = actual_used_percent - expected_used_percent;
+    let sign = if delta >= 0.0 { "+" } else { "-" };
+    let delta_value = delta.abs().round();
+    Some(format!("{}{}%", sign, delta_value))
 }
 
 fn is_snapshot_stale(usage: &UsageSnapshot) -> bool {

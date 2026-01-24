@@ -107,6 +107,13 @@ export type CookieSource = 'chrome' | 'safari' | 'firefox' | 'arc' | 'edge' | 'b
 
 export type MenuBarDisplayMode = 'session' | 'weekly' | 'pace' | 'highest';
 
+export type MenuBarDisplayTextMode = 'percent' | 'pace' | 'both';
+
+export interface MenuBarDisplayTextPayload {
+  enabled: boolean;
+  mode: MenuBarDisplayTextMode;
+}
+
 export type UsageBarDisplayMode = 'remaining' | 'used';
 
 export type ResetTimeDisplayMode = 'relative' | 'absolute';
@@ -120,6 +127,8 @@ export interface AppSettings {
   providerOrder: ProviderId[];
   displayMode: 'merged' | 'separate';
   menuBarDisplayMode: MenuBarDisplayMode;
+  menuBarDisplayTextEnabled: boolean;
+  menuBarDisplayTextMode: MenuBarDisplayTextMode;
   usageBarDisplayMode: UsageBarDisplayMode;
   resetTimeDisplayMode: ResetTimeDisplayMode;
   switcherShowsIcons: boolean;

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
-import type { MenuBarDisplayMode, ResetTimeDisplayMode, UpdateChannel, UsageBarDisplayMode } from '../lib/types';
+import type {
+  MenuBarDisplayMode,
+  MenuBarDisplayTextMode,
+  ResetTimeDisplayMode,
+  UpdateChannel,
+  UsageBarDisplayMode,
+} from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -42,6 +48,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const displayMode = useSettingsStore((s) => s.displayMode);
   const menuBarDisplayMode = useSettingsStore((s) => s.menuBarDisplayMode);
+  const menuBarDisplayTextEnabled = useSettingsStore((s) => s.menuBarDisplayTextEnabled);
+  const menuBarDisplayTextMode = useSettingsStore((s) => s.menuBarDisplayTextMode);
   const usageBarDisplayMode = useSettingsStore((s) => s.usageBarDisplayMode);
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const switcherShowsIcons = useSettingsStore((s) => s.switcherShowsIcons);
@@ -71,6 +79,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const setRedactPersonalInfo = useSettingsStore((s) => s.setRedactPersonalInfo);
   const debugDisableKeychainAccess = useSettingsStore((s) => s.debugDisableKeychainAccess);
   const installOrigin = useSettingsStore((s) => s.installOrigin);
+  const setMenuBarDisplayTextEnabled = useSettingsStore((s) => s.setMenuBarDisplayTextEnabled);
+  const setMenuBarDisplayTextMode = useSettingsStore((s) => s.setMenuBarDisplayTextMode);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
   const [loggingIn, setLoggingIn] = useState<string | null>(null);
@@ -294,11 +304,61 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetMenuBarDisplayMode = useCallback((mode: MenuBarDisplayMode) => {
     useSettingsStore.getState().setMenuBarDisplayMode(mode);
-  }, []);
+    void invoke('save_menu_bar_display_settings', {
+      menuBarDisplayMode: mode,
+      menuBarDisplayTextEnabled,
+      menuBarDisplayTextMode,
+      usageBarDisplayMode,
+    });
+  }, [
+    menuBarDisplayTextEnabled,
+    menuBarDisplayTextMode,
+    usageBarDisplayMode,
+  ]);
+
+  const handleSetMenuBarDisplayTextEnabled = useCallback((enabled: boolean) => {
+    setMenuBarDisplayTextEnabled(enabled);
+    void invoke('save_menu_bar_display_settings', {
+      menuBarDisplayMode,
+      menuBarDisplayTextEnabled: enabled,
+      menuBarDisplayTextMode,
+      usageBarDisplayMode,
+    });
+  }, [
+    setMenuBarDisplayTextEnabled,
+    menuBarDisplayMode,
+    menuBarDisplayTextMode,
+    usageBarDisplayMode,
+  ]);
+
+  const handleSetMenuBarDisplayTextMode = useCallback((mode: MenuBarDisplayTextMode) => {
+    setMenuBarDisplayTextMode(mode);
+    void invoke('save_menu_bar_display_settings', {
+      menuBarDisplayMode,
+      menuBarDisplayTextEnabled,
+      menuBarDisplayTextMode: mode,
+      usageBarDisplayMode,
+    });
+  }, [
+    setMenuBarDisplayTextMode,
+    menuBarDisplayMode,
+    menuBarDisplayTextEnabled,
+    usageBarDisplayMode,
+  ]);
 
   const handleSetUsageBarDisplayMode = useCallback((mode: UsageBarDisplayMode) => {
     useSettingsStore.getState().setUsageBarDisplayMode(mode);
-  }, []);
+    void invoke('save_menu_bar_display_settings', {
+      menuBarDisplayMode,
+      menuBarDisplayTextEnabled,
+      menuBarDisplayTextMode,
+      usageBarDisplayMode: mode,
+    });
+  }, [
+    menuBarDisplayMode,
+    menuBarDisplayTextEnabled,
+    menuBarDisplayTextMode,
+  ]);
 
   const handleSetResetTimeDisplayMode = useCallback((mode: ResetTimeDisplayMode) => {
     useSettingsStore.getState().setResetTimeDisplayMode(mode);
@@ -1198,6 +1258,64 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
                 Choose session usage, weekly usage, weekly pace, or highest usage.
               </p>
+              <div className="mt-3" data-testid="menu-bar-text-toggle">
+                <ToggleOption
+                  label="Menu bar shows text"
+                  enabled={menuBarDisplayTextEnabled}
+                  onChange={handleSetMenuBarDisplayTextEnabled}
+                />
+              </div>
+              <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                Show percent, pace, or both next to the menu bar icon.
+              </p>
+              {menuBarDisplayTextEnabled && (
+                <div className="mt-3">
+                  <span className="text-[11px] text-[var(--text-quaternary)] uppercase tracking-wider">
+                    Menu Bar Text
+                  </span>
+                  <div className="flex gap-1.5 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetMenuBarDisplayTextMode('percent')}
+                      className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                        menuBarDisplayTextMode === 'percent'
+                          ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                          : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      data-testid="menu-bar-text-percent"
+                    >
+                      Percent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetMenuBarDisplayTextMode('pace')}
+                      className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                        menuBarDisplayTextMode === 'pace'
+                          ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                          : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      data-testid="menu-bar-text-pace"
+                    >
+                      Pace
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetMenuBarDisplayTextMode('both')}
+                      className={`flex-1 px-3 py-2 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                        menuBarDisplayTextMode === 'both'
+                          ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                          : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                      }`}
+                      data-testid="menu-bar-text-both"
+                    >
+                      Both
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-[var(--text-quaternary)] mt-2">
+                    Percent uses the selected display window. Pace uses weekly usage for Codex or Claude.
+                  </p>
+                </div>
+              )}
             </div>
             <div className="divider" />
             <div>

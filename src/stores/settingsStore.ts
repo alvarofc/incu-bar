@@ -6,6 +6,7 @@ import type {
   AppSettings,
   CookieSource,
   MenuBarDisplayMode,
+  MenuBarDisplayTextMode,
   UsageBarDisplayMode,
   UpdateChannel,
 } from '../lib/types';
@@ -22,6 +23,8 @@ const LEGACY_SETTINGS_KEYS = {
   sessionQuotaNotificationsEnabled: 'sessionQuotaNotificationsEnabled',
   usageBarsShowUsed: 'usageBarsShowUsed',
   resetTimesShowAbsolute: 'resetTimesShowAbsolute',
+  menuBarShowsBrandIconWithPercent: 'menuBarShowsBrandIconWithPercent',
+  menuBarDisplayMode: 'menuBarDisplayMode',
   mergeIcons: 'mergeIcons',
   switcherShowsIcons: 'switcherShowsIcons',
   showOptionalCreditsAndExtraUsage: 'showOptionalCreditsAndExtraUsage',
@@ -96,6 +99,9 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
   const sessionQuotaNotificationsEnabled = stored[LEGACY_SETTINGS_KEYS.sessionQuotaNotificationsEnabled];
   const usageBarsShowUsed = stored[LEGACY_SETTINGS_KEYS.usageBarsShowUsed];
   const resetTimesShowAbsolute = stored[LEGACY_SETTINGS_KEYS.resetTimesShowAbsolute];
+  const menuBarShowsBrandIconWithPercent =
+    stored[LEGACY_SETTINGS_KEYS.menuBarShowsBrandIconWithPercent];
+  const menuBarDisplayModeRaw = stored[LEGACY_SETTINGS_KEYS.menuBarDisplayMode];
   const mergeIcons = stored[LEGACY_SETTINGS_KEYS.mergeIcons];
   const showOptionalCreditsAndExtraUsage = stored[LEGACY_SETTINGS_KEYS.showOptionalCreditsAndExtraUsage];
   const tokenCostUsageEnabled = stored[LEGACY_SETTINGS_KEYS.tokenCostUsageEnabled];
@@ -130,6 +136,18 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
 
   if (typeof resetTimesShowAbsolute === 'boolean') {
     updates.resetTimeDisplayMode = resetTimesShowAbsolute ? 'absolute' : 'relative';
+  }
+
+  if (typeof menuBarShowsBrandIconWithPercent === 'boolean') {
+    updates.menuBarDisplayTextEnabled = menuBarShowsBrandIconWithPercent;
+  }
+
+  if (typeof menuBarDisplayModeRaw === 'string') {
+    if (menuBarDisplayModeRaw === 'percent'
+      || menuBarDisplayModeRaw === 'pace'
+      || menuBarDisplayModeRaw === 'both') {
+      updates.menuBarDisplayTextMode = menuBarDisplayModeRaw;
+    }
   }
 
   if (typeof mergeIcons === 'boolean') {
@@ -196,6 +214,8 @@ interface SettingsStore extends AppSettings {
   setProviderOrder: (order: ProviderId[]) => void;
   setDisplayMode: (mode: 'merged' | 'separate') => void;
   setMenuBarDisplayMode: (mode: MenuBarDisplayMode) => void;
+  setMenuBarDisplayTextEnabled: (enabled: boolean) => void;
+  setMenuBarDisplayTextMode: (mode: MenuBarDisplayTextMode) => void;
   setUsageBarDisplayMode: (mode: UsageBarDisplayMode) => void;
   setResetTimeDisplayMode: (mode: 'relative' | 'absolute') => void;
   setSwitcherShowsIcons: (enabled: boolean) => void;
@@ -261,6 +281,10 @@ export const useSettingsStore = create<SettingsStore>()(
       setDisplayMode: (mode) => set({ displayMode: mode }),
 
       setMenuBarDisplayMode: (mode) => set({ menuBarDisplayMode: mode }),
+
+      setMenuBarDisplayTextEnabled: (enabled) => set({ menuBarDisplayTextEnabled: enabled }),
+
+      setMenuBarDisplayTextMode: (mode) => set({ menuBarDisplayTextMode: mode }),
 
       setUsageBarDisplayMode: (mode) => set({ usageBarDisplayMode: mode }),
 

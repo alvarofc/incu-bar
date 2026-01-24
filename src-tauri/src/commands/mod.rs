@@ -64,10 +64,15 @@ pub struct AppSettings {
     pub enabled_providers: Vec<ProviderId>,
     pub provider_order: Vec<ProviderId>,
     pub display_mode: String,
+    pub menu_bar_display_mode: String,
+    pub menu_bar_display_text_enabled: bool,
+    pub menu_bar_display_text_mode: String,
+    pub usage_bar_display_mode: String,
     pub show_notifications: bool,
     pub launch_at_login: bool,
     pub show_credits: bool,
     pub show_cost: bool,
+    pub show_extra_usage: bool,
     pub debug_file_logging: bool,
     pub debug_keep_cli_sessions_alive: bool,
     pub debug_random_blink: bool,
@@ -81,10 +86,15 @@ impl Default for AppSettings {
             enabled_providers: vec![ProviderId::Claude, ProviderId::Codex, ProviderId::Cursor],
             provider_order: vec![ProviderId::Claude, ProviderId::Codex, ProviderId::Cursor],
             display_mode: "merged".to_string(),
+            menu_bar_display_mode: "session".to_string(),
+            menu_bar_display_text_enabled: false,
+            menu_bar_display_text_mode: "percent".to_string(),
+            usage_bar_display_mode: "remaining".to_string(),
             show_notifications: true,
             launch_at_login: false,
             show_credits: true,
             show_cost: true,
+            show_extra_usage: true,
             debug_file_logging: false,
             debug_keep_cli_sessions_alive: false,
             debug_random_blink: false,
@@ -318,20 +328,44 @@ pub async fn get_settings() -> Result<AppSettings, String> {
 pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
     // TODO: Save to tauri-plugin-store
     tracing::debug!(
-        "Saving settings: AppSettings {{ refresh_interval_seconds: {}, enabled_providers: {:?}, provider_order: {:?}, display_mode: {}, show_notifications: {}, launch_at_login: {}, show_credits: {}, show_cost: {}, debug_file_logging: {}, debug_keep_cli_sessions_alive: {}, debug_random_blink: {}, redact_personal_info: {} }}",
+        "Saving settings: AppSettings {{ refresh_interval_seconds: {}, enabled_providers: {:?}, provider_order: {:?}, display_mode: {}, menu_bar_display_mode: {}, menu_bar_display_text_enabled: {}, menu_bar_display_text_mode: {}, usage_bar_display_mode: {}, show_notifications: {}, launch_at_login: {}, show_credits: {}, show_cost: {}, show_extra_usage: {}, debug_file_logging: {}, debug_keep_cli_sessions_alive: {}, debug_random_blink: {}, redact_personal_info: {} }}",
         settings.refresh_interval_seconds,
         settings.enabled_providers,
         settings.provider_order,
         settings.display_mode,
+        settings.menu_bar_display_mode,
+        settings.menu_bar_display_text_enabled,
+        settings.menu_bar_display_text_mode,
+        settings.usage_bar_display_mode,
         settings.show_notifications,
         settings.launch_at_login,
         settings.show_credits,
         settings.show_cost,
+        settings.show_extra_usage,
         settings.debug_file_logging,
         settings.debug_keep_cli_sessions_alive,
         settings.debug_random_blink,
         settings.redact_personal_info
     );
+    Ok(())
+}
+
+#[command]
+pub async fn save_menu_bar_display_settings(
+    app: AppHandle,
+    menu_bar_display_mode: String,
+    menu_bar_display_text_enabled: bool,
+    menu_bar_display_text_mode: String,
+    usage_bar_display_mode: String,
+) -> Result<(), String> {
+    tray::set_display_text_for_provider(
+        &app,
+        &menu_bar_display_mode,
+        menu_bar_display_text_enabled,
+        &menu_bar_display_text_mode,
+        usage_bar_display_mode == "used",
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
