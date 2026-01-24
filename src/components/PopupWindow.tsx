@@ -24,6 +24,7 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
     (provider) => provider.lastError && !provider.usage
   );
   const primaryErrorProvider = errorProviders[0];
+  const hasEnabledProviders = enabledProviders.length > 0;
 
   // Check if we're still loading (first refresh in progress)
   const isInitialLoading = !lastGlobalRefresh && enabledProviders.some((p) => p.isLoading);
@@ -123,6 +124,27 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
                 Open Settings
               </button>
             </div>
+          </div>
+        ) : !hasEnabledProviders ? (
+          <div
+            className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"
+            data-testid="provider-enable-empty-state"
+          >
+            <div className="w-11 h-11 rounded-full bg-[var(--bg-subtle)] flex items-center justify-center mb-4">
+              <Plug className="w-5 h-5 text-[var(--text-quaternary)]" aria-hidden="true" />
+            </div>
+            <h2 className="text-[15px] font-semibold text-[var(--text-primary)] mb-1.5 text-balance">
+              No providers enabled
+            </h2>
+            <p className="text-sm text-[var(--text-tertiary)] mb-5 max-w-[220px]">
+              Enable providers in Settings to start tracking usage
+            </p>
+            <button
+              onClick={onOpenSettings}
+              className="btn btn-primary focus-ring"
+            >
+              Enable Providers
+            </button>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up">
