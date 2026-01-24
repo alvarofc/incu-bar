@@ -12,6 +12,7 @@ const requiredMarkers = [
   'provider-enable-toggle-',
   'provider-order-up-',
   'provider-order-down-',
+  'check_all_auth',
   'data-testid="display-mode-merged"',
   'data-testid="display-mode-separate"',
   'data-testid="menu-bar-display-session"',

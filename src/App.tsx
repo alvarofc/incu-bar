@@ -28,6 +28,10 @@ import './styles/globals.css';
 
 type View = 'main' | 'settings';
 
+interface AuthStatus {
+  authenticated: boolean;
+}
+
 function App() {
   const [currentView, setCurrentView] = useState<View>('main');
   const setProviderUsage = useUsageStore((s) => s.setProviderUsage);
@@ -78,6 +82,43 @@ function App() {
         });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    let active = true;
+
+    const autoEnableAuthenticatedProviders = async () => {
+      try {
+        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+        if (!active) return;
+        const settingsStore = useSettingsStore.getState();
+        const usageStore = useUsageStore.getState();
+
+        Object.entries(status).forEach(([id, providerStatus]) => {
+          if (providerStatus?.authenticated !== true) {
+            return;
+          }
+          if (!(id in PROVIDERS)) {
+            return;
+          }
+          const providerId = id as ProviderId;
+          if (settingsStore.enabledProviders.includes(providerId)) {
+            return;
+          }
+          settingsStore.enableProvider(providerId);
+          void settingsStore.syncProviderEnabled(providerId, true);
+          usageStore.setProviderEnabled(providerId, true);
+        });
+      } catch (error) {
+        console.error('Failed to detect provider authentication:', error);
+      }
+    };
+
+    autoEnableAuthenticatedProviders();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!autoUpdateEnabled) {
