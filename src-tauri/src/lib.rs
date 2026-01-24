@@ -82,6 +82,7 @@ pub fn run() {
             commands::get_settings,
             commands::save_settings,
             commands::send_test_notification,
+            commands::get_install_origin,
             commands::set_debug_file_logging,
             commands::set_debug_keep_cli_sessions_alive,
             commands::set_debug_random_blink,

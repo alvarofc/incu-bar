@@ -49,6 +49,7 @@ function App() {
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
   const initAutostart = useSettingsStore((s) => s.initAutostart);
+  const setInstallOrigin = useSettingsStore((s) => s.setInstallOrigin);
   const initializedRef = useRef(false);
   const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
   const creditsNotificationStateRef = useRef(new Map<ProviderId, CreditsNotificationState>());
@@ -66,6 +67,14 @@ function App() {
       initializeProviders(enabledProviders);
       // Sync autostart status from system
       initAutostart();
+      void invoke<string>('get_install_origin')
+        .then((origin) => {
+          setInstallOrigin(origin);
+        })
+        .catch((error) => {
+          console.warn('Failed to load install origin', error);
+          setInstallOrigin(null);
+        });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

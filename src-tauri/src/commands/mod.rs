@@ -10,6 +10,7 @@ use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
 use crate::storage::widget_snapshot;
+use crate::storage::install_origin;
 use crate::tray;
 
 struct LoadingGuard {
@@ -344,6 +345,11 @@ pub async fn send_test_notification(app: AppHandle) -> Result<(), String> {
         .body("Notifications are enabled")
         .show()
         .map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn get_install_origin() -> Result<String, String> {
+    install_origin::read_or_record_install_origin().map_err(|e| e.to_string())
 }
 
 // ============== Login Commands ==============

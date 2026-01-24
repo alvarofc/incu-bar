@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
 import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical } from 'lucide-react';
-import type { MenuBarDisplayMode, ResetTimeDisplayMode, UsageBarDisplayMode } from '../lib/types';
+import type { MenuBarDisplayMode, ResetTimeDisplayMode, UpdateChannel, UsageBarDisplayMode } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderId, CookieSource } from '../lib/types';
@@ -49,6 +49,8 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const showExtraUsage = useSettingsStore((s) => s.showExtraUsage);
   const storeUsageHistory = useSettingsStore((s) => s.storeUsageHistory);
   const pollProviderStatus = useSettingsStore((s) => s.pollProviderStatus);
+  const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
+  const updateChannel = useSettingsStore((s) => s.updateChannel);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
   const notifySessionUsage = useSettingsStore((s) => s.notifySessionUsage);
   const notifyCreditsLow = useSettingsStore((s) => s.notifyCreditsLow);
@@ -60,6 +62,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     (s) => s.debugKeepCliSessionsAlive
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
+  const installOrigin = useSettingsStore((s) => s.installOrigin);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
   const [loggingIn, setLoggingIn] = useState<string | null>(null);
@@ -291,6 +294,14 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
   const handleSetResetTimeDisplayMode = useCallback((mode: ResetTimeDisplayMode) => {
     useSettingsStore.getState().setResetTimeDisplayMode(mode);
+  }, []);
+
+  const handleSetAutoUpdateEnabled = useCallback((enabled: boolean) => {
+    useSettingsStore.getState().setAutoUpdateEnabled(enabled);
+  }, []);
+
+  const handleSetUpdateChannel = useCallback((channel: UpdateChannel) => {
+    useSettingsStore.getState().setUpdateChannel(channel);
   }, []);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
@@ -1312,6 +1323,40 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
         <div className="divider mx-4" />
 
+        {/* Updates */}
+        <section className="p-4">
+          <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
+            Updates
+          </h2>
+          <div className="space-y-2" data-testid="update-settings">
+            <ToggleOption
+              label="Check for updates automatically"
+              enabled={autoUpdateEnabled}
+              onChange={handleSetAutoUpdateEnabled}
+            />
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+              <div>
+                <div className="text-[13px] text-[var(--text-secondary)]">Update Channel</div>
+                <div className="text-[11px] text-[var(--text-quaternary)]">
+                  {updateChannel === 'beta'
+                    ? 'Receive stable releases plus beta previews.'
+                    : 'Receive only stable, production-ready releases.'}
+                </div>
+              </div>
+              <select
+                value={updateChannel}
+                onChange={(event) => handleSetUpdateChannel(event.target.value as UpdateChannel)}
+                className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
+              >
+                <option value="stable">Stable</option>
+                <option value="beta">Beta</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <div className="divider mx-4" />
+
         {/* Debug */}
         <section className="p-4">
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
@@ -1349,9 +1394,16 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           </button>
         </section>
 
-        {/* Version */}
+        {/* About */}
         <footer className="px-4 pb-4 pt-2 text-center">
-          <span className="text-[11px] text-[var(--text-quaternary)]">IncuBar v0.1.0</span>
+          <div className="text-[11px] text-[var(--text-quaternary)]">
+            IncuBar v{import.meta.env.PACKAGE_VERSION}
+          </div>
+          {installOrigin && (
+            <div className="mt-1 text-[10px] text-[var(--text-quaternary)]">
+              Installed via {installOrigin}
+            </div>
+          )}
         </footer>
       </div>
     </div>

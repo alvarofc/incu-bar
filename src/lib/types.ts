@@ -111,6 +111,8 @@ export type UsageBarDisplayMode = 'remaining' | 'used';
 
 export type ResetTimeDisplayMode = 'relative' | 'absolute';
 
+export type UpdateChannel = 'stable' | 'beta';
+
 // Settings
 export interface AppSettings {
   refreshIntervalSeconds: number;
@@ -120,6 +122,8 @@ export interface AppSettings {
   menuBarDisplayMode: MenuBarDisplayMode;
   usageBarDisplayMode: UsageBarDisplayMode;
   resetTimeDisplayMode: ResetTimeDisplayMode;
+  autoUpdateEnabled: boolean;
+  updateChannel: UpdateChannel;
   showNotifications: boolean;
   notifySessionUsage: boolean;
   notifyCreditsLow: boolean;
@@ -136,6 +140,7 @@ export interface AppSettings {
   debugFileLogging: boolean;
   debugKeepCliSessionsAlive: boolean;
   debugRandomBlink: boolean;
+  installOrigin?: string;
 }
 
 // Event payloads from Rust
