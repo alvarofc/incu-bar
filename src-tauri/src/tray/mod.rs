@@ -64,6 +64,7 @@ pub(crate) enum TrayPercentWindowMode {
     Highest,
 }
 
+#[derive(Clone, Copy)]
 struct TrayDisplayTextState {
     enabled: bool,
     mode: TrayDisplayTextMode,

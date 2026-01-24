@@ -214,29 +214,129 @@ impl ProviderStatus {
 }
 
 #[derive(Debug, Clone)]
-struct RefreshSchedule {
+pub(crate) struct RefreshSchedule {
     interval: Duration,
     next_refresh_at: SystemTime,
 }
+
+const FAILURE_BACKOFF_BASE_SECONDS: u64 = 30;
 
 impl RefreshSchedule {
     fn new(interval: Duration) -> Self {
         Self::new_at(SystemTime::now(), interval)
     }
 
-    fn new_at(now: SystemTime, interval: Duration) -> Self {
+    pub(crate) fn new_at(now: SystemTime, interval: Duration) -> Self {
         Self {
             interval,
             next_refresh_at: now.checked_add(interval).unwrap_or(now),
         }
     }
 
-    fn is_due(&self, now: SystemTime) -> bool {
+    pub(crate) fn is_due(&self, now: SystemTime) -> bool {
         now >= self.next_refresh_at
     }
 
-    fn mark_refreshed(&mut self, now: SystemTime) {
+    pub(crate) fn mark_refreshed(&mut self, now: SystemTime) {
         self.next_refresh_at = now.checked_add(self.interval).unwrap_or(now);
+    }
+
+    pub(crate) fn schedule_after(&mut self, now: SystemTime, delay: Duration) {
+        self.next_refresh_at = now.checked_add(delay).unwrap_or(now);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ConsecutiveFailureGate {
+    streak: u32,
+}
+
+impl ConsecutiveFailureGate {
+    pub(crate) fn new() -> Self {
+        Self { streak: 0 }
+    }
+
+    pub(crate) fn record_success(&mut self) {
+        self.streak = 0;
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.streak = 0;
+    }
+
+    pub(crate) fn should_surface_error(&mut self, had_prior_data: bool) -> bool {
+        self.streak = self.streak.saturating_add(1);
+        if had_prior_data && self.streak == 1 {
+            return false;
+        }
+        true
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct RefreshBackoff {
+    base_interval: Duration,
+    failure_streak: u32,
+}
+
+impl RefreshBackoff {
+    pub(crate) fn new(base_interval: Duration) -> Self {
+        Self {
+            base_interval,
+            failure_streak: 0,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.failure_streak = 0;
+    }
+
+    pub(crate) fn register_failure(&mut self) -> Duration {
+        self.failure_streak = self.failure_streak.saturating_add(1);
+        self.backoff_delay()
+    }
+
+    pub(crate) fn backoff_delay(&self) -> Duration {
+        let base_seconds = FAILURE_BACKOFF_BASE_SECONDS;
+        let max_seconds = self.base_interval.as_secs().max(base_seconds);
+        let exponent = self.failure_streak.saturating_sub(1).min(6);
+        let multiplier = 1_u64 << exponent;
+        let delay_seconds = base_seconds.saturating_mul(multiplier).min(max_seconds);
+        Duration::from_secs(delay_seconds)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ProviderRefreshState {
+    schedule: RefreshSchedule,
+    backoff: RefreshBackoff,
+    failure_gate: ConsecutiveFailureGate,
+}
+
+impl ProviderRefreshState {
+    fn new(now: SystemTime, interval: Duration) -> Self {
+        Self {
+            schedule: RefreshSchedule::new_at(now, interval),
+            backoff: RefreshBackoff::new(interval),
+            failure_gate: ConsecutiveFailureGate::new(),
+        }
+    }
+
+    fn is_due(&self, now: SystemTime) -> bool {
+        self.schedule.is_due(now)
+    }
+
+    fn record_success(&mut self, now: SystemTime) {
+        self.backoff.reset();
+        self.failure_gate.record_success();
+        self.schedule.mark_refreshed(now);
+    }
+
+    fn record_failure(&mut self, now: SystemTime, had_data: bool) -> bool {
+        let should_surface = self.failure_gate.should_surface_error(had_data);
+        let delay = self.backoff.register_failure();
+        self.schedule.schedule_after(now, delay);
+        should_surface
     }
 }
 
@@ -502,14 +602,19 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn get_cached_usage(&self, _id: &ProviderId) -> Option<UsageSnapshot> {
-        // For sync access, we'd need a different approach
-        // For now, return None and let the frontend trigger a refresh
-        None
+    pub fn get_cached_usage(&self, id: &ProviderId) -> Option<UsageSnapshot> {
+        self.providers
+            .blocking_read()
+            .get(id)
+            .and_then(|state| state.cached_usage.clone())
     }
 
     pub fn get_all_cached_usage(&self) -> HashMap<ProviderId, UsageSnapshot> {
-        HashMap::new()
+        self.providers
+            .blocking_read()
+            .iter()
+            .filter_map(|(id, state)| state.cached_usage.clone().map(|usage| (*id, usage)))
+            .collect()
     }
 
     pub fn get_enabled_providers(&self) -> Vec<ProviderId> {
@@ -528,23 +633,33 @@ impl ProviderRegistry {
 }
 
 /// Start the background refresh loop
-    pub async fn start_refresh_loop(app: AppHandle) {
+pub async fn start_refresh_loop(app: AppHandle) {
     let interval = std::time::Duration::from_secs(300); // 5 minutes
     let tick_interval = std::time::Duration::from_secs(5);
-    let mut schedule = RefreshSchedule::new(interval);
+    let mut provider_states: HashMap<ProviderId, ProviderRefreshState> = HashMap::new();
 
     loop {
         tokio::time::sleep(tick_interval).await;
         let now = SystemTime::now();
 
-        if !schedule.is_due(now) {
-            continue;
-        }
-
         if let Some(registry) = app.try_state::<ProviderRegistry>() {
             let providers = registry.get_enabled_providers();
+            for provider_id in &providers {
+                provider_states
+                    .entry(*provider_id)
+                    .or_insert_with(|| ProviderRefreshState::new(now, interval));
+            }
 
             for provider_id in providers {
+                let state = provider_states
+                    .entry(provider_id)
+                    .or_insert_with(|| ProviderRefreshState::new(now, interval));
+                let had_cached_data = registry.get_cached_usage(&provider_id).is_some();
+
+                if !state.is_due(now) {
+                    continue;
+                }
+
                 if let Ok(status) = registry.fetch_status(&provider_id).await {
                     let _ = app.emit(
                         "status-updated",
@@ -554,30 +669,47 @@ impl ProviderRegistry {
                         }),
                     );
                 }
+
                 match registry.fetch_usage(&provider_id).await {
                     Ok(usage) => {
                         let _ = app.emit(
                             "usage-updated",
-                            serde_json::json!({
-                                "providerId": provider_id,
-                                "usage": usage,
-                            }),
+                        serde_json::json!({
+                            "providerId": provider_id,
+                            "usage": usage,
+                        }),
                         );
+                        state.record_success(now);
                     }
                     Err(e) => {
                         tracing::warn!("Refresh failed for {:?}: {}", provider_id, e);
+                        if state.record_failure(now, had_cached_data) {
+                            let usage = UsageSnapshot::error(e.to_string());
+                            let _ = app.emit(
+                                "refresh-failed",
+                                serde_json::json!({
+                                    "providerId": provider_id,
+                                    "usage": usage.clone(),
+                                }),
+                            );
+                            let _ = app.emit(
+                                "usage-updated",
+                                serde_json::json!({
+                                    "providerId": provider_id,
+                                    "usage": usage,
+                                }),
+                            );
+                        }
                     }
                 }
             }
         }
-
-        schedule.mark_refreshed(SystemTime::now());
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::RefreshSchedule;
+    use super::{ConsecutiveFailureGate, RefreshBackoff, RefreshSchedule};
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -607,5 +739,44 @@ mod tests {
         schedule.mark_refreshed(wake_time);
         let next_due = wake_time + Duration::from_secs(299);
         assert!(!schedule.is_due(next_due));
+    }
+
+    #[test]
+    fn refresh_schedule_supports_custom_delay() {
+        let start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let mut schedule = RefreshSchedule::new_at(start, Duration::from_secs(300));
+        let delay = Duration::from_secs(45);
+        schedule.schedule_after(start, delay);
+
+        let before_due = start + Duration::from_secs(44);
+        assert!(!schedule.is_due(before_due));
+
+        let due = start + Duration::from_secs(45);
+        assert!(schedule.is_due(due));
+    }
+
+    #[test]
+    fn backoff_caps_at_interval() {
+        let interval = Duration::from_secs(300);
+        let mut backoff = RefreshBackoff::new(interval);
+
+        let first = backoff.register_failure();
+        assert_eq!(first, Duration::from_secs(30));
+
+        for _ in 0..5 {
+            backoff.register_failure();
+        }
+
+        let capped = backoff.register_failure();
+        assert_eq!(capped, interval);
+    }
+
+    #[test]
+    fn failure_gate_suppresses_first_error_with_prior_data() {
+        let mut gate = ConsecutiveFailureGate::new();
+        assert!(!gate.should_surface_error(true));
+        assert!(gate.should_surface_error(true));
+        gate.record_success();
+        assert!(!gate.should_surface_error(true));
     }
 }

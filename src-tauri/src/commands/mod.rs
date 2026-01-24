@@ -6,7 +6,6 @@ use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_autostart::AutoLaunchManager;
 
 use crate::browser_cookies::BrowserCookieSource;
-use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::debug_settings;
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
