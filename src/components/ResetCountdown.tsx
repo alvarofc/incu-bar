@@ -27,6 +27,7 @@ export function ResetCountdown({
   // Otherwise, format the reset time
   if (resetsAt) {
     const resetDate = new Date(resetsAt);
+    if (Number.isNaN(resetDate.getTime())) return null;
     const formattedTime = displayMode === 'relative'
       ? `Resets ${formatDistanceToNow(resetDate, { addSuffix: true })}`
       : `Resets ${format(resetDate, 'MMM d, h:mm a')}`;

@@ -7,12 +7,14 @@ const typesPath = path.join(root, 'src', 'lib', 'types.ts');
 const providersPath = path.join(root, 'src', 'lib', 'providers.ts');
 const menuCardPath = path.join(root, 'src', 'components', 'MenuCard.tsx');
 const progressBarPath = path.join(root, 'src', 'components', 'ProgressBar.tsx');
+const resetCountdownPath = path.join(root, 'src', 'components', 'ResetCountdown.tsx');
 
 const settingsPanelFile = fs.readFileSync(settingsPanelPath, 'utf-8');
 const typesFile = fs.readFileSync(typesPath, 'utf-8');
 const providersFile = fs.readFileSync(providersPath, 'utf-8');
 const menuCardFile = fs.readFileSync(menuCardPath, 'utf-8');
 const progressBarFile = fs.readFileSync(progressBarPath, 'utf-8');
+const resetCountdownFile = fs.readFileSync(resetCountdownPath, 'utf-8');
 
 if (!typesFile.includes('ResetTimeDisplayMode')) {
   throw new Error('ResetTimeDisplayMode missing from types.');
@@ -40,6 +42,10 @@ if (!menuCardFile.includes('resetTimeDisplayMode')) {
 
 if (!progressBarFile.includes('resetTimeDisplayMode')) {
   throw new Error('ProgressBar missing reset time display wiring.');
+}
+
+if (!resetCountdownFile.includes('Number.isNaN(resetDate.getTime())')) {
+  throw new Error('ResetCountdown missing invalid reset date guard.');
 }
 
 console.log('Reset time display mode checks passed.');
