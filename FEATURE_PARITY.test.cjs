@@ -34,7 +34,9 @@ const assertContainsProviderIds = (spec, providerIds) => {
 const spec = getSpec();
 assertContains(spec, "## Living Spec Rules");
 assertContains(spec, "## Feature Parity Baseline");
+assertContains(spec, "### Baseline Checklist");
 assertContains(spec, "### Parity Rules");
+assertContains(spec, "### Baseline Evidence");
 assertContains(spec, "## Parity Matrices");
 assertContains(spec, "### Provider Parity Matrix");
 assertContains(spec, "### App Parity Matrix");

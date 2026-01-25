@@ -23,12 +23,26 @@ This baseline defines the minimum complete state for IncuBar to be considered pa
 - Settings persist, sync to the tray, and trigger background refreshes.
 - Notifications follow CodexBar rules for thresholds, failures, and resets.
 
+### Baseline Checklist
+
+- Every provider listed in the Provider Parity Matrix is marked Done for Usage, Reset, Auth, Popup Display, and Settings.
+- App Parity Matrix has no Not Started items; any deliberate divergences are marked N/A with rationale.
+- Settings match CodexBar defaults and persistence (including refresh, display, advanced, and debug toggles).
+- Provider auth fallbacks and cookie sources are documented and available in settings where applicable.
+- Notifications mirror CodexBar thresholds and suppression rules (usage, low credits, refresh failure, stale data).
+- Tray icon states and animations match CodexBar spec (normal/loading/error/disabled/stale + blink/wiggle/tilt).
+
 ### Parity Rules
 
 - If CodexBar uses a fallback auth method, IncuBar must also expose it.
 - All providers must return normalized fields: plan/tier, used, limit, reset.
 - Errors must surface in the popup and log in debug mode.
 - Optional enhancements are listed explicitly and never counted toward parity.
+
+### Baseline Evidence
+
+- Each Done row in the parity matrices must have a corresponding automated parity test or manual QA note in this file.
+- When a Done item regresses, mark it Partial and add a short regression note until revalidated.
 
 ### Optional Enhancements (Not Required for Parity)
 
