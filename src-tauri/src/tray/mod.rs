@@ -265,6 +265,11 @@ impl TrayRenderState {
     }
 }
 
+fn sort_usage_rings(rings: &mut Vec<UsageRing>) {
+    rings.retain(|ring| ring.percent.is_finite());
+    rings.sort_by(|a, b| b.percent.partial_cmp(&a.percent).unwrap_or(Ordering::Equal));
+}
+
 struct Canvas {
     width: u32,
     height: u32,
@@ -645,7 +650,7 @@ fn compute_render_state() -> TrayRenderState {
         }
     }
 
-    rings.sort_by(|a, b| b.percent.partial_cmp(&a.percent).unwrap_or(Ordering::Equal));
+    sort_usage_rings(&mut rings);
     rings.truncate(MAX_RINGS);
     let primary_provider = rings.first().map(|ring| ring.provider_id);
 
@@ -1112,7 +1117,15 @@ fn start_random_blinking_loop(app: &AppHandle) {
 /// Create the popup window (hidden by default)
 pub fn create_popup_window(app: &AppHandle) -> Result<()> {
     tracing::info!("Creating popup window...");
-    let window = match WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("index.html".into()))
+    eprintln!("About to build WebviewWindow...");
+    
+    // In dev mode, use the external URL; in production, use the app URL
+    #[cfg(debug_assertions)]
+    let url = WebviewUrl::External("http://localhost:1420".parse().unwrap());
+    #[cfg(not(debug_assertions))]
+    let url = WebviewUrl::App("index.html".into());
+    
+    let builder = WebviewWindowBuilder::new(app, "popup", url)
         .title("IncuBar")
         .inner_size(320.0, 420.0)
         .resizable(false)
@@ -1120,11 +1133,18 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .focused(true)
-        .build()
+        .focused(true);
+    
+    eprintln!("Builder created, now calling build()...");
+    
+    let window = match builder.build()
     {
-        Ok(w) => w,
+        Ok(w) => {
+            eprintln!("Window build succeeded!");
+            w
+        },
         Err(e) => {
+            eprintln!("Window build FAILED: {:?}", e);
             tracing::error!("Failed to create popup window: {:?}", e);
             return Err(e.into());
         }
@@ -1431,7 +1451,7 @@ mod tests {
         advance_animation_phase, animation_interval, animation_should_continue, animation_tick_ms,
         compute_render_state, format_tray_tooltip, palette_for_theme, read_tray_usage_state,
         render_tray_icon, reset_tray_usage_state, should_start_animation_thread,
-        write_tray_usage_state, TrayRenderState, TrayStatus, UsageRing,
+        sort_usage_rings, write_tray_usage_state, TrayRenderState, TrayStatus, UsageRing,
         BLINKING_ANIMATION_TICK_MS, ICON_SIZE, LOADING_ANIMATION_TICK_MS, STALE_THRESHOLD_SECS,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
@@ -1503,6 +1523,28 @@ mod tests {
             Some(81.0)
         );
         assert_eq!(state.primary_provider, Some(ProviderId::Codex));
+    }
+
+    #[test]
+    fn sort_usage_rings_filters_nan_values() {
+        let mut rings = vec![
+            UsageRing {
+                percent: f64::NAN,
+                color: [0, 0, 0, 0],
+                provider_id: ProviderId::Claude,
+            },
+            UsageRing {
+                percent: 42.0,
+                color: [0, 0, 0, 0],
+                provider_id: ProviderId::Codex,
+            },
+        ];
+
+        sort_usage_rings(&mut rings);
+
+        assert_eq!(rings.len(), 1);
+        assert_eq!(rings[0].percent, 42.0);
+        assert_eq!(rings[0].provider_id, ProviderId::Codex);
     }
 
     #[test]
