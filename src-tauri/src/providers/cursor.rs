@@ -9,6 +9,7 @@ use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapsho
 use crate::debug_settings;
 use async_trait::async_trait;
 use serde::Deserialize;
+use std::path::Path;
 
 const USAGE_SUMMARY_URL: &str = "https://cursor.com/api/usage-summary";
 const AUTH_ME_URL: &str = "https://cursor.com/api/auth/me";
@@ -309,12 +310,37 @@ impl CursorProvider {
         let session_path = self.get_session_path()?;
 
         if session_path.exists() {
-            let content = tokio::fs::read_to_string(&session_path).await?;
-            let session: CursorSession = serde_json::from_str(&content)?;
-            return Ok(session.cookie_header);
+            return self.load_session_from_path(&session_path).await;
         }
 
         Err(anyhow::anyhow!("No stored Cursor session found"))
+    }
+
+    async fn load_session_from_path(&self, session_path: &Path) -> Result<String, anyhow::Error> {
+        let content = tokio::fs::read_to_string(session_path).await?;
+        let session: CursorSession = serde_json::from_str(&content)?;
+        Ok(session.cookie_header)
+    }
+
+    async fn store_session(&self, cookie_header: &str) -> Result<(), anyhow::Error> {
+        let session_path = self.get_session_path()?;
+        self.store_session_at_path(cookie_header, &session_path).await
+    }
+
+    async fn store_session_at_path(
+        &self,
+        cookie_header: &str,
+        session_path: &Path,
+    ) -> Result<(), anyhow::Error> {
+        if let Some(parent) = session_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+        let content = serde_json::json!({
+            "cookieHeader": cookie_header,
+            "savedAt": chrono::Utc::now().to_rfc3339(),
+        });
+        tokio::fs::write(session_path, serde_json::to_string_pretty(&content)?).await?;
+        Ok(())
     }
 
     fn get_session_path(&self) -> Result<std::path::PathBuf, anyhow::Error> {
@@ -353,7 +379,19 @@ impl ProviderFetcher for CursorProvider {
             }
         }
 
-        // TODO: Implement browser cookie import
+        match crate::browser_cookies::import_cursor_cookies_from_browser().await {
+            Ok(result) => {
+                if let Err(err) = self.store_session(&result.cookie_header).await {
+                    tracing::debug!("Failed to store Cursor session: {}", err);
+                }
+                if let Ok(usage) = self.fetch_with_cookies(&result.cookie_header).await {
+                    return Ok(usage);
+                }
+            }
+            Err(err) => {
+                tracing::debug!("Cursor browser cookie import failed: {}", err);
+            }
+        }
 
         // Fallback to mock data
         Ok(UsageSnapshot {
@@ -386,6 +424,34 @@ impl ProviderFetcher for CursorProvider {
 #[serde(rename_all = "camelCase")]
 struct CursorSession {
     cookie_header: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stores_and_loads_cursor_session_cookie() {
+        let provider = CursorProvider::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let session_path = dir
+            .path()
+            .join("IncuBar")
+            .join("cursor-session.json");
+        let cookie_header = "cursor_session=abc123; Path=/; Secure";
+
+        provider
+            .store_session_at_path(cookie_header, &session_path)
+            .await
+            .expect("store session");
+
+        let loaded = provider
+            .load_session_from_path(&session_path)
+            .await
+            .expect("load session");
+
+        assert_eq!(loaded, cookie_header);
+    }
 }
 
 // Note: Some fields below are unused but required for serde deserialization
