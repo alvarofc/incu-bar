@@ -31,11 +31,15 @@ fn init_logging() {
         .init();
 }
 
+fn format_run_error(error: impl std::fmt::Display) -> String {
+    format!("error while running tauri application: {error}")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
 
-    tauri::Builder::default()
+    let run_result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -121,6 +125,25 @@ pub fn run() {
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    if let Err(error) = run_result {
+        let message = format_run_error(&error);
+        tracing::error!(error = %error, "{message}");
+        eprintln!("{message}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_run_error;
+
+    #[test]
+    fn run_error_message_includes_details() {
+        let message = format_run_error("boom");
+
+        assert!(message.contains("error while running tauri application"));
+        assert!(message.contains("boom"));
+    }
 }
