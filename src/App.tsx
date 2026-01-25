@@ -206,7 +206,7 @@ function App() {
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      void unlisten.then((fn) => fn()).catch(console.error);
     };
   }, [setProviderUsage, showNotifications, notifySessionUsage, notifyCreditsLow, notifyRefreshFailure]);
 
@@ -216,7 +216,7 @@ function App() {
     });
 
     return () => {
-      unlistenRefresh.then((fn) => fn());
+      void unlistenRefresh.then((fn) => fn()).catch(console.error);
     };
   }, []);
 
@@ -229,7 +229,7 @@ function App() {
     });
 
     return () => {
-      unlistenRefreshing.then((fn) => fn());
+      void unlistenRefreshing.then((fn) => fn()).catch(console.error);
     };
   }, []);
 
