@@ -81,7 +81,7 @@ function App() {
           setInstallOrigin(null);
         });
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [enabledProviders, initializeProviders, initAutostart, setInstallOrigin]);
 
   useEffect(() => {
     let active = true;
