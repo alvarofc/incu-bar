@@ -93,21 +93,24 @@ function App() {
         const settingsStore = useSettingsStore.getState();
         const usageStore = useUsageStore.getState();
 
-        Object.entries(status).forEach(([id, providerStatus]) => {
-          if (providerStatus?.authenticated !== true) {
+        for (const [id, providerStatus] of Object.entries(status)) {
+          if (!active) {
             return;
           }
+          if (providerStatus?.authenticated !== true) {
+            continue;
+          }
           if (!(id in PROVIDERS)) {
-            return;
+            continue;
           }
           const providerId = id as ProviderId;
           if (settingsStore.enabledProviders.includes(providerId)) {
-            return;
+            continue;
           }
           settingsStore.enableProvider(providerId);
           void settingsStore.syncProviderEnabled(providerId, true);
           usageStore.setProviderEnabled(providerId, true);
-        });
+        }
       } catch (error) {
         console.error('Failed to detect provider authentication:', error);
       }
