@@ -7,7 +7,7 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
-use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -15,6 +15,8 @@ use tauri::{
     AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_positioner::{Position, WindowExt};
+use tokio::sync::mpsc;
+use tokio::time::{self, Instant, MissedTickBehavior};
 use url::Url;
 
 use crate::debug_settings;
@@ -38,6 +40,13 @@ static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> =
 
 static TRAY_DISPLAY_TEXT_STATE: Lazy<RwLock<TrayDisplayTextState>> =
     Lazy::new(|| RwLock::new(TrayDisplayTextState::default()));
+
+static TRAY_ANIMATION_CONTROL: Lazy<Mutex<Option<mpsc::UnboundedSender<AnimationCommand>>>> =
+    Lazy::new(|| Mutex::new(None));
+
+enum AnimationCommand {
+    Wake(AppHandle),
+}
 
 fn write_tray_usage_state() -> RwLockWriteGuard<'static, TrayUsageState> {
     TRAY_USAGE_STATE.write().unwrap_or_else(|poisoned| {
@@ -69,6 +78,97 @@ fn read_tray_display_text_state() -> RwLockReadGuard<'static, TrayDisplayTextSta
         TRAY_DISPLAY_TEXT_STATE.clear_poison();
         poisoned.into_inner()
     })
+}
+
+fn animation_tick_ms(blink_enabled: bool) -> u64 {
+    if blink_enabled {
+        BLINKING_ANIMATION_TICK_MS
+    } else {
+        LOADING_ANIMATION_TICK_MS
+    }
+}
+
+fn animation_tick_duration(blink_enabled: bool) -> std::time::Duration {
+    std::time::Duration::from_millis(animation_tick_ms(blink_enabled))
+}
+
+fn animation_interval(blink_enabled: bool) -> time::Interval {
+    let duration = animation_tick_duration(blink_enabled);
+    let start = Instant::now() + duration;
+    let mut interval = time::interval_at(start, duration);
+    interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    interval
+}
+
+fn animation_should_continue(state: &TrayUsageState) -> bool {
+    state.loading_count > 0 || state.blinking
+}
+
+fn advance_animation_phase() -> bool {
+    let mut guard = write_tray_usage_state();
+    guard.animation_phase = guard.animation_phase.wrapping_add(1);
+    animation_should_continue(&guard)
+}
+
+fn start_tray_animation_thread(app: &AppHandle) {
+    let mut guard = TRAY_ANIMATION_CONTROL.lock().unwrap();
+    if let Some(sender) = guard.as_ref() {
+        let _ = sender.send(AnimationCommand::Wake(app.clone()));
+        return;
+    }
+
+    let (sender, mut receiver) = mpsc::unbounded_channel();
+    *guard = Some(sender.clone());
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut active = false;
+        let mut app_handle = app_handle;
+        let mut interval = animation_interval(false);
+        let mut interval_blink_enabled = false;
+
+        loop {
+            if !active {
+                match receiver.recv().await {
+                    Some(AnimationCommand::Wake(app)) => {
+                        app_handle = app;
+                        active = true;
+                    }
+                    None => break,
+                }
+                continue;
+            }
+
+            let (blink_enabled, should_continue) = {
+                let state = read_tray_usage_state();
+                (state.blinking, animation_should_continue(&state))
+            };
+            if !should_continue {
+                active = false;
+                continue;
+            }
+
+            if blink_enabled != interval_blink_enabled {
+                interval = animation_interval(blink_enabled);
+                interval_blink_enabled = blink_enabled;
+            }
+
+            tokio::select! {
+                Some(AnimationCommand::Wake(app)) = receiver.recv() => {
+                    app_handle = app;
+                }
+                _ = interval.tick() => {
+                    let should_continue = advance_animation_phase();
+                    if should_continue {
+                        let _ = update_tray_icon_with_animation(&app_handle, true);
+                    } else {
+                        active = false;
+                    }
+                }
+            }
+        }
+    });
+
+    let _ = sender.send(AnimationCommand::Wake(app.clone()));
 }
 
 struct TrayUsageState {
@@ -488,6 +588,14 @@ pub fn set_provider_disabled(
 }
 
 fn update_tray_icon(app: &AppHandle) -> Result<()> {
+    update_tray_icon_with_animation(app, false)
+}
+
+fn should_start_animation_thread(state: &TrayRenderState, from_animation_thread: bool) -> bool {
+    state.needs_animation() && !from_animation_thread
+}
+
+fn update_tray_icon_with_animation(app: &AppHandle, from_animation_thread: bool) -> Result<()> {
     let tray = match app.tray_by_id(TRAY_ICON_ID) {
         Some(tray) => tray,
         None => {
@@ -503,22 +611,8 @@ fn update_tray_icon(app: &AppHandle) -> Result<()> {
     tray.set_tooltip(Some(build_tray_tooltip()))?;
     tray.set_title(build_tray_title(&state))?;
 
-    if state.needs_animation() {
-        let app_handle = app.clone();
-        let sleep_ms = if state.blink_enabled {
-            BLINKING_ANIMATION_TICK_MS
-        } else {
-            LOADING_ANIMATION_TICK_MS
-        };
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
-            let mut guard = write_tray_usage_state();
-            guard.animation_phase = guard.animation_phase.wrapping_add(1);
-            let should_continue = guard.loading_count > 0 || guard.blinking;
-            if should_continue {
-                let _ = update_tray_icon(&app_handle);
-            }
-        });
+    if should_start_animation_thread(&state, from_animation_thread) {
+        start_tray_animation_thread(app);
     }
 
     Ok(())
@@ -1323,13 +1417,17 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
+        advance_animation_phase, animation_interval, animation_should_continue, animation_tick_ms,
         compute_render_state, format_tray_tooltip, palette_for_theme, read_tray_usage_state,
-        render_tray_icon, reset_tray_usage_state, write_tray_usage_state, TrayRenderState,
-        TrayStatus, UsageRing, ICON_SIZE, STALE_THRESHOLD_SECS,
+        render_tray_icon, reset_tray_usage_state, should_start_animation_thread,
+        write_tray_usage_state, TrayRenderState, TrayStatus, UsageRing,
+        BLINKING_ANIMATION_TICK_MS, ICON_SIZE, LOADING_ANIMATION_TICK_MS, STALE_THRESHOLD_SECS,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
     use std::collections::HashMap;
+    use std::time::Duration;
     use tauri::Theme;
+    use tokio::time;
 
     fn sample_usage(percent: f64) -> UsageSnapshot {
         sample_usage_with_time(percent, &chrono::Utc::now().to_rfc3339())
@@ -1510,6 +1608,71 @@ mod tests {
         assert!(tooltip.contains("Codex 72%"));
         assert!(tooltip.contains("Claude 12%"));
         assert!(tooltip.contains("Cursor error"));
+    }
+
+    #[test]
+    fn animation_tick_ms_matches_expected_intervals() {
+        assert_eq!(animation_tick_ms(false), LOADING_ANIMATION_TICK_MS);
+        assert_eq!(animation_tick_ms(true), BLINKING_ANIMATION_TICK_MS);
+    }
+
+    #[tokio::test]
+    async fn animation_interval_waits_for_first_tick() {
+        let mut interval = animation_interval(false);
+        let timeout_result = time::timeout(Duration::from_millis(5), interval.tick()).await;
+        assert!(timeout_result.is_err());
+        interval.tick().await;
+    }
+
+    #[test]
+    fn animation_should_continue_checks_loading_or_blinking() {
+        reset_tray_usage_state();
+        let guard = read_tray_usage_state();
+        assert!(!animation_should_continue(&guard));
+        drop(guard);
+
+        let mut guard = write_tray_usage_state();
+        guard.loading_count = 1;
+        drop(guard);
+        let guard = read_tray_usage_state();
+        assert!(animation_should_continue(&guard));
+        drop(guard);
+
+        let mut guard = write_tray_usage_state();
+        guard.loading_count = 0;
+        guard.blinking = true;
+        drop(guard);
+        let guard = read_tray_usage_state();
+        assert!(animation_should_continue(&guard));
+    }
+
+    #[test]
+    fn advance_animation_phase_updates_phase_and_continuation() {
+        reset_tray_usage_state();
+        let mut guard = write_tray_usage_state();
+        guard.loading_count = 1;
+        guard.animation_phase = 0;
+        drop(guard);
+
+        assert!(advance_animation_phase());
+        let guard = read_tray_usage_state();
+        assert_eq!(guard.animation_phase, 1);
+    }
+
+    #[test]
+    fn should_start_animation_thread_ignores_animation_updates() {
+        reset_tray_usage_state();
+        let state = TrayRenderState {
+            usage_rings: Vec::new(),
+            status: TrayStatus::Loading,
+            primary_provider: None,
+            animation_phase: 0,
+            blink_enabled: false,
+            theme: Theme::Light,
+        };
+
+        assert!(should_start_animation_thread(&state, false));
+        assert!(!should_start_animation_thread(&state, true));
     }
 
     #[test]
