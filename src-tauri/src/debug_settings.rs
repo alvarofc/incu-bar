@@ -12,7 +12,7 @@ static KEEP_CLI_SESSIONS_ALIVE: AtomicBool = AtomicBool::new(false);
 static RANDOM_BLINK_ENABLED: AtomicBool = AtomicBool::new(false);
 static REDACT_PERSONAL_INFO: AtomicBool = AtomicBool::new(false);
 
-static DEBUG_LOG_FILE: Lazy<Arc<Mutex<std::fs::File>>> = Lazy::new(|| {
+static DEBUG_LOG_FILE: Lazy<Arc<Mutex<Box<dyn Write + Send>>>> = Lazy::new(|| {
     let file = open_debug_log_file().unwrap_or_else(|_| open_fallback_log_file());
     Arc::new(Mutex::new(file))
 });
@@ -70,28 +70,43 @@ pub fn file_writer() -> DebugFileWriter {
     }
 }
 
-fn open_debug_log_file() -> io::Result<std::fs::File> {
+fn open_debug_log_file() -> io::Result<Box<dyn Write + Send>> {
     let data_dir = dirs::data_dir()
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Missing data directory"))?;
     let log_dir = data_dir.join("IncuBar");
     std::fs::create_dir_all(&log_dir)?;
     let log_path = log_dir.join("incubar-debug.log");
-    OpenOptions::new().create(true).append(true).open(log_path)
-}
-
-fn open_fallback_log_file() -> std::fs::File {
-    let mut path = PathBuf::from(std::env::temp_dir());
-    path.push("incubar-debug.log");
     OpenOptions::new()
         .create(true)
         .append(true)
-        .open(path)
-        .unwrap_or_else(|_| std::fs::File::create("incubar-debug.log").unwrap())
+        .open(log_path)
+        .map(|file| Box::new(file) as Box<dyn Write + Send>)
+}
+
+fn open_fallback_log_file() -> Box<dyn Write + Send> {
+    open_fallback_log_file_with_paths(std::env::temp_dir(), PathBuf::from("."))
+}
+
+fn open_fallback_log_file_with_paths(
+    temp_dir: PathBuf,
+    current_dir: PathBuf,
+) -> Box<dyn Write + Send> {
+    let temp_path = temp_dir.join("incubar-debug.log");
+    match OpenOptions::new().create(true).append(true).open(temp_path) {
+        Ok(file) => Box::new(file),
+        Err(_) => {
+            let current_path = current_dir.join("incubar-debug.log");
+            match std::fs::File::create(current_path) {
+                Ok(file) => Box::new(file),
+                Err(_) => Box::new(io::sink()),
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
 pub struct DebugFileWriter {
-    file: Arc<Mutex<std::fs::File>>,
+    file: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
 impl<'a> MakeWriter<'a> for DebugFileWriter {
@@ -105,7 +120,7 @@ impl<'a> MakeWriter<'a> for DebugFileWriter {
 }
 
 pub struct DebugFileWriterGuard {
-    file: Arc<Mutex<std::fs::File>>,
+    file: Arc<Mutex<Box<dyn Write + Send>>>,
 }
 
 impl Write for DebugFileWriterGuard {
@@ -128,5 +143,40 @@ impl Write for DebugFileWriterGuard {
             Ok(mut file) => file.flush(),
             Err(_) => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[test]
+    fn fallback_creates_log_in_temp_dir() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let current_dir = tempfile::tempdir().expect("current dir");
+        let log_path = temp_dir.path().join("incubar-debug.log");
+
+        assert!(!log_path.exists());
+        let _writer = open_fallback_log_file_with_paths(
+            temp_dir.path().to_path_buf(),
+            current_dir.path().to_path_buf(),
+        );
+        assert!(log_path.exists());
+    }
+
+    #[test]
+    fn fallback_uses_sink_when_all_fail() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let current_dir = tempfile::tempdir().expect("current dir");
+        let missing_temp = temp_dir.path().join("missing-temp");
+        let missing_current = current_dir.path().join("missing-current");
+        let mut writer =
+            open_fallback_log_file_with_paths(missing_temp.clone(), missing_current.clone());
+
+        let bytes = writer.write(b"hello").expect("write");
+        assert_eq!(bytes, 5);
+        assert!(!missing_temp.join("incubar-debug.log").exists());
+        assert!(!missing_current.join("incubar-debug.log").exists());
     }
 }
