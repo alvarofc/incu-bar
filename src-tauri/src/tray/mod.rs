@@ -1,11 +1,13 @@
 //! System tray and popup window management
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+use rand::Rng;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
     menu::{MenuBuilder, MenuItemBuilder},
@@ -14,11 +16,9 @@ use tauri::{
 };
 use tauri_plugin_positioner::{Position, WindowExt};
 use url::Url;
-use chrono::{DateTime, Utc};
-use rand::Rng;
 
-use crate::providers::{ProviderId, UsageSnapshot};
 use crate::debug_settings;
+use crate::providers::{ProviderId, UsageSnapshot};
 
 const TRAY_ICON_ID: &str = "main";
 const TRAY_TOOLTIP_BASE: &str = "IncuBar - AI Usage Tracker";
@@ -33,13 +33,43 @@ const RANDOM_BLINK_INTERVAL_MS: u64 = 4200;
 const RANDOM_BLINK_VARIANCE_MS: u64 = 1600;
 const TRAY_REFRESH_MENU_ID: &str = "tray_refresh";
 
-static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> = Lazy::new(|| {
-    RwLock::new(TrayUsageState::default())
-});
+static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> =
+    Lazy::new(|| RwLock::new(TrayUsageState::default()));
 
-static TRAY_DISPLAY_TEXT_STATE: Lazy<RwLock<TrayDisplayTextState>> = Lazy::new(|| {
-    RwLock::new(TrayDisplayTextState::default())
-});
+static TRAY_DISPLAY_TEXT_STATE: Lazy<RwLock<TrayDisplayTextState>> =
+    Lazy::new(|| RwLock::new(TrayDisplayTextState::default()));
+
+fn write_tray_usage_state() -> RwLockWriteGuard<'static, TrayUsageState> {
+    TRAY_USAGE_STATE.write().unwrap_or_else(|poisoned| {
+        tracing::warn!("Tray usage state lock poisoned; recovering");
+        TRAY_USAGE_STATE.clear_poison();
+        poisoned.into_inner()
+    })
+}
+
+fn read_tray_usage_state() -> RwLockReadGuard<'static, TrayUsageState> {
+    TRAY_USAGE_STATE.read().unwrap_or_else(|poisoned| {
+        tracing::warn!("Tray usage state lock poisoned; recovering");
+        TRAY_USAGE_STATE.clear_poison();
+        poisoned.into_inner()
+    })
+}
+
+fn write_tray_display_text_state() -> RwLockWriteGuard<'static, TrayDisplayTextState> {
+    TRAY_DISPLAY_TEXT_STATE.write().unwrap_or_else(|poisoned| {
+        tracing::warn!("Tray display text state lock poisoned; recovering");
+        TRAY_DISPLAY_TEXT_STATE.clear_poison();
+        poisoned.into_inner()
+    })
+}
+
+fn read_tray_display_text_state() -> RwLockReadGuard<'static, TrayDisplayTextState> {
+    TRAY_DISPLAY_TEXT_STATE.read().unwrap_or_else(|poisoned| {
+        tracing::warn!("Tray display text state lock poisoned; recovering");
+        TRAY_DISPLAY_TEXT_STATE.clear_poison();
+        poisoned.into_inner()
+    })
+}
 
 struct TrayUsageState {
     provider_usage: HashMap<ProviderId, UsageSnapshot>,
@@ -51,14 +81,14 @@ struct TrayUsageState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TrayDisplayTextMode {
+pub enum TrayDisplayTextMode {
     Percent,
     Pace,
     Both,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TrayPercentWindowMode {
+pub enum TrayPercentWindowMode {
     Session,
     Weekly,
     Highest,
@@ -98,12 +128,8 @@ impl Default for TrayDisplayTextState {
 
 #[cfg(test)]
 fn reset_tray_usage_state() {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        *state = TrayUsageState::default();
-    }
-    if let Ok(mut state) = TRAY_DISPLAY_TEXT_STATE.write() {
-        *state = TrayDisplayTextState::default();
-    }
+    *write_tray_usage_state() = TrayUsageState::default();
+    *write_tray_display_text_state() = TrayDisplayTextState::default();
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -384,42 +410,30 @@ pub fn handle_usage_update(
     provider_id: ProviderId,
     usage: UsageSnapshot,
 ) -> Result<()> {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        state.provider_usage.insert(provider_id, usage);
-    } else {
-        tracing::warn!("Tray usage state lock poisoned");
-    }
+    let mut state = write_tray_usage_state();
+    state.provider_usage.insert(provider_id, usage);
     update_tray_icon(app)
 }
 
 pub fn set_loading_state(app: &AppHandle, is_loading: bool) -> Result<()> {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        if is_loading {
-            state.loading_count = state.loading_count.saturating_add(1);
-        } else if state.loading_count > 0 {
-            state.loading_count -= 1;
-        }
-    } else {
-        tracing::warn!("Tray usage state lock poisoned");
+    let mut state = write_tray_usage_state();
+    if is_loading {
+        state.loading_count = state.loading_count.saturating_add(1);
+    } else if state.loading_count > 0 {
+        state.loading_count -= 1;
     }
     update_tray_icon(app)
 }
 
 pub fn set_blinking_state(app: &AppHandle, enabled: bool) -> Result<()> {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        state.blinking = enabled;
-    } else {
-        tracing::warn!("Tray usage state lock poisoned");
-    }
+    let mut state = write_tray_usage_state();
+    state.blinking = enabled;
     update_tray_icon(app)
 }
 
 pub fn set_tray_theme(app: &AppHandle, theme: Theme) -> Result<()> {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        state.theme = theme;
-    } else {
-        tracing::warn!("Tray usage state lock poisoned");
-    }
+    let mut state = write_tray_usage_state();
+    state.theme = theme;
     update_tray_icon(app)
 }
 
@@ -430,14 +444,11 @@ pub fn set_display_text(
     percent_window_mode: TrayPercentWindowMode,
     show_used: bool,
 ) -> Result<()> {
-    if let Ok(mut state) = TRAY_DISPLAY_TEXT_STATE.write() {
-        state.enabled = enabled;
-        state.mode = mode;
-        state.percent_window_mode = percent_window_mode;
-        state.show_used = show_used;
-    } else {
-        tracing::warn!("Tray display text state lock poisoned");
-    }
+    let mut state = write_tray_display_text_state();
+    state.enabled = enabled;
+    state.mode = mode;
+    state.percent_window_mode = percent_window_mode;
+    state.show_used = show_used;
     update_tray_icon(app)
 }
 
@@ -462,16 +473,16 @@ pub fn set_display_text_for_provider(
     set_display_text(app, text_enabled, text_mode, percent_window_mode, show_used)
 }
 
-
-pub fn set_provider_disabled(app: &AppHandle, provider_id: ProviderId, disabled: bool) -> Result<()> {
-    if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-        if disabled {
-            state.disabled_providers.insert(provider_id);
-        } else {
-            state.disabled_providers.remove(&provider_id);
-        }
+pub fn set_provider_disabled(
+    app: &AppHandle,
+    provider_id: ProviderId,
+    disabled: bool,
+) -> Result<()> {
+    let mut state = write_tray_usage_state();
+    if disabled {
+        state.disabled_providers.insert(provider_id);
     } else {
-        tracing::warn!("Tray usage state lock poisoned");
+        state.disabled_providers.remove(&provider_id);
     }
     update_tray_icon(app)
 }
@@ -501,12 +512,9 @@ fn update_tray_icon(app: &AppHandle) -> Result<()> {
         };
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
-            let should_continue = if let Ok(mut guard) = TRAY_USAGE_STATE.write() {
-                guard.animation_phase = guard.animation_phase.wrapping_add(1);
-                guard.loading_count > 0 || guard.blinking
-            } else {
-                false
-            };
+            let mut guard = write_tray_usage_state();
+            guard.animation_phase = guard.animation_phase.wrapping_add(1);
+            let should_continue = guard.loading_count > 0 || guard.blinking;
             if should_continue {
                 let _ = update_tray_icon(&app_handle);
             }
@@ -520,40 +528,29 @@ fn compute_render_state() -> TrayRenderState {
     let mut rings: Vec<UsageRing> = Vec::new();
     let mut has_error = false;
     let mut has_stale = false;
-    let mut loading_count = 0;
-    let mut animation_phase = 0;
-    let mut blinking = false;
-    let mut has_disabled = false;
-    let mut theme = Theme::Light;
-
-    if let Ok(state) = TRAY_USAGE_STATE.read() {
-        loading_count = state.loading_count;
-        animation_phase = state.animation_phase;
-        blinking = state.blinking;
-        has_disabled = !state.disabled_providers.is_empty();
-        theme = state.theme;
-        for (provider_id, usage) in state.provider_usage.iter() {
-            if usage.error.is_some() {
-                has_error = true;
-            }
-            if is_snapshot_stale(usage) {
-                has_stale = true;
-            }
-            if let Some(percent) = usage_percent_from_snapshot(usage) {
-                rings.push(UsageRing {
-                    percent,
-                    color: usage_color(percent, theme),
-                    provider_id: *provider_id,
-                });
-            }
+    let state = read_tray_usage_state();
+    let loading_count = state.loading_count;
+    let animation_phase = state.animation_phase;
+    let blinking = state.blinking;
+    let has_disabled = !state.disabled_providers.is_empty();
+    let theme = state.theme;
+    for (provider_id, usage) in state.provider_usage.iter() {
+        if usage.error.is_some() {
+            has_error = true;
+        }
+        if is_snapshot_stale(usage) {
+            has_stale = true;
+        }
+        if let Some(percent) = usage_percent_from_snapshot(usage) {
+            rings.push(UsageRing {
+                percent,
+                color: usage_color(percent, theme),
+                provider_id: *provider_id,
+            });
         }
     }
 
-    rings.sort_by(|a, b| {
-        b.percent
-            .partial_cmp(&a.percent)
-            .unwrap_or(Ordering::Equal)
-    });
+    rings.sort_by(|a, b| b.percent.partial_cmp(&a.percent).unwrap_or(Ordering::Equal));
     rings.truncate(MAX_RINGS);
     let primary_provider = rings.first().map(|ring| ring.provider_id);
 
@@ -582,9 +579,7 @@ fn compute_render_state() -> TrayRenderState {
 }
 
 fn build_tray_title(state: &TrayRenderState) -> Option<String> {
-    let Ok(display_state) = TRAY_DISPLAY_TEXT_STATE.read() else {
-        return None;
-    };
+    let display_state = read_tray_display_text_state();
     if !display_state.enabled {
         return None;
     }
@@ -596,9 +591,7 @@ fn format_tray_display_text(
     display_state: TrayDisplayTextState,
 ) -> Option<String> {
     let primary_provider = state.primary_provider?;
-    let Ok(usage_state) = TRAY_USAGE_STATE.read() else {
-        return None;
-    };
+    let usage_state = read_tray_usage_state();
     let usage = usage_state.provider_usage.get(&primary_provider)?;
     let percent_text = resolve_percent_window(display_state, usage).and_then(|value| {
         if !value.is_finite() {
@@ -896,9 +889,7 @@ fn provider_display_name(provider_id: ProviderId) -> &'static str {
 }
 
 fn build_tray_tooltip() -> String {
-    let Ok(state) = TRAY_USAGE_STATE.read() else {
-        return TRAY_TOOLTIP_BASE.to_string();
-    };
+    let state = read_tray_usage_state();
     format_tray_tooltip(&state)
 }
 
@@ -1002,21 +993,19 @@ fn start_random_blinking_loop(app: &AppHandle) {
             continue;
         }
 
-        if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-            if state.loading_count > 0 {
-                continue;
-            }
-            state.blinking = true;
+        let mut state = write_tray_usage_state();
+        if state.loading_count > 0 {
+            continue;
         }
+        state.blinking = true;
 
         let _ = update_tray_icon(&app_handle);
 
         std::thread::sleep(std::time::Duration::from_millis(900));
 
-        if let Ok(mut state) = TRAY_USAGE_STATE.write() {
-            if state.loading_count == 0 {
-                state.blinking = false;
-            }
+        let mut state = write_tray_usage_state();
+        if state.loading_count == 0 {
+            state.blinking = false;
         }
 
         let _ = update_tray_icon(&app_handle);
@@ -1334,9 +1323,9 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_render_state, format_tray_tooltip, palette_for_theme, render_tray_icon,
-        reset_tray_usage_state, TrayRenderState, TrayStatus, UsageRing, ICON_SIZE,
-        STALE_THRESHOLD_SECS, TRAY_USAGE_STATE,
+        compute_render_state, format_tray_tooltip, palette_for_theme, read_tray_usage_state,
+        render_tray_icon, reset_tray_usage_state, write_tray_usage_state, TrayRenderState,
+        TrayStatus, UsageRing, ICON_SIZE, STALE_THRESHOLD_SECS,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
     use std::collections::HashMap;
@@ -1388,7 +1377,7 @@ mod tests {
     #[test]
     fn compute_render_state_uses_max_usage_and_error() {
         reset_tray_usage_state();
-        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        let mut guard = write_tray_usage_state();
         guard.provider_usage = HashMap::from([
             (ProviderId::Claude, sample_usage(33.0)),
             (ProviderId::Codex, sample_usage(81.0)),
@@ -1400,14 +1389,17 @@ mod tests {
         assert_eq!(state.animation_phase, 0);
         assert!(!state.blink_enabled);
         assert_eq!(state.usage_rings.len(), 2);
-        assert_eq!(state.usage_rings.first().map(|ring| ring.percent), Some(81.0));
+        assert_eq!(
+            state.usage_rings.first().map(|ring| ring.percent),
+            Some(81.0)
+        );
         assert_eq!(state.primary_provider, Some(ProviderId::Codex));
     }
 
     #[test]
     fn compute_render_state_marks_error_status() {
         reset_tray_usage_state();
-        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        let mut guard = write_tray_usage_state();
         let mut usage = sample_usage(10.0);
         usage.error = Some("failed".to_string());
         guard.provider_usage = HashMap::from([(ProviderId::Claude, usage)]);
@@ -1424,7 +1416,7 @@ mod tests {
             .checked_sub_signed(chrono::Duration::seconds(STALE_THRESHOLD_SECS + 5))
             .unwrap()
             .to_rfc3339();
-        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        let mut guard = write_tray_usage_state();
         guard.provider_usage = HashMap::from([(
             ProviderId::Claude,
             sample_usage_with_time(55.0, &stale_time),
@@ -1438,7 +1430,7 @@ mod tests {
     #[test]
     fn compute_render_state_marks_loading_status() {
         reset_tray_usage_state();
-        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        let mut guard = write_tray_usage_state();
         guard.loading_count = 1;
         drop(guard);
 
@@ -1502,7 +1494,7 @@ mod tests {
     #[test]
     fn format_tray_tooltip_includes_top_usage_and_errors() {
         reset_tray_usage_state();
-        let mut guard = TRAY_USAGE_STATE.write().unwrap();
+        let mut guard = write_tray_usage_state();
         guard.provider_usage = HashMap::from([
             (ProviderId::Codex, sample_usage(72.0)),
             (ProviderId::Claude, sample_usage(12.0)),
@@ -1512,11 +1504,22 @@ mod tests {
         guard.provider_usage.insert(ProviderId::Cursor, error_usage);
         drop(guard);
 
-        let state = TRAY_USAGE_STATE.read().unwrap();
+        let state = read_tray_usage_state();
         let tooltip = format_tray_tooltip(&state);
         assert!(tooltip.starts_with("IncuBar - AI Usage Tracker - "));
         assert!(tooltip.contains("Codex 72%"));
         assert!(tooltip.contains("Claude 12%"));
         assert!(tooltip.contains("Cursor error"));
+    }
+
+    #[test]
+    fn poisoned_tray_state_recovers_on_read() {
+        reset_tray_usage_state();
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = write_tray_usage_state();
+            panic!("poison state");
+        });
+        let guard = read_tray_usage_state();
+        assert!(guard.provider_usage.is_empty());
     }
 }
