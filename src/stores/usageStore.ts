@@ -229,7 +229,8 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
       const usage = await invoke<UsageSnapshot>('refresh_provider', { providerId: id });
       setProviderUsage(id, usage);
     } catch (error) {
-      setProviderError(id, error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      setProviderError(id, message);
     }
   },
 
@@ -295,9 +296,9 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 }));
 
 // Selectors
-export const useActiveProvider = () =>
-  useUsageStore((state) => {
-    const providerOrder = useSettingsStore.getState().providerOrder;
+export const useActiveProvider = () => {
+  const providerOrder = useSettingsStore((state) => state.providerOrder);
+  return useUsageStore((state) => {
     const active = state.providers[state.activeProvider];
     // Only return if authenticated (has usage and no error)
     if (active?.usage && !active.lastError) {
@@ -309,26 +310,29 @@ export const useActiveProvider = () =>
     );
     return authenticated || null;
   });
+};
 
-export const useEnabledProviders = () =>
-  useUsageStore(
-    useShallow((state) => {
-      const providerOrder = useSettingsStore.getState().providerOrder;
-      return orderProviderStates(state.providers, providerOrder).filter(
+export const useEnabledProviders = () => {
+  const providerOrder = useSettingsStore((state) => state.providerOrder);
+  return useUsageStore(
+    useShallow((state) =>
+      orderProviderStates(state.providers, providerOrder).filter(
         (p) => p.enabled
-      );
-    })
+      )
+    )
   );
+};
 
-export const useAuthenticatedProviders = () =>
-  useUsageStore(
-    useShallow((state) => {
-      const providerOrder = useSettingsStore.getState().providerOrder;
-      return orderProviderStates(state.providers, providerOrder).filter(
+export const useAuthenticatedProviders = () => {
+  const providerOrder = useSettingsStore((state) => state.providerOrder);
+  return useUsageStore(
+    useShallow((state) =>
+      orderProviderStates(state.providers, providerOrder).filter(
         (p) => p.enabled && p.usage && !p.lastError
-      );
-    })
+      )
+    )
   );
+};
 
 export const useProviderById = (id: ProviderId) =>
   useUsageStore((state) => state.providers[id]);
