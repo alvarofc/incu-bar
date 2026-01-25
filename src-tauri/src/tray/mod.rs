@@ -28,6 +28,7 @@ const ICON_SIZE: u32 = 32;
 const RING_THICKNESS: f64 = 3.0;
 const RING_GAP: f64 = 1.5;
 const MAX_RINGS: usize = 3;
+// Keep in sync with `src/lib/staleness.ts` DEFAULT_STALE_AFTER_MS (10 minutes).
 const STALE_THRESHOLD_SECS: i64 = 600;
 const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
@@ -1025,11 +1026,13 @@ fn format_tray_tooltip(state: &TrayUsageState) -> String {
 
 /// Set up the system tray icon
 pub fn setup_tray(app: &AppHandle) -> Result<()> {
+    tracing::info!("Setting up tray icon...");
     let refresh_menu_item = MenuItemBuilder::with_id(TRAY_REFRESH_MENU_ID, "Refresh")
         .accelerator("CmdOrCtrl+R")
         .build(app)?;
     let tray_menu = MenuBuilder::new(app).item(&refresh_menu_item).build()?;
 
+    tracing::info!("Building tray icon with initial state...");
     let _tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
         .menu(&tray_menu)
@@ -1108,7 +1111,8 @@ fn start_random_blinking_loop(app: &AppHandle) {
 
 /// Create the popup window (hidden by default)
 pub fn create_popup_window(app: &AppHandle) -> Result<()> {
-    let window = WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("index.html".into()))
+    tracing::info!("Creating popup window...");
+    let window = match WebviewWindowBuilder::new(app, "popup", WebviewUrl::App("index.html".into()))
         .title("IncuBar")
         .inner_size(320.0, 420.0)
         .resizable(false)
@@ -1117,7 +1121,14 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .focused(true)
-        .build()?;
+        .build()
+    {
+        Ok(w) => w,
+        Err(e) => {
+            tracing::error!("Failed to create popup window: {:?}", e);
+            return Err(e.into());
+        }
+    };
 
     if let Ok(theme) = window.theme() {
         let _ = set_tray_theme(app, theme);
