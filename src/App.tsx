@@ -9,6 +9,7 @@ import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
 import type { ProviderId, ProviderIncident, RefreshingEvent, UpdateChannel, UsageUpdateEvent } from './lib/types';
+import { parseUsageUpdateEvent } from './lib/eventValidation';
 import type {
   CreditsNotificationState,
   RefreshFailureNotificationState,
@@ -178,7 +179,9 @@ function App() {
   // Listen for usage updates from Rust backend
   useEffect(() => {
     const unlisten = listen<UsageUpdateEvent>('usage-updated', (event) => {
-      const { providerId, usage } = event.payload;
+      const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
+      if (!parsedUsageUpdate) return;
+      const { providerId, usage } = parsedUsageUpdate;
       setProviderUsage(providerId, usage);
       const metadata = PROVIDERS[providerId];
       evaluateSessionNotifications({
@@ -238,7 +241,9 @@ function App() {
 
   useEffect(() => {
     const unlistenRefreshFailure = listen<UsageUpdateEvent>('refresh-failed', (event) => {
-      const { providerId, usage } = event.payload;
+      const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
+      if (!parsedUsageUpdate) return;
+      const { providerId, usage } = parsedUsageUpdate;
       if (!usage?.error) return;
       const metadata = PROVIDERS[providerId];
       evaluateRefreshFailureNotifications({
