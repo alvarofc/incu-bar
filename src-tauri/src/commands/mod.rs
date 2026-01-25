@@ -1,16 +1,17 @@
 //! Tauri IPC commands for the frontend
 
 use serde::{Deserialize, Serialize};
-use tauri::{command, AppHandle, Emitter, Manager, State};
-use tauri_plugin_notification::NotificationExt;
+use tauri::{command, AppHandle, Emitter, Manager, Runtime, State};
+use tauri_plugin_store::StoreExt;
 use tauri_plugin_autostart::AutoLaunchManager;
+use tauri_plugin_notification::NotificationExt;
 
 use crate::browser_cookies::BrowserCookieSource;
-use crate::login::{self, AuthStatus, LoginResult};
 use crate::debug_settings;
+use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
-use crate::storage::widget_snapshot;
 use crate::storage::install_origin;
+use crate::storage::widget_snapshot;
 use crate::tray;
 
 struct LoadingGuard {
@@ -78,6 +79,9 @@ pub struct AppSettings {
     pub redact_personal_info: bool,
 }
 
+const SETTINGS_STORE_PATH: &str = "settings.json";
+const SETTINGS_STORE_KEY: &str = "app_settings";
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -141,7 +145,8 @@ pub async fn refresh_provider(
             if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage) {
                 tracing::warn!("Failed to write widget snapshot: {}", err);
             }
-            tray::handle_usage_update(&app, provider_id, usage.clone()).map_err(|e| e.to_string())?;
+            tray::handle_usage_update(&app, provider_id, usage.clone())
+                .map_err(|e| e.to_string())?;
 
             Ok(usage)
         }
@@ -193,7 +198,7 @@ pub async fn refresh_all_providers(
 ) -> Result<(), String> {
     tracing::debug!("Refreshing all providers");
 
-    let providers = registry.get_enabled_providers();
+    let providers = registry.get_enabled_providers().await;
 
     let mut loading_guard = LoadingGuard::new(&app);
 
@@ -272,7 +277,7 @@ pub async fn get_provider_usage(
     provider_id: ProviderId,
     registry: State<'_, ProviderRegistry>,
 ) -> Result<Option<UsageSnapshot>, String> {
-    Ok(registry.get_cached_usage(&provider_id))
+    Ok(registry.get_cached_usage(&provider_id).await)
 }
 
 /// Get all cached usage data
@@ -280,7 +285,7 @@ pub async fn get_provider_usage(
 pub async fn get_all_usage(
     registry: State<'_, ProviderRegistry>,
 ) -> Result<std::collections::HashMap<ProviderId, UsageSnapshot>, String> {
-    Ok(registry.get_all_cached_usage())
+    Ok(registry.get_all_cached_usage().await)
 }
 
 /// Poll provider status/incident data
@@ -309,7 +314,7 @@ pub async fn set_provider_enabled(
     registry: State<'_, ProviderRegistry>,
     app: AppHandle,
 ) -> Result<(), String> {
-    registry.set_enabled(&provider_id, enabled);
+    registry.set_enabled(&provider_id, enabled).await;
     tray::set_provider_disabled(&app, provider_id, !enabled).map_err(|e| e.to_string())?;
     tray::set_blinking_state(&app, !enabled).map_err(|e| e.to_string())?;
     Ok(())
@@ -317,15 +322,34 @@ pub async fn set_provider_enabled(
 
 /// Get current settings
 #[command]
-pub async fn get_settings() -> Result<AppSettings, String> {
-    // TODO: Load from tauri-plugin-store
-    Ok(AppSettings::default())
+pub async fn get_settings(app: AppHandle) -> Result<AppSettings, String> {
+    load_settings(app).await
+}
+
+async fn load_settings<R: Runtime>(app: AppHandle<R>) -> Result<AppSettings, String> {
+    let store = app
+        .store(SETTINGS_STORE_PATH)
+        .map_err(|e| e.to_string())?;
+    if let Some(value) = store.get(SETTINGS_STORE_KEY) {
+        serde_json::from_value(value).map_err(|e| e.to_string())
+    } else {
+        Ok(AppSettings::default())
+    }
 }
 
 /// Save settings
 #[command]
-pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
-    // TODO: Save to tauri-plugin-store
+pub async fn save_settings(settings: AppSettings, app: AppHandle) -> Result<(), String> {
+    save_settings_inner(settings, app).await
+}
+
+async fn save_settings_inner<R: Runtime>(settings: AppSettings, app: AppHandle<R>) -> Result<(), String> {
+    let store = app
+        .store(SETTINGS_STORE_PATH)
+        .map_err(|e| e.to_string())?;
+    let value = serde_json::to_value(&settings).map_err(|e| e.to_string())?;
+    store.set(SETTINGS_STORE_KEY, value);
+    store.save().map_err(|e| e.to_string())?;
     tracing::debug!(
         "Saving settings: AppSettings {{ refresh_interval_seconds: {}, enabled_providers: {:?}, provider_order: {:?}, display_mode: {}, menu_bar_display_mode: {}, menu_bar_display_text_enabled: {}, menu_bar_display_text_mode: {}, usage_bar_display_mode: {}, show_notifications: {}, launch_at_login: {}, show_credits: {}, show_cost: {}, show_extra_usage: {}, debug_file_logging: {}, debug_keep_cli_sessions_alive: {}, debug_random_blink: {}, redact_personal_info: {} }}",
         settings.refresh_interval_seconds,
@@ -347,6 +371,55 @@ pub async fn save_settings(settings: AppSettings) -> Result<(), String> {
         settings.redact_personal_info
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tauri::test::{mock_builder, mock_context, noop_assets};
+
+    fn build_test_app() -> tauri::App<tauri::test::MockRuntime> {
+        mock_builder()
+            .plugin(tauri_plugin_store::Builder::default().build())
+            .build(mock_context(noop_assets()))
+            .expect("failed to build app")
+    }
+
+    #[test]
+    fn get_settings_defaults_when_store_empty() {
+        let app = build_test_app();
+        let handle = app.handle();
+
+        let store = handle.store(SETTINGS_STORE_PATH).expect("store init");
+        store.clear();
+        store.save().expect("store save");
+
+        let settings = tauri::async_runtime::block_on(load_settings(handle.clone()))
+            .expect("get settings");
+        assert_eq!(settings.refresh_interval_seconds, AppSettings::default().refresh_interval_seconds);
+        assert_eq!(settings.enabled_providers, AppSettings::default().enabled_providers);
+    }
+
+    #[test]
+    fn save_and_get_settings_roundtrip() {
+        let app = build_test_app();
+        let handle = app.handle();
+
+        let mut settings = AppSettings::default();
+        settings.refresh_interval_seconds = 120;
+        settings.display_mode = "separate".to_string();
+        settings.enabled_providers = vec![ProviderId::Claude, ProviderId::Cursor];
+
+        tauri::async_runtime::block_on(save_settings_inner(settings.clone(), handle.clone()))
+            .expect("save settings");
+
+        let loaded = tauri::async_runtime::block_on(load_settings(handle.clone()))
+            .expect("get settings");
+
+        assert_eq!(loaded.refresh_interval_seconds, settings.refresh_interval_seconds);
+        assert_eq!(loaded.display_mode, settings.display_mode);
+        assert_eq!(loaded.enabled_providers, settings.enabled_providers);
+    }
 }
 
 #[command]
