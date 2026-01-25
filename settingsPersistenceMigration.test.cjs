@@ -27,4 +27,8 @@ if (!settingsStoreFile.includes('localStorage.removeItem(legacyKey)')) {
   throw new Error('Settings migration missing legacy cleanup.');
 }
 
+if (!settingsStoreFile.includes('isRecord(parsed)')) {
+  throw new Error('Settings migration missing legacy settings validation.');
+}
+
 console.log('Settings persistence migration checks passed.');

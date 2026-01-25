@@ -86,7 +86,10 @@ const parseLegacyRefreshInterval = (raw: unknown) => {
 const normalizeLegacyProviderId = (raw: string): ProviderId =>
   raw === 'kimik2' ? 'kimi_k2' : (raw as ProviderId);
 
-  const mergeLegacySettingsDefaults = (settings: AppSettings, stored?: Record<string, unknown>) => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const mergeLegacySettingsDefaults = (settings: AppSettings, stored?: Record<string, unknown>) => {
   if (!stored) {
     return settings;
   }
@@ -407,7 +410,11 @@ export const useSettingsStore = create<SettingsStore>()(
           return;
         }
         try {
-          const legacySettings = JSON.parse(legacySettingsRaw) as Record<string, unknown>;
+          const parsed = JSON.parse(legacySettingsRaw);
+          if (!isRecord(parsed)) {
+            return;
+          }
+          const legacySettings = parsed;
           if (legacySettings?.legacyDefaults || legacySettings?.legacyConfig) {
             return;
           }
