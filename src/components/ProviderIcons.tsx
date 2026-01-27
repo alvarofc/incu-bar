@@ -1,6 +1,7 @@
 // Provider brand icons as React components
 // Icons sourced from Simple Icons (https://simpleicons.org)
 
+import antigravityLogo from '../assets/antigravity.svg';
 import type { ProviderId } from '../lib/types';
 
 interface IconProps {
@@ -159,9 +160,22 @@ export function KimiIcon({ className, 'aria-hidden': ariaHidden = true }: IconPr
 // Antigravity - Rocket icon
 export function AntigravityIcon({ className, 'aria-hidden': ariaHidden = true }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden={ariaHidden}>
-      <path d="M13.13 22.19-1.63-3.83c1.57-.58 3.04-1.36 4.4-2.27l-2.55-.42 2.12-2.13-.65-3.64a21.076 21.076 0 0 0 6.18-6.18l3.64.65 2.13-2.12.42 2.55a15.44 15.44 0 0 0 2.27-4.4l3.83 1.63c-.27.68-.57 1.35-.89 2.01L22 6.93l-1.06-1.06-1.6 1.6L18 10l-2-2-.88-.89-1.3 1.3 2.59 2.59c-1.27.85-2.67 1.58-4.16 2.15l.43 2.42-2.12 2.13-2.55-.42c.91 1.36 1.69 2.83 2.27 4.4l2.86-1.23a17.67 17.67 0 0 1-2.01 1.08Zm2.68-17.2c.8.8 2.11.8 2.91 0s.8-2.1 0-2.9-2.1-.8-2.9 0-.81 2.1-.01 2.9Z"/>
-    </svg>
+    <span
+      className={className}
+      aria-hidden={ariaHidden}
+      role="presentation"
+      style={{
+        backgroundColor: 'currentColor',
+        maskImage: `url(${antigravityLogo})`,
+        maskRepeat: 'no-repeat',
+        maskPosition: 'center',
+        maskSize: 'contain',
+        WebkitMaskImage: `url(${antigravityLogo})`,
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        WebkitMaskSize: 'contain',
+      }}
+    />
   );
 }
 
