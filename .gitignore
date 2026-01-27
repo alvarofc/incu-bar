@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling
+.ralphy/
+opencode.json
+tasks.yaml
