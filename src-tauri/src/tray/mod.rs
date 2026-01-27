@@ -1171,9 +1171,18 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
     }
 
     let app_handle = app.clone();
+    let window_clone = window.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::ThemeChanged(theme) = event {
-            let _ = set_tray_theme(&app_handle, *theme);
+        match event {
+            WindowEvent::ThemeChanged(theme) => {
+                let _ = set_tray_theme(&app_handle, *theme);
+            }
+            WindowEvent::Focused(false) => {
+                // Hide popup when clicking outside (losing focus)
+                tracing::debug!("Popup lost focus, hiding");
+                let _ = window_clone.hide();
+            }
+            _ => {}
         }
     });
 
