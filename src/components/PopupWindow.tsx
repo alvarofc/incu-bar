@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react';
 import { Settings, RefreshCw, Plug, AlertCircle } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MenuCard } from './MenuCard';
@@ -16,18 +16,54 @@ interface PopupWindowProps {
 export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const activeProvider = useActiveProvider();
   const enabledProviders = useEnabledProviders();
+  const settingsEnabledProviders = useSettingsStore((s) => s.enabledProviders);
   const isRefreshing = useUsageStore((s) => s.isRefreshing);
   const lastGlobalRefresh = useUsageStore((s) => s.lastGlobalRefresh);
+  const hasHydrated = useSettingsStore((s) => s.hasHydrated);
   const displayMode = useSettingsStore((s) => s.displayMode);
-  const hasRefreshedRef = useRef(false);
+  const lastRefreshKeyRef = useRef<string | null>(null);
   const errorProviders = enabledProviders.filter(
     (provider) => provider.lastError && !provider.usage
   );
   const primaryErrorProvider = errorProviders[0];
-  const hasEnabledProviders = enabledProviders.length > 0;
+  const hasEnabledProvidersInSettings = settingsEnabledProviders.length > 0;
+  
+  // Check if usage store is synced with settings store
+  const usageEnabledIds = enabledProviders.map((p) => p.id).sort().join('|');
+  const settingsEnabledIds = [...settingsEnabledProviders].sort().join('|');
+  const isProvidersSynced = usageEnabledIds === settingsEnabledIds;
+
+  // Timeout for initial loading - don't show spinner forever
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  useEffect(() => {
+    if (lastGlobalRefresh) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      console.log('[PopupWindow] Initial loading timed out after 5s');
+      setLoadingTimedOut(true);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [lastGlobalRefresh]);
 
   // Check if we're still loading (first refresh in progress)
-  const isInitialLoading = !lastGlobalRefresh && enabledProviders.some((p) => p.isLoading);
+  // But cap it at 5 seconds to avoid infinite loading
+  const isInitialLoading = hasHydrated && !lastGlobalRefresh && hasEnabledProvidersInSettings && !loadingTimedOut;
+
+  // DEBUG: Log state for troubleshooting
+  console.log('[PopupWindow] State:', {
+    hasHydrated,
+    settingsEnabledProviders,
+    hasEnabledProvidersInSettings,
+    activeProvider: activeProvider?.id ?? null,
+    enabledProvidersCount: enabledProviders.length,
+    lastGlobalRefresh,
+    isInitialLoading,
+    isRefreshing,
+    isProvidersSynced,
+    loadingTimedOut,
+  });
 
   const handleRefreshAll = useCallback(() => {
     useUsageStore.getState().refreshAllProviders();
@@ -37,13 +73,25 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
     void useUsageStore.getState().refreshProvider(providerId);
   }, []);
 
-  // Refresh all providers on mount (only once)
+  const enabledProviderIdsKey = useMemo(
+    () => settingsEnabledProviders.join('|'),
+    [settingsEnabledProviders]
+  );
+
+  // Refresh providers when enabled set changes (including initial hydration)
+  // Wait for usage store to be synced with settings before triggering refresh
   useEffect(() => {
-    if (!hasRefreshedRef.current) {
-      hasRefreshedRef.current = true;
-      handleRefreshAll();
+    console.log('[PopupWindow] Refresh effect check:', { hasHydrated, enabledProviderIdsKey, isRefreshing, isProvidersSynced, lastRefreshKey: lastRefreshKeyRef.current });
+    if (!hasHydrated || !enabledProviderIdsKey || isRefreshing || !isProvidersSynced) {
+      return;
     }
-  }, [handleRefreshAll]);
+    if (lastRefreshKeyRef.current === enabledProviderIdsKey) {
+      return;
+    }
+    console.log('[PopupWindow] Triggering refreshAllProviders');
+    lastRefreshKeyRef.current = enabledProviderIdsKey;
+    handleRefreshAll();
+  }, [hasHydrated, enabledProviderIdsKey, handleRefreshAll, isRefreshing, isProvidersSynced]);
 
   // Handle click outside to close the popup
   useEffect(() => {
@@ -125,7 +173,7 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
               </button>
             </div>
           </div>
-        ) : !hasEnabledProviders ? (
+        ) : !hasEnabledProvidersInSettings ? (
           <div
             className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"
             data-testid="provider-enable-empty-state"
@@ -145,6 +193,17 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
             >
               Enable Providers
             </button>
+          </div>
+        ) : isRefreshing ? (
+          // Show loading while refresh is in progress (even after initial timeout)
+          <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
+            <RefreshCw 
+              className="w-5 h-5 text-[var(--text-quaternary)] animate-spin" 
+              aria-hidden="true"
+            />
+            <p className="mt-3 text-sm text-[var(--text-tertiary)]">
+              Refreshing…
+            </p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up">

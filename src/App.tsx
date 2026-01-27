@@ -67,9 +67,11 @@ function App() {
 
   // Initialize enabled providers from settings (only once on mount)
   useEffect(() => {
+    console.log('[App] Init effect, initializedRef:', initializedRef.current, 'enabledProviders:', enabledProviders);
     if (!initializedRef.current) {
       initializedRef.current = true;
       restoreSafeStateAfterCrash();
+      console.log('[App] Calling initializeProviders with:', enabledProviders);
       initializeProviders(enabledProviders);
       // Sync autostart status from system
       initAutostart();
@@ -179,9 +181,14 @@ function App() {
   // Listen for usage updates from Rust backend
   useEffect(() => {
     const unlisten = listen<UsageUpdateEvent>('usage-updated', (event) => {
+      console.log('[App] Received usage-updated event:', event.payload);
       const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
-      if (!parsedUsageUpdate) return;
+      if (!parsedUsageUpdate) {
+        console.log('[App] Failed to parse usage-updated event');
+        return;
+      }
       const { providerId, usage } = parsedUsageUpdate;
+      console.log('[App] Setting provider usage:', providerId, usage);
       setProviderUsage(providerId, usage);
       const metadata = PROVIDERS[providerId];
       evaluateSessionNotifications({

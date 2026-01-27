@@ -209,6 +209,7 @@ const mergeLegacySettingsDefaults = (settings: AppSettings, stored?: Record<stri
 migrateLegacySettingsStorage();
 
 interface SettingsStore extends AppSettings {
+  hasHydrated: boolean;
   // Actions
   setRefreshInterval: (seconds: number) => void;
   toggleProvider: (id: ProviderId) => void;
@@ -247,6 +248,7 @@ interface SettingsStore extends AppSettings {
   setHidePersonalInfo: (enabled: boolean) => void;
   setDebugDisableKeychainAccess: (enabled: boolean) => void;
   setInstallOrigin: (origin: string | null) => void;
+  setHasHydrated: (hydrated: boolean) => void;
   // Initialization
   initAutostart: () => Promise<void>;
   setCrashRecoveryAt: (timestamp: string) => void;
@@ -257,6 +259,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
       ...DEFAULT_SETTINGS,
+      hasHydrated: false,
 
       setRefreshInterval: (seconds) => set({ refreshIntervalSeconds: seconds }),
 
@@ -349,6 +352,13 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setInstallOrigin: (origin) => set({ installOrigin: origin ?? undefined }),
 
+      setHasHydrated: (hydrated) => {
+        console.log('[settingsStore] setHasHydrated called with:', hydrated);
+        console.log('[settingsStore] Current hasHydrated before set:', get().hasHydrated);
+        set({ hasHydrated: hydrated });
+        console.log('[settingsStore] hasHydrated after set:', get().hasHydrated);
+      },
+
       setCookieSource: (providerId, source) =>
         set((state) => ({
           cookieSources: {
@@ -384,6 +394,11 @@ export const useSettingsStore = create<SettingsStore>()(
     {
       name: SETTINGS_STORAGE_KEY,
       storage: createJSONStorage(() => localStorage),
+      partialize: (state) => {
+        // Exclude hasHydrated from persistence - it must start as false each session
+        const { hasHydrated: _, ...rest } = state;
+        return rest;
+      },
       merge: (persistedState, currentState) => {
         const stored = persistedState as Partial<AppSettings> & {
           legacyDefaults?: Record<string, unknown>;
@@ -401,35 +416,56 @@ export const useSettingsStore = create<SettingsStore>()(
           updateChannel,
         };
       },
-      onRehydrateStorage: () => () => {
-        if (typeof localStorage === 'undefined') {
-          return;
-        }
-        const legacySettingsRaw = localStorage.getItem('settings-store');
-        if (!legacySettingsRaw) {
-          return;
-        }
-        try {
-          const parsed = JSON.parse(legacySettingsRaw);
-          if (!isRecord(parsed)) {
-            return;
+      onRehydrateStorage: () => {
+        console.log('[settingsStore] onRehydrateStorage: outer function called');
+        return (state, error) => {
+          console.log('[settingsStore] onRehydrateStorage: inner callback fired, state:', state?.enabledProviders, 'error:', error);
+          if (error) {
+            console.error('[settingsStore] Hydration error:', error);
           }
-          const legacySettings = parsed;
-          if (legacySettings?.legacyDefaults || legacySettings?.legacyConfig) {
-            return;
+          try {
+            if (typeof localStorage === 'undefined') {
+              return;
+            }
+            const legacySettingsRaw = localStorage.getItem('settings-store');
+            if (!legacySettingsRaw) {
+              return;
+            }
+            const parsed = JSON.parse(legacySettingsRaw);
+            if (!isRecord(parsed)) {
+              return;
+            }
+            const legacySettings = parsed;
+            if (legacySettings?.legacyDefaults || legacySettings?.legacyConfig) {
+              return;
+            }
+            const merged = {
+              ...legacySettings,
+              legacyDefaults: legacySettings,
+            };
+            localStorage.setItem('settings-store', JSON.stringify(merged));
+          } catch (migrationError) {
+            console.warn('Failed to migrate legacy settings defaults', migrationError);
           }
-          const merged = {
-            ...legacySettings,
-            legacyDefaults: legacySettings,
-          };
-          localStorage.setItem('settings-store', JSON.stringify(merged));
-        } catch (error) {
-          console.warn('Failed to migrate legacy settings defaults', error);
-        }
+        };
       },
     }
   )
 );
+
+// Use Zustand persist's onFinishHydration API to reliably set hasHydrated
+// Also check if hydration already happened (synchronous localStorage read)
+useSettingsStore.persist.onFinishHydration(() => {
+  console.log('[settingsStore] onFinishHydration callback - setting hasHydrated to true');
+  useSettingsStore.setState({ hasHydrated: true });
+});
+
+// Check if hydration already completed synchronously before onFinishHydration was registered
+if (useSettingsStore.persist.hasHydrated()) {
+  console.log('[settingsStore] Already hydrated on module load - setting hasHydrated to true');
+  useSettingsStore.setState({ hasHydrated: true });
+}
+// Note: We don't unsubscribe because we only need this to fire once on app start
 
 // Selectors
 export const useEnabledProviderIds = () =>

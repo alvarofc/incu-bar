@@ -223,13 +223,26 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 
   refreshProvider: async (id) => {
     const { setProviderLoading, setProviderUsage, setProviderError } = get();
+    console.log('[usageStore] refreshProvider - starting:', id);
     setProviderLoading(id, true);
 
+    // Frontend timeout to ensure we don't hang indefinitely waiting for backend
+    const REFRESH_TIMEOUT_MS = 30_000; // 30 seconds (backend has 10s status + 15s usage timeouts)
+    
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Refresh timed out')), REFRESH_TIMEOUT_MS);
+    });
+
     try {
-      const usage = await invoke<UsageSnapshot>('refresh_provider', { providerId: id });
+      const usage = await Promise.race([
+        invoke<UsageSnapshot>('refresh_provider', { providerId: id }),
+        timeoutPromise,
+      ]);
+      console.log('[usageStore] refreshProvider - success:', id, usage);
       setProviderUsage(id, usage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      console.log('[usageStore] refreshProvider - error:', id, message);
       setProviderError(id, message);
     }
   },
@@ -239,10 +252,12 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
     set({ isRefreshing: true });
 
     const enabledProviders = Object.values(providers).filter((p) => p.enabled);
+    console.log('[usageStore] refreshAllProviders - enabled providers:', enabledProviders.map(p => p.id));
     
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       enabledProviders.map((p) => refreshProvider(p.id))
     );
+    console.log('[usageStore] refreshAllProviders - completed, results:', results);
 
     set({ isRefreshing: false, lastGlobalRefresh: new Date() });
   },

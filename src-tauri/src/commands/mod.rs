@@ -113,13 +113,58 @@ pub async fn refresh_provider(
     registry: State<'_, ProviderRegistry>,
     app: AppHandle,
 ) -> Result<UsageSnapshot, String> {
-    tracing::debug!("Refreshing provider: {:?}", provider_id);
+    tracing::info!("refresh_provider: starting for {:?}", provider_id);
+    let start = std::time::Instant::now();
+
+    // Check if provider is authenticated before attempting refresh
+    // Convert ProviderId to string using serde serialization (snake_case)
+    let provider_id_str = serde_json::to_string(&provider_id)
+        .unwrap_or_default()
+        .trim_matches('"')
+        .to_string();
+    let auth_status = login::check_auth_status(&provider_id_str).await;
+    tracing::info!("refresh_provider: auth check for {:?} took {:?}, authenticated: {}", 
+        provider_id, start.elapsed(), auth_status.authenticated);
+    
+    if !auth_status.authenticated {
+        let error_msg = auth_status
+            .error
+            .unwrap_or_else(|| "Not authenticated".to_string());
+        tracing::info!(
+            "refresh_provider: skipping {:?}: {}",
+            provider_id,
+            error_msg
+        );
+        let usage = UsageSnapshot::error(format!("Not authenticated: {}", error_msg));
+        
+        let _ = app.emit(
+            "usage-updated",
+            serde_json::json!({
+                "providerId": provider_id,
+                "usage": usage.clone(),
+            }),
+        );
+        
+        return Err(format!("Not authenticated: {}", error_msg));
+    }
 
     let mut loading_guard = LoadingGuard::new(&app);
     emit_refreshing(&app, provider_id, true);
 
+    tracing::info!("refresh_provider: fetching status for {:?}", provider_id);
+    let status_start = std::time::Instant::now();
     let status = registry.fetch_status(&provider_id).await.ok();
+    tracing::info!("refresh_provider: status fetch for {:?} took {:?}", provider_id, status_start.elapsed());
+    
+    tracing::info!("refresh_provider: fetching usage for {:?}", provider_id);
+    let usage_start = std::time::Instant::now();
     let usage_result = registry.fetch_usage(&provider_id).await;
+    tracing::info!("refresh_provider: usage fetch for {:?} took {:?}", provider_id, usage_start.elapsed());
+
+    loading_guard.finish();
+    emit_refreshing(&app, provider_id, false);
+    
+    tracing::info!("refresh_provider: total time for {:?}: {:?}", provider_id, start.elapsed());
 
     loading_guard.finish();
     emit_refreshing(&app, provider_id, false);
@@ -288,20 +333,30 @@ pub async fn get_all_usage(
     Ok(registry.get_all_cached_usage().await)
 }
 
-/// Poll provider status/incident data
+/// Poll provider status/incident data (only for enabled providers)
 #[command]
 pub async fn poll_provider_statuses(
     registry: State<'_, ProviderRegistry>,
 ) -> Result<std::collections::HashMap<ProviderId, Option<ProviderStatus>>, String> {
-    let providers = ProviderId::all();
+    // Only poll enabled providers to avoid wasting resources on disabled ones
+    let enabled_providers = registry.get_enabled_providers().await;
     let mut statuses = std::collections::HashMap::new();
-    for provider_id in providers {
-        let status = registry.fetch_status(&provider_id).await.ok();
-        if let Some(value) = status {
-            statuses.insert(provider_id, Some(value));
-        } else {
+    
+    for provider_id in enabled_providers {
+        // Check if provider is authenticated before polling status
+        let provider_id_str = serde_json::to_string(&provider_id)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let auth_status = login::check_auth_status(&provider_id_str).await;
+        
+        if !auth_status.authenticated {
             statuses.insert(provider_id, None);
+            continue;
         }
+        
+        let status = registry.fetch_status(&provider_id).await.ok();
+        statuses.insert(provider_id, status);
     }
     Ok(statuses)
 }

@@ -6,6 +6,7 @@ mod augment;
 mod claude;
 mod codex;
 pub mod copilot;
+mod cost_usage;
 mod cursor;
 mod factory;
 mod gemini;
@@ -15,7 +16,6 @@ mod kimi_k2;
 mod kiro;
 mod minimax;
 pub(crate) mod opencode;
-mod cost_usage;
 mod synthetic;
 mod traits;
 mod zai;
@@ -26,8 +26,10 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tauri::{AppHandle, Emitter, Manager};
+use tokio::time::timeout;
 use tokio::sync::RwLock;
 
 /// Provider identifier enum
@@ -211,6 +213,16 @@ impl ProviderStatus {
     pub fn is_incident(&self) -> bool {
         self.indicator != StatusIndicator::None
     }
+
+    pub fn validated(self) -> Self {
+        let description = normalize_text(self.description);
+        let updated_at = normalize_datetime(self.updated_at);
+        Self {
+            indicator: self.indicator,
+            description,
+            updated_at,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -222,6 +234,7 @@ pub(crate) struct RefreshSchedule {
 const FAILURE_BACKOFF_BASE_SECONDS: u64 = 30;
 
 impl RefreshSchedule {
+    #[allow(dead_code)]
     fn new(interval: Duration) -> Self {
         Self::new_at(SystemTime::now(), interval)
     }
@@ -230,6 +243,15 @@ impl RefreshSchedule {
         Self {
             interval,
             next_refresh_at: now.checked_add(interval).unwrap_or(now),
+        }
+    }
+
+    /// Create a schedule that is immediately due (for initial refresh)
+    pub(crate) fn new_due_now(interval: Duration) -> Self {
+        Self {
+            interval,
+            // Set next_refresh_at to epoch so is_due() returns true immediately
+            next_refresh_at: SystemTime::UNIX_EPOCH,
         }
     }
 
@@ -260,6 +282,7 @@ impl ConsecutiveFailureGate {
         self.streak = 0;
     }
 
+    #[allow(dead_code)]
     pub(crate) fn reset(&mut self) {
         self.streak = 0;
     }
@@ -314,9 +337,10 @@ struct ProviderRefreshState {
 }
 
 impl ProviderRefreshState {
-    fn new(now: SystemTime, interval: Duration) -> Self {
+    fn new(_now: SystemTime, interval: Duration) -> Self {
         Self {
-            schedule: RefreshSchedule::new_at(now, interval),
+            // Use new_due_now so the first refresh happens immediately
+            schedule: RefreshSchedule::new_due_now(interval),
             backoff: RefreshBackoff::new(interval),
             failure_gate: ConsecutiveFailureGate::new(),
         }
@@ -353,6 +377,114 @@ impl UsageSnapshot {
             error: Some(message),
         }
     }
+
+    pub fn validated(mut self) -> Self {
+        self.primary = self.primary.and_then(RateWindow::validated);
+        self.secondary = self.secondary.and_then(RateWindow::validated);
+        self.tertiary = self.tertiary.and_then(RateWindow::validated);
+        self.credits = self.credits.and_then(Credits::validated);
+        self.cost = self.cost.and_then(CostSnapshot::validated);
+        self.identity = self.identity.and_then(ProviderIdentity::validated);
+        self.error = normalize_text(self.error);
+
+        if chrono::DateTime::parse_from_rfc3339(self.updated_at.trim()).is_err() {
+            self.updated_at = chrono::Utc::now().to_rfc3339();
+        } else {
+            self.updated_at = normalize_datetime(Some(self.updated_at))
+                .unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+        }
+
+        self
+    }
+}
+
+impl RateWindow {
+    fn validated(mut self) -> Option<Self> {
+        if !self.used_percent.is_finite() {
+            return None;
+        }
+        self.used_percent = self.used_percent.clamp(0.0, 100.0);
+        if let Some(minutes) = self.window_minutes {
+            if minutes <= 0 {
+                self.window_minutes = None;
+            }
+        }
+        self.resets_at = normalize_datetime(self.resets_at);
+        self.reset_description = normalize_text(self.reset_description);
+        self.label = normalize_text(self.label);
+        Some(self)
+    }
+}
+
+impl Credits {
+    fn validated(mut self) -> Option<Self> {
+        let unit = self.unit.trim();
+        if unit.is_empty() || !self.remaining.is_finite() {
+            return None;
+        }
+        let remaining = self.remaining.max(0.0);
+        let total = match self.total {
+            Some(total) if total.is_finite() => Some(total.max(0.0).max(remaining)),
+            Some(_) => return None,
+            None => None,
+        };
+        self.remaining = remaining;
+        self.total = total;
+        self.unit = unit.to_string();
+        Some(self)
+    }
+}
+
+impl CostSnapshot {
+    fn validated(mut self) -> Option<Self> {
+        let currency = self.currency.trim();
+        if currency.is_empty() || !self.today_amount.is_finite() || !self.month_amount.is_finite() {
+            return None;
+        }
+        self.today_amount = self.today_amount.max(0.0);
+        self.month_amount = self.month_amount.max(0.0);
+        self.currency = currency.to_string();
+        Some(self)
+    }
+}
+
+impl ProviderIdentity {
+    fn validated(mut self) -> Option<Self> {
+        self.email = normalize_text(self.email);
+        self.name = normalize_text(self.name);
+        self.plan = normalize_text(self.plan);
+        self.organization = normalize_text(self.organization);
+        if self.email.is_none()
+            && self.name.is_none()
+            && self.plan.is_none()
+            && self.organization.is_none()
+        {
+            None
+        } else {
+            Some(self)
+        }
+    }
+}
+
+fn normalize_text(value: Option<String>) -> Option<String> {
+    value.and_then(|text| {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn normalize_datetime(value: Option<String>) -> Option<String> {
+    let value = value?.trim().to_string();
+    if value.is_empty() {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(&value)
+        .ok()
+        .map(|dt| dt.with_timezone(&chrono::Utc).to_rfc3339())
 }
 
 pub async fn load_cost_snapshot(provider: ProviderId) -> Option<CostSnapshot> {
@@ -364,7 +496,7 @@ pub async fn load_cost_snapshot(provider: ProviderId) -> Option<CostSnapshot> {
 struct ProviderState {
     enabled: bool,
     cached_usage: Option<UsageSnapshot>,
-    fetcher: Box<dyn ProviderFetcher>,
+    fetcher: Arc<dyn ProviderFetcher>,
 }
 
 /// Registry managing all providers
@@ -390,7 +522,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: default_enabled.contains(&ProviderId::Claude),
                 cached_usage: None,
-                fetcher: Box::new(claude::ClaudeProvider::new()),
+                fetcher: Arc::new(claude::ClaudeProvider::new()),
             },
         );
 
@@ -400,7 +532,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: default_enabled.contains(&ProviderId::Codex),
                 cached_usage: None,
-                fetcher: Box::new(codex::CodexProvider::new()),
+                fetcher: Arc::new(codex::CodexProvider::new()),
             },
         );
 
@@ -410,7 +542,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: default_enabled.contains(&ProviderId::Cursor),
                 cached_usage: None,
-                fetcher: Box::new(cursor::CursorProvider::new()),
+                fetcher: Arc::new(cursor::CursorProvider::new()),
             },
         );
 
@@ -420,7 +552,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: default_enabled.contains(&ProviderId::Copilot),
                 cached_usage: None,
-                fetcher: Box::new(copilot::CopilotProvider::new()),
+                fetcher: Arc::new(copilot::CopilotProvider::new()),
             },
         );
 
@@ -430,7 +562,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires API token, not enabled by default
                 cached_usage: None,
-                fetcher: Box::new(zai::ZaiProvider::new()),
+                fetcher: Arc::new(zai::ZaiProvider::new()),
             },
         );
 
@@ -440,7 +572,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires API key, not enabled by default
                 cached_usage: None,
-                fetcher: Box::new(kimi_k2::KimiK2Provider::new()),
+                fetcher: Arc::new(kimi_k2::KimiK2Provider::new()),
             },
         );
 
@@ -450,7 +582,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires API key, not enabled by default
                 cached_usage: None,
-                fetcher: Box::new(synthetic::SyntheticProvider::new()),
+                fetcher: Arc::new(synthetic::SyntheticProvider::new()),
             },
         );
 
@@ -460,7 +592,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires Gemini CLI OAuth, not enabled by default
                 cached_usage: None,
-                fetcher: Box::new(gemini::GeminiProvider::new()),
+                fetcher: Arc::new(gemini::GeminiProvider::new()),
             },
         );
 
@@ -470,7 +602,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(antigravity::AntigravityProvider::new()),
+                fetcher: Arc::new(antigravity::AntigravityProvider::new()),
             },
         );
 
@@ -480,7 +612,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(factory::FactoryProvider::new()),
+                fetcher: Arc::new(factory::FactoryProvider::new()),
             },
         );
 
@@ -490,7 +622,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires browser cookies
                 cached_usage: None,
-                fetcher: Box::new(minimax::MinimaxProvider::new()),
+                fetcher: Arc::new(minimax::MinimaxProvider::new()),
             },
         );
 
@@ -500,7 +632,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false, // Requires browser cookies
                 cached_usage: None,
-                fetcher: Box::new(kimi::KimiProvider::new()),
+                fetcher: Arc::new(kimi::KimiProvider::new()),
             },
         );
 
@@ -510,7 +642,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(kiro::KiroProvider::new()),
+                fetcher: Arc::new(kiro::KiroProvider::new()),
             },
         );
 
@@ -526,7 +658,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(augment::AugmentProvider::new()),
+                fetcher: Arc::new(augment::AugmentProvider::new()),
             },
         );
 
@@ -536,7 +668,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(amp::AmpProvider::new()),
+                fetcher: Arc::new(amp::AmpProvider::new()),
             },
         );
 
@@ -546,7 +678,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(jetbrains::JetbrainsProvider::new()),
+                fetcher: Arc::new(jetbrains::JetbrainsProvider::new()),
             },
         );
 
@@ -556,7 +688,7 @@ impl ProviderRegistry {
             ProviderState {
                 enabled: false,
                 cached_usage: None,
-                fetcher: Box::new(opencode::OpencodeProvider::new()),
+                fetcher: Arc::new(opencode::OpencodeProvider::new()),
             },
         );
 
@@ -569,66 +701,141 @@ impl ProviderRegistry {
         ProviderState {
             enabled: false,
             cached_usage: None,
-            fetcher: Box::new(PlaceholderProvider::new(name, description)),
+            fetcher: Arc::new(PlaceholderProvider::new(name, description)),
         }
     }
 
     pub async fn fetch_usage(&self, id: &ProviderId) -> Result<UsageSnapshot, anyhow::Error> {
-        let providers = self.providers.read().await;
-
-        if let Some(state) = providers.get(id) {
-            let usage = state.fetcher.fetch().await?;
-            drop(providers);
-
-            // Cache the result
-            let mut providers = self.providers.write().await;
-            if let Some(state) = providers.get_mut(id) {
-                state.cached_usage = Some(usage.clone());
+        const FETCH_TIMEOUT_SECS: u64 = 15;
+        
+        // Clone the Arc<dyn ProviderFetcher> while holding the lock briefly, then drop the lock
+        // This prevents lock starvation when one provider's fetch hangs
+        tracing::debug!("fetch_usage: acquiring read lock for {:?}", id);
+        let fetcher = {
+            let providers = self.providers.read().await;
+            tracing::debug!("fetch_usage: got read lock for {:?}", id);
+            match providers.get(id) {
+                Some(state) => Arc::clone(&state.fetcher),
+                None => return Err(anyhow::anyhow!("Provider {:?} not found", id)),
             }
+        };
+        // Lock is now dropped, other providers can proceed
+        
+        tracing::debug!("fetch_usage: starting fetch for {:?}", id);
+        // Add timeout to prevent hanging on cookie/network operations
+        let fetch_result = tokio::select! {
+            result = fetcher.fetch() => result,
+            _ = tokio::time::sleep(Duration::from_secs(FETCH_TIMEOUT_SECS)) => {
+                tracing::warn!("Provider {:?} fetch timed out after {}s", id, FETCH_TIMEOUT_SECS);
+                return Err(anyhow!("Fetch timed out after {}s - browser may be blocking cookie access", FETCH_TIMEOUT_SECS));
+            }
+        };
+        
+        let usage = fetch_result?.validated();
+        tracing::debug!("fetch_usage: fetch completed for {:?}", id);
 
-            Ok(usage)
-        } else {
-            Err(anyhow::anyhow!("Provider {:?} not found", id))
+        // Cache the result
+        let mut providers = self.providers.write().await;
+        if let Some(state) = providers.get_mut(id) {
+            state.cached_usage = Some(usage.clone());
         }
+
+        Ok(usage)
     }
 
     pub async fn fetch_status(&self, id: &ProviderId) -> Result<ProviderStatus, anyhow::Error> {
-        let providers = self.providers.read().await;
-        if let Some(state) = providers.get(id) {
-            let status = state.fetcher.fetch_status().await?;
-            Ok(status)
-        } else {
-            Err(anyhow::anyhow!("Provider {:?} not found", id))
-        }
+        const FETCH_TIMEOUT_SECS: u64 = 10;
+        
+        // Clone the Arc<dyn ProviderFetcher> while holding the lock briefly, then drop the lock
+        // This prevents lock starvation when one provider's fetch hangs
+        tracing::debug!("fetch_status: acquiring read lock for {:?}", id);
+        let fetcher = {
+            let providers = self.providers.read().await;
+            tracing::debug!("fetch_status: got read lock for {:?}", id);
+            match providers.get(id) {
+                Some(state) => Arc::clone(&state.fetcher),
+                None => return Err(anyhow::anyhow!("Provider {:?} not found", id)),
+            }
+        };
+        // Lock is now dropped, other providers can proceed
+        
+        tracing::debug!("fetch_status: starting fetch for {:?}", id);
+        let status = match timeout(Duration::from_secs(FETCH_TIMEOUT_SECS), fetcher.fetch_status()).await {
+            Ok(result) => result?.validated(),
+            Err(_) => {
+                tracing::warn!("Provider {:?} status fetch timed out after {}s", id, FETCH_TIMEOUT_SECS);
+                return Err(anyhow!("Status fetch timed out after {}s", FETCH_TIMEOUT_SECS));
+            }
+        };
+        tracing::debug!("fetch_status: completed for {:?}", id);
+        Ok(status)
     }
 
-    pub fn get_cached_usage(&self, id: &ProviderId) -> Option<UsageSnapshot> {
+    pub async fn get_cached_usage(&self, id: &ProviderId) -> Option<UsageSnapshot> {
         self.providers
-            .blocking_read()
+            .read()
+            .await
             .get(id)
             .and_then(|state| state.cached_usage.clone())
     }
 
-    pub fn get_all_cached_usage(&self) -> HashMap<ProviderId, UsageSnapshot> {
+    pub async fn get_all_cached_usage(&self) -> HashMap<ProviderId, UsageSnapshot> {
         self.providers
-            .blocking_read()
+            .read()
+            .await
             .iter()
             .filter_map(|(id, state)| state.cached_usage.clone().map(|usage| (*id, usage)))
             .collect()
     }
 
-    pub fn get_enabled_providers(&self) -> Vec<ProviderId> {
+    pub async fn get_enabled_providers(&self) -> Vec<ProviderId> {
         self.providers
-            .blocking_read()
+            .read()
+            .await
             .iter()
             .filter_map(|(id, state)| if state.enabled { Some(*id) } else { None })
             .collect()
     }
 
-    pub fn set_enabled(&self, id: &ProviderId, enabled: bool) {
-        if let Some(state) = self.providers.blocking_write().get_mut(id) {
+    pub async fn set_enabled(&self, id: &ProviderId, enabled: bool) {
+        if let Some(state) = self.providers.write().await.get_mut(id) {
             state.enabled = enabled;
         }
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::{ProviderId, ProviderRegistry, UsageSnapshot};
+
+    #[tokio::test]
+    async fn registry_uses_async_locking_for_cached_usage() {
+        let registry = ProviderRegistry::new();
+
+        let enabled_providers = registry.get_enabled_providers().await;
+        assert!(!enabled_providers.is_empty());
+        assert!(enabled_providers.contains(&ProviderId::Claude));
+
+        let cached_usage = registry.get_all_cached_usage().await;
+        assert!(cached_usage.is_empty());
+
+        registry.set_enabled(&ProviderId::Claude, false).await;
+        let enabled_after = registry.get_enabled_providers().await;
+        assert!(!enabled_after.contains(&ProviderId::Claude));
+
+        let usage = UsageSnapshot::error("unit test".to_string());
+        {
+            let mut providers = registry.providers.write().await;
+            if let Some(state) = providers.get_mut(&ProviderId::Claude) {
+                state.cached_usage = Some(usage.clone());
+            }
+        }
+
+        let cached = registry.get_cached_usage(&ProviderId::Claude).await;
+        assert_eq!(
+            cached.and_then(|snapshot| snapshot.error),
+            Some("unit test".to_string())
+        );
     }
 }
 
@@ -643,7 +850,7 @@ pub async fn start_refresh_loop(app: AppHandle) {
         let now = SystemTime::now();
 
         if let Some(registry) = app.try_state::<ProviderRegistry>() {
-            let providers = registry.get_enabled_providers();
+            let providers = registry.get_enabled_providers().await;
             for provider_id in &providers {
                 provider_states
                     .entry(*provider_id)
@@ -654,9 +861,20 @@ pub async fn start_refresh_loop(app: AppHandle) {
                 let state = provider_states
                     .entry(provider_id)
                     .or_insert_with(|| ProviderRefreshState::new(now, interval));
-                let had_cached_data = registry.get_cached_usage(&provider_id).is_some();
+                let had_cached_data = registry.get_cached_usage(&provider_id).await.is_some();
 
                 if !state.is_due(now) {
+                    continue;
+                }
+
+                // Skip unauthenticated providers to avoid wasting resources
+                let provider_id_str = serde_json::to_string(&provider_id)
+                    .unwrap_or_default()
+                    .trim_matches('"')
+                    .to_string();
+                let auth_status = crate::login::check_auth_status(&provider_id_str).await;
+                if !auth_status.authenticated {
+                    tracing::debug!("start_refresh_loop: skipping {:?} - not authenticated", provider_id);
                     continue;
                 }
 
@@ -674,10 +892,10 @@ pub async fn start_refresh_loop(app: AppHandle) {
                     Ok(usage) => {
                         let _ = app.emit(
                             "usage-updated",
-                        serde_json::json!({
-                            "providerId": provider_id,
-                            "usage": usage,
-                        }),
+                            serde_json::json!({
+                                "providerId": provider_id,
+                                "usage": usage,
+                            }),
                         );
                         state.record_success(now);
                     }
@@ -709,7 +927,10 @@ pub async fn start_refresh_loop(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsecutiveFailureGate, RefreshBackoff, RefreshSchedule};
+    use super::{
+        ConsecutiveFailureGate, Credits, ProviderIdentity, ProviderStatus, RateWindow,
+        RefreshBackoff, RefreshSchedule, StatusIndicator, UsageSnapshot,
+    };
     use std::time::{Duration, SystemTime};
 
     #[test]
@@ -778,5 +999,93 @@ mod tests {
         assert!(gate.should_surface_error(true));
         gate.record_success();
         assert!(!gate.should_surface_error(true));
+    }
+
+    #[test]
+    fn usage_snapshot_validation_clamps_and_cleans() {
+        let snapshot = UsageSnapshot {
+            primary: Some(RateWindow {
+                used_percent: 180.0,
+                window_minutes: Some(-5),
+                resets_at: Some("bad".to_string()),
+                reset_description: Some("  ".to_string()),
+                label: Some(" Session ".to_string()),
+            }),
+            secondary: None,
+            tertiary: None,
+            credits: Some(Credits {
+                remaining: -10.0,
+                total: Some(5.0),
+                unit: " credits ".to_string(),
+            }),
+            cost: None,
+            identity: Some(ProviderIdentity {
+                email: Some(" ".to_string()),
+                name: Some("Alex".to_string()),
+                plan: None,
+                organization: None,
+            }),
+            updated_at: "invalid".to_string(),
+            error: Some(" ".to_string()),
+        };
+
+        let validated = snapshot.validated();
+        let primary = validated.primary.expect("primary");
+        assert_eq!(primary.used_percent, 100.0);
+        assert!(primary.window_minutes.is_none());
+        assert!(primary.resets_at.is_none());
+        assert!(primary.reset_description.is_none());
+        assert_eq!(primary.label.as_deref(), Some("Session"));
+
+        let credits = validated.credits.expect("credits");
+        assert_eq!(credits.remaining, 0.0);
+        assert_eq!(credits.total, Some(5.0));
+        assert_eq!(credits.unit, "credits");
+
+        let identity = validated.identity.expect("identity");
+        assert!(identity.email.is_none());
+        assert_eq!(identity.name.as_deref(), Some("Alex"));
+
+        assert!(validated.error.is_none());
+    }
+
+    #[test]
+    fn usage_snapshot_validation_drops_empty_identity_and_invalid_credits() {
+        let snapshot = UsageSnapshot {
+            primary: None,
+            secondary: None,
+            tertiary: None,
+            credits: Some(Credits {
+                remaining: 5.0,
+                total: None,
+                unit: " ".to_string(),
+            }),
+            cost: None,
+            identity: Some(ProviderIdentity {
+                email: Some(" ".to_string()),
+                name: None,
+                plan: None,
+                organization: None,
+            }),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            error: None,
+        };
+
+        let validated = snapshot.validated();
+        assert!(validated.credits.is_none());
+        assert!(validated.identity.is_none());
+    }
+
+    #[test]
+    fn provider_status_validation_trims_fields() {
+        let status = ProviderStatus {
+            indicator: StatusIndicator::Major,
+            description: Some("  degraded ".to_string()),
+            updated_at: Some("bad".to_string()),
+        };
+
+        let validated = status.validated();
+        assert_eq!(validated.description.as_deref(), Some("degraded"));
+        assert!(validated.updated_at.is_none());
     }
 }
