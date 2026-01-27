@@ -3,9 +3,9 @@
 //! Uses cookie-based authentication via browser cookie import.
 //! Endpoint: https://opencode.ai/_server
 
+use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde_json::Value;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity};
 
 const BASE_URL: &str = "https://opencode.ai";
 const SERVER_URL: &str = "https://opencode.ai/_server";
@@ -68,7 +68,10 @@ impl OpencodeProvider {
         Self { client }
     }
 
-    async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<UsageSnapshot, OpencodeError> {
+    async fn fetch_with_cookies(
+        &self,
+        cookie_header: &str,
+    ) -> Result<UsageSnapshot, OpencodeError> {
         let now = chrono::Utc::now();
         let workspace_id = self.fetch_workspace_id(cookie_header).await?;
         let subscription_text = self
@@ -199,11 +202,17 @@ impl OpencodeProvider {
         request = request
             .header("Cookie", cookie_header)
             .header("X-Server-Id", server_request.server_id)
-            .header("X-Server-Instance", format!("server-fn:{}", uuid::Uuid::new_v4()))
+            .header(
+                "X-Server-Instance",
+                format!("server-fn:{}", uuid::Uuid::new_v4()),
+            )
             .header("User-Agent", USER_AGENT)
             .header("Origin", BASE_URL)
             .header("Referer", server_request.referer)
-            .header("Accept", "text/javascript, application/json;q=0.9, */*;q=0.8");
+            .header(
+                "Accept",
+                "text/javascript, application/json;q=0.9, */*;q=0.8",
+            );
 
         if server_request.method == "POST" {
             if let Some(args) = server_request.args {
@@ -211,7 +220,10 @@ impl OpencodeProvider {
             }
         }
 
-        let response = request.send().await.map_err(|err| OpencodeError::Api(err.to_string()))?;
+        let response = request
+            .send()
+            .await
+            .map_err(|err| OpencodeError::Api(err.to_string()))?;
         let status = response.status();
         let text = response
             .text()
@@ -254,15 +266,18 @@ impl OpencodeProvider {
         let weekly_reset = extract_int(r#"weeklyUsage[^}]*?resetInSec\s*:\s*([0-9]+)"#, text);
 
         match (rolling_percent, rolling_reset, weekly_percent, weekly_reset) {
-            (Some(rolling_percent), Some(rolling_reset), Some(weekly_percent), Some(weekly_reset)) => {
-                Ok(OpenCodeUsageSnapshot {
-                    rolling_usage_percent: rolling_percent,
-                    weekly_usage_percent: weekly_percent,
-                    rolling_reset_in_sec: rolling_reset,
-                    weekly_reset_in_sec: weekly_reset,
-                    updated_at: now,
-                })
-            }
+            (
+                Some(rolling_percent),
+                Some(rolling_reset),
+                Some(weekly_percent),
+                Some(weekly_reset),
+            ) => Ok(OpenCodeUsageSnapshot {
+                rolling_usage_percent: rolling_percent,
+                weekly_usage_percent: weekly_percent,
+                rolling_reset_in_sec: rolling_reset,
+                weekly_reset_in_sec: weekly_reset,
+                updated_at: now,
+            }),
             _ => Err(OpencodeError::Parse("Missing usage fields".to_string())),
         }
     }
@@ -340,7 +355,9 @@ impl ProviderFetcher for OpencodeProvider {
         match crate::browser_cookies::import_opencode_cookies_from_browser().await {
             Ok(result) => {
                 if !cookie_header_has_auth(&result.cookie_header) {
-                    return Err(anyhow::anyhow!(OpencodeError::InvalidCredentials.to_string()));
+                    return Err(anyhow::anyhow!(
+                        OpencodeError::InvalidCredentials.to_string()
+                    ));
                 }
                 if let Err(err) = self.store_session(&result.cookie_header).await {
                     tracing::debug!("Failed to store OpenCode session: {}", err);
@@ -415,7 +432,8 @@ struct ServerRequest {
 impl ServerRequest {
     fn url(&self) -> String {
         if self.method == "GET" {
-            let mut url = url::Url::parse(SERVER_URL).unwrap_or_else(|_| url::Url::parse(BASE_URL).unwrap());
+            let mut url =
+                url::Url::parse(SERVER_URL).unwrap_or_else(|_| url::Url::parse(BASE_URL).unwrap());
             url.query_pairs_mut().append_pair("id", self.server_id);
             if let Some(args) = &self.args {
                 if let Ok(encoded) = serde_json::to_string(args) {
@@ -515,7 +533,10 @@ fn extract_server_error_message(text: &str) -> Option<String> {
     None
 }
 
-fn parse_usage_json(value: &Value, now: chrono::DateTime<chrono::Utc>) -> Option<OpenCodeUsageSnapshot> {
+fn parse_usage_json(
+    value: &Value,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<OpenCodeUsageSnapshot> {
     let dict = value.as_object()?;
     if let Some(snapshot) = parse_usage_dictionary(dict, now) {
         return Some(snapshot);
@@ -542,8 +563,20 @@ fn parse_usage_dictionary(
         }
     }
 
-    let rolling_keys = ["rollingUsage", "rolling", "rolling_usage", "rollingWindow", "rolling_window"];
-    let weekly_keys = ["weeklyUsage", "weekly", "weekly_usage", "weeklyWindow", "weekly_window"];
+    let rolling_keys = [
+        "rollingUsage",
+        "rolling",
+        "rolling_usage",
+        "rollingWindow",
+        "rolling_window",
+    ];
+    let weekly_keys = [
+        "weeklyUsage",
+        "weekly",
+        "weekly_usage",
+        "weeklyWindow",
+        "weekly_window",
+    ];
 
     let rolling = rolling_keys
         .iter()
@@ -601,7 +634,10 @@ fn parse_usage_nested(
     None
 }
 
-fn parse_usage_from_candidates(value: &Value, now: chrono::DateTime<chrono::Utc>) -> Option<OpenCodeUsageSnapshot> {
+fn parse_usage_from_candidates(
+    value: &Value,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<OpenCodeUsageSnapshot> {
     let mut candidates = Vec::new();
     collect_window_candidates(value, now, &mut Vec::new(), &mut candidates);
     if candidates.is_empty() {
@@ -702,7 +738,10 @@ fn pick_candidate(
     pick_candidate_from(&fallback_filtered, pick_shorter)
 }
 
-fn pick_candidate_from(candidates: &[WindowCandidate], pick_shorter: bool) -> Option<WindowCandidate> {
+fn pick_candidate_from(
+    candidates: &[WindowCandidate],
+    pick_shorter: bool,
+) -> Option<WindowCandidate> {
     if candidates.is_empty() {
         return None;
     }
@@ -749,8 +788,12 @@ fn parse_window(
     let mut percent = double_value_from_map(dict, PERCENT_KEYS);
 
     if percent.is_none() {
-        let used = double_value_from_map(dict, &["used", "usage", "consumed", "count", "usedTokens"]);
-        let limit = double_value_from_map(dict, &["limit", "total", "quota", "max", "cap", "tokenLimit"]);
+        let used =
+            double_value_from_map(dict, &["used", "usage", "consumed", "count", "usedTokens"]);
+        let limit = double_value_from_map(
+            dict,
+            &["limit", "total", "quota", "max", "cap", "tokenLimit"],
+        );
         if let (Some(used), Some(limit)) = (used, limit) {
             if limit > 0.0 {
                 percent = Some((used / limit) * 100.0);

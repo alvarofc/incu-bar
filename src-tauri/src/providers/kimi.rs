@@ -3,8 +3,8 @@
 //! Uses JWT cookie authentication via browser cookie import.
 //! Endpoint: https://kimi.com/apiv2/grpc/kimi_api.BillingService/GetUsages
 
+use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity};
 
 const USAGE_URL: &str = "https://kimi.com/apiv2/grpc/kimi_api.BillingService/GetUsages";
 
@@ -22,8 +22,12 @@ impl KimiProvider {
         Self { client }
     }
 
-    async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<UsageSnapshot, anyhow::Error> {
-        let response = self.client
+    async fn fetch_with_cookies(
+        &self,
+        cookie_header: &str,
+    ) -> Result<UsageSnapshot, anyhow::Error> {
+        let response = self
+            .client
             .post(USAGE_URL)
             .header("Cookie", cookie_header)
             .header("Content-Type", "application/proto")
@@ -72,14 +76,23 @@ impl KimiProvider {
         }
     }
 
-    fn pick_usage_entries<'a>(&self, usages: &'a [UsageEntry]) -> (Option<&'a UsageEntry>, Option<&'a UsageEntry>) {
+    fn pick_usage_entries<'a>(
+        &self,
+        usages: &'a [UsageEntry],
+    ) -> (Option<&'a UsageEntry>, Option<&'a UsageEntry>) {
         if usages.is_empty() {
             return (None, None);
         }
 
         let primary_index = usages
             .iter()
-            .position(|entry| entry.usage_type.as_deref().map(|t| t.eq_ignore_ascii_case("tokens")).unwrap_or(false))
+            .position(|entry| {
+                entry
+                    .usage_type
+                    .as_deref()
+                    .map(|t| t.eq_ignore_ascii_case("tokens"))
+                    .unwrap_or(false)
+            })
             .unwrap_or(0);
 
         let primary = usages.get(primary_index);
@@ -95,9 +108,16 @@ impl KimiProvider {
     fn rate_window_from_entry(&self, entry: &UsageEntry) -> Option<RateWindow> {
         let used = entry.used? as f64;
         let limit = entry.limit? as f64;
-        let used_percent = if limit > 0.0 { (used / limit) * 100.0 } else { 0.0 };
-        let label = entry.usage_type.as_deref().and_then(|value| self.format_label(value));
-        let reset_description = if limit > 0.0 {
+        let used_percent = if limit > 0.0 && limit.is_finite() {
+            (used / limit) * 100.0
+        } else {
+            0.0
+        };
+        let label = entry
+            .usage_type
+            .as_deref()
+            .and_then(|value| self.format_label(value));
+        let reset_description = if limit > 0.0 && limit.is_finite() {
             let prefix = label.clone().unwrap_or_else(|| "Usage".to_string());
             Some(format!("{} {:.0}/{:.0}", prefix, used, limit))
         } else {
@@ -134,7 +154,11 @@ impl KimiProvider {
             }
         }
 
-        if output.is_empty() { None } else { Some(output) }
+        if output.is_empty() {
+            None
+        } else {
+            Some(output)
+        }
     }
 
     async fn load_stored_cookies(&self) -> Result<String, anyhow::Error> {
@@ -388,6 +412,11 @@ mod tests {
 
         assert!((primary.used_percent - 25.0).abs() < 0.01);
         assert_eq!(primary.label.as_deref(), Some("Tokens"));
-        assert_eq!(primary.reset_description.as_deref(), Some("Tokens 25000/100000"));
+        assert_eq!(
+            primary.reset_description.as_deref(),
+            Some("Tokens 25000/100000")
+        );
     }
+
+
 }

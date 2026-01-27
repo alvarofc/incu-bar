@@ -4,7 +4,9 @@
 //! 1. OAuth API (chatgpt.com) - uses credentials from ~/.codex/auth.json
 //! 2. OpenAI web cookies (chatgpt.com) - optional extras via browser cookies
 
-use super::{cost_usage, Credits, ProviderFetcher, ProviderId, ProviderIdentity, RateWindow, UsageSnapshot};
+use super::{
+    cost_usage, Credits, ProviderFetcher, ProviderId, ProviderIdentity, RateWindow, UsageSnapshot,
+};
 use async_trait::async_trait;
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -124,8 +126,8 @@ impl CodexProvider {
     }
 
     fn get_session_path(&self) -> Result<PathBuf, anyhow::Error> {
-        let data_dir =
-            dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+        let data_dir = dirs::data_dir()
+            .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
         Ok(data_dir.join("IncuBar").join("codex-session.json"))
     }
 

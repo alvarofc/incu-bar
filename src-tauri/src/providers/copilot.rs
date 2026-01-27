@@ -6,9 +6,9 @@
 //! - /login/oauth/access_token - Poll for access token
 //! - api.github.com/copilot_internal/user - Usage data
 
+use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity};
 
 /// VS Code's OAuth Client ID for GitHub
 const GITHUB_CLIENT_ID: &str = "Iv1.b507a08c87ecfe98";
@@ -34,7 +34,8 @@ impl CopilotProvider {
 
     /// Fetch usage with stored token
     async fn fetch_with_token(&self, token: &str) -> Result<UsageSnapshot, anyhow::Error> {
-        let response = self.client
+        let response = self
+            .client
             .get(COPILOT_USER_URL)
             .header("Authorization", format!("token {}", token))
             .header("Accept", "application/json")
@@ -46,11 +47,16 @@ impl CopilotProvider {
             .await?;
 
         if response.status() == 401 || response.status() == 403 {
-            return Err(anyhow::anyhow!("Authentication required - please login again"));
+            return Err(anyhow::anyhow!(
+                "Authentication required - please login again"
+            ));
         }
 
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Copilot API returned status: {}", response.status()));
+            return Err(anyhow::anyhow!(
+                "Copilot API returned status: {}",
+                response.status()
+            ));
         }
 
         let raw_json = response.text().await?;
@@ -64,16 +70,20 @@ impl CopilotProvider {
     /// Convert API response to UsageSnapshot
     fn convert_response(&self, usage: CopilotUsageResponse) -> UsageSnapshot {
         // Primary: Premium interactions quota
-        let primary = usage.quota_snapshots.premium_interactions.as_ref().map(|q| {
-            let used_percent = 100.0 - q.percent_remaining;
-            RateWindow {
-                used_percent,
-                window_minutes: None,
-                resets_at: Some(usage.quota_reset_date.clone()),
-                reset_description: Some(self.format_reset_description(&usage.quota_reset_date)),
-                label: Some("Premium".to_string()),
-            }
-        });
+        let primary = usage
+            .quota_snapshots
+            .premium_interactions
+            .as_ref()
+            .map(|q| {
+                let used_percent = 100.0 - q.percent_remaining;
+                RateWindow {
+                    used_percent,
+                    window_minutes: None,
+                    resets_at: Some(usage.quota_reset_date.clone()),
+                    reset_description: Some(self.format_reset_description(&usage.quota_reset_date)),
+                    label: Some("Premium".to_string()),
+                }
+            });
 
         // Secondary: Chat quota (if different from premium)
         let secondary = usage.quota_snapshots.chat.as_ref().map(|q| {
@@ -158,18 +168,16 @@ impl ProviderFetcher for CopilotProvider {
 
         // Try to load stored token
         match self.load_stored_token().await {
-            Ok(token) => {
-                match self.fetch_with_token(&token).await {
-                    Ok(usage) => {
-                        tracing::debug!("Copilot fetch successful");
-                        return Ok(usage);
-                    }
-                    Err(e) => {
-                        tracing::debug!("Copilot fetch with stored token failed: {}", e);
-                        return Ok(UsageSnapshot::error(format!("Auth expired: {}", e)));
-                    }
+            Ok(token) => match self.fetch_with_token(&token).await {
+                Ok(usage) => {
+                    tracing::debug!("Copilot fetch successful");
+                    return Ok(usage);
                 }
-            }
+                Err(e) => {
+                    tracing::debug!("Copilot fetch with stored token failed: {}", e);
+                    return Ok(UsageSnapshot::error(format!("Auth expired: {}", e)));
+                }
+            },
             Err(e) => {
                 tracing::debug!("No stored Copilot token: {}", e);
             }
@@ -228,10 +236,7 @@ struct OAuthErrorResponse {
 pub async fn request_device_code() -> Result<DeviceCodeResponse, anyhow::Error> {
     let client = reqwest::Client::new();
 
-    let params = [
-        ("client_id", GITHUB_CLIENT_ID),
-        ("scope", GITHUB_SCOPES),
-    ];
+    let params = [("client_id", GITHUB_CLIENT_ID), ("scope", GITHUB_SCOPES)];
 
     let response = client
         .post(DEVICE_CODE_URL)
@@ -241,11 +246,17 @@ pub async fn request_device_code() -> Result<DeviceCodeResponse, anyhow::Error> 
         .await?;
 
     if !response.status().is_success() {
-        return Err(anyhow::anyhow!("Failed to request device code: {}", response.status()));
+        return Err(anyhow::anyhow!(
+            "Failed to request device code: {}",
+            response.status()
+        ));
     }
 
     let device_code: DeviceCodeResponse = response.json().await?;
-    tracing::info!("Got device code, user should enter: {}", device_code.user_code);
+    tracing::info!(
+        "Got device code, user should enter: {}",
+        device_code.user_code
+    );
 
     Ok(device_code)
 }
@@ -310,8 +321,8 @@ pub async fn poll_for_token(device_code: &str, interval: i32) -> Result<String, 
 
 /// Save token to session file
 pub async fn save_token(token: &str) -> Result<(), anyhow::Error> {
-    let data_dir = dirs::data_dir()
-        .ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
+    let data_dir =
+        dirs::data_dir().ok_or_else(|| anyhow::anyhow!("Could not determine data directory"))?;
     let session_dir = data_dir.join("IncuBar");
 
     tokio::fs::create_dir_all(&session_dir).await?;

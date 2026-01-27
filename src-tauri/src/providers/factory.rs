@@ -4,9 +4,9 @@
 //! Uses cookie-based authentication via browser cookie import or stored session.
 //! Endpoint: https://app.factory.ai/api/usage
 
+use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde_json::Value;
-use super::{ProviderFetcher, UsageSnapshot, RateWindow, ProviderIdentity};
 
 const USAGE_URL: &str = "https://app.factory.ai/api/usage";
 
@@ -24,8 +24,12 @@ impl FactoryProvider {
         Self { client }
     }
 
-    async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<UsageSnapshot, anyhow::Error> {
-        let response = self.client
+    async fn fetch_with_cookies(
+        &self,
+        cookie_header: &str,
+    ) -> Result<UsageSnapshot, anyhow::Error> {
+        let response = self
+            .client
             .get(USAGE_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -60,9 +64,17 @@ impl FactoryProvider {
         let primary = quotas.get(0).map(|q| q.to_rate_window());
         let secondary = quotas.get(1).map(|q| q.to_rate_window());
 
-        let plan = self.find_string(base, &[
-            "plan", "planName", "plan_name", "tier", "subscription", "package",
-        ]);
+        let plan = self.find_string(
+            base,
+            &[
+                "plan",
+                "planName",
+                "plan_name",
+                "tier",
+                "subscription",
+                "package",
+            ],
+        );
 
         let email = self.find_string(base, &["email", "userEmail", "user_email"]);
 
@@ -93,7 +105,9 @@ impl FactoryProvider {
 
         if let Some(array) = base.get("usage").and_then(|v| v.as_array()) {
             for value in array {
-                if let Some(entry) = self.parse_quota_entry(None, value, reset_fallback.clone(), window_minutes) {
+                if let Some(entry) =
+                    self.parse_quota_entry(None, value, reset_fallback.clone(), window_minutes)
+                {
                     entries.push(entry);
                 }
             }
@@ -101,7 +115,12 @@ impl FactoryProvider {
 
         if let Some(obj) = base.get("usage") {
             if obj.is_object() {
-                if let Some(entry) = self.parse_quota_entry(Some("Usage".to_string()), obj, reset_fallback.clone(), window_minutes) {
+                if let Some(entry) = self.parse_quota_entry(
+                    Some("Usage".to_string()),
+                    obj,
+                    reset_fallback.clone(),
+                    window_minutes,
+                ) {
                     entries.push(entry);
                 }
             }
@@ -109,7 +128,9 @@ impl FactoryProvider {
 
         if let Some(array) = base.get("quotas").and_then(|v| v.as_array()) {
             for value in array {
-                if let Some(entry) = self.parse_quota_entry(None, value, reset_fallback.clone(), window_minutes) {
+                if let Some(entry) =
+                    self.parse_quota_entry(None, value, reset_fallback.clone(), window_minutes)
+                {
                     entries.push(entry);
                 }
             }
@@ -118,7 +139,12 @@ impl FactoryProvider {
         if let Some(obj) = base.as_object() {
             for (key, value) in obj.iter() {
                 if value.is_object() {
-                    if let Some(entry) = self.parse_quota_entry(Some(key.clone()), value, reset_fallback.clone(), window_minutes) {
+                    if let Some(entry) = self.parse_quota_entry(
+                        Some(key.clone()),
+                        value,
+                        reset_fallback.clone(),
+                        window_minutes,
+                    ) {
                         entries.push(entry);
                     }
                 }
@@ -135,25 +161,46 @@ impl FactoryProvider {
         reset_fallback: Option<String>,
         window_minutes: Option<i32>,
     ) -> Option<QuotaEntry> {
-        let used = self.find_double(value, &[
-            "used", "usage", "usedCount", "consumed", "spent", "requestsUsed",
-            "tokensUsed", "usageUsed", "used_total", "usedTotal",
-        ])?;
-        let limit = self.find_double(value, &[
-            "limit", "quota", "max", "total", "capacity", "allowance",
-            "requestsLimit", "tokensLimit", "usageLimit", "limit_total", "limitTotal",
-        ])?;
+        let used = self.find_double(
+            value,
+            &[
+                "used",
+                "usage",
+                "usedCount",
+                "consumed",
+                "spent",
+                "requestsUsed",
+                "tokensUsed",
+                "usageUsed",
+                "used_total",
+                "usedTotal",
+            ],
+        )?;
+        let limit = self.find_double(
+            value,
+            &[
+                "limit",
+                "quota",
+                "max",
+                "total",
+                "capacity",
+                "allowance",
+                "requestsLimit",
+                "tokensLimit",
+                "usageLimit",
+                "limit_total",
+                "limitTotal",
+            ],
+        )?;
 
-        let used_percent = if limit > 0.0 {
+        let used_percent = if limit > 0.0 && limit.is_finite() {
             (used / limit) * 100.0
         } else {
             0.0
         };
 
         let resets_at = self.find_reset_time(value).or(reset_fallback.clone());
-        let reset_description = resets_at
-            .as_ref()
-            .and_then(|t| self.format_reset_time(t));
+        let reset_description = resets_at.as_ref().and_then(|t| self.format_reset_time(t));
 
         Some(QuotaEntry {
             label,
@@ -190,16 +237,38 @@ impl FactoryProvider {
     }
 
     fn find_window_minutes(&self, json: &Value) -> Option<i32> {
-        if let Some(minutes) = self.find_double(json, &["windowMinutes", "window_minutes", "periodMinutes", "period_minutes"]) {
+        if let Some(minutes) = self.find_double(
+            json,
+            &[
+                "windowMinutes",
+                "window_minutes",
+                "periodMinutes",
+                "period_minutes",
+            ],
+        ) {
             return Some(minutes as i32);
         }
-        if let Some(hours) = self.find_double(json, &["windowHours", "window_hours", "periodHours", "period_hours"]) {
+        if let Some(hours) = self.find_double(
+            json,
+            &["windowHours", "window_hours", "periodHours", "period_hours"],
+        ) {
             return Some((hours * 60.0) as i32);
         }
-        if let Some(days) = self.find_double(json, &["windowDays", "window_days", "periodDays", "period_days"]) {
+        if let Some(days) = self.find_double(
+            json,
+            &["windowDays", "window_days", "periodDays", "period_days"],
+        ) {
             return Some((days * 24.0 * 60.0) as i32);
         }
-        if let Some(seconds) = self.find_double(json, &["windowSeconds", "window_seconds", "periodSeconds", "period_seconds"]) {
+        if let Some(seconds) = self.find_double(
+            json,
+            &[
+                "windowSeconds",
+                "window_seconds",
+                "periodSeconds",
+                "period_seconds",
+            ],
+        ) {
             return Some((seconds / 60.0) as i32);
         }
         None
@@ -207,8 +276,18 @@ impl FactoryProvider {
 
     fn find_reset_time(&self, json: &Value) -> Option<String> {
         let timestamp_keys = [
-            "resetAt", "reset_at", "resetsAt", "resets_at", "resetTime", "reset_time",
-            "nextReset", "next_reset", "renewAt", "renew_at", "periodEnd", "period_end",
+            "resetAt",
+            "reset_at",
+            "resetsAt",
+            "resets_at",
+            "resetTime",
+            "reset_time",
+            "nextReset",
+            "next_reset",
+            "renewAt",
+            "renew_at",
+            "periodEnd",
+            "period_end",
         ];
 
         for key in &timestamp_keys {
@@ -228,8 +307,12 @@ impl FactoryProvider {
         }
 
         let duration_keys = [
-            "resetInSeconds", "reset_in_seconds", "resetSeconds", "reset_seconds",
-            "resetIn", "reset_in",
+            "resetInSeconds",
+            "reset_in_seconds",
+            "resetSeconds",
+            "reset_seconds",
+            "resetIn",
+            "reset_in",
         ];
 
         for key in &duration_keys {
@@ -392,7 +475,10 @@ mod tests {
         assert_eq!(secondary.used_percent, 25.0);
         assert!(primary.resets_at.is_some());
         assert!(primary.reset_description.is_some());
-        assert_eq!(snapshot.identity.and_then(|i| i.plan), Some("Standard".to_string()));
+        assert_eq!(
+            snapshot.identity.and_then(|i| i.plan),
+            Some("Standard".to_string())
+        );
     }
 
     #[test]
@@ -409,6 +495,23 @@ mod tests {
         assert_eq!(primary.used_percent, 50.0);
         assert!(primary.resets_at.is_some());
         assert!(primary.reset_description.is_some());
-        assert_eq!(snapshot.identity.and_then(|i| i.plan), Some("Premium".to_string()));
+        assert_eq!(
+            snapshot.identity.and_then(|i| i.plan),
+            Some("Premium".to_string())
+        );
+    }
+
+    #[test]
+    fn parses_usage_with_negative_limit() {
+        let provider = FactoryProvider::new();
+        let json = json!({
+            "usage": { "used": 12, "limit": -24 }
+        });
+
+        let snapshot = provider.parse_usage_response(&json).expect("snapshot");
+        let primary = snapshot.primary.expect("primary");
+
+        assert_eq!(primary.used_percent, 0.0);
+        assert!(primary.reset_description.is_none());
     }
 }

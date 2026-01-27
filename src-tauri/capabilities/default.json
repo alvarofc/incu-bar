@@ -23,6 +23,8 @@
     "notification:allow-notify",
     "store:default",
     "http:default",
-    "positioner:default"
+    "positioner:default",
+    "updater:default",
+    "process:default"
   ]
 }

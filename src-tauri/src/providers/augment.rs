@@ -5,9 +5,9 @@
 //! - /api/credits - usage credits
 //! - /api/subscription - subscription details
 
+use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde::Deserialize;
-use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 
 const BASE_URL: &str = "https://app.augmentcode.com";
 const CREDITS_URL: &str = "https://app.augmentcode.com/api/credits";
@@ -55,8 +55,12 @@ impl AugmentProvider {
         Ok(self.build_snapshot(&credits, subscription.as_ref()))
     }
 
-    async fn fetch_credits(&self, cookie_header: &str) -> Result<AugmentCreditsResponse, AugmentError> {
-        let response = self.client
+    async fn fetch_credits(
+        &self,
+        cookie_header: &str,
+    ) -> Result<AugmentCreditsResponse, AugmentError> {
+        let response = self
+            .client
             .get(CREDITS_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -77,7 +81,8 @@ impl AugmentProvider {
         &self,
         cookie_header: &str,
     ) -> Result<AugmentSubscriptionResponse, AugmentError> {
-        let response = self.client
+        let response = self
+            .client
             .get(SUBSCRIPTION_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -112,8 +117,13 @@ impl AugmentProvider {
         credits: &AugmentCreditsResponse,
         subscription: Option<&AugmentSubscriptionResponse>,
     ) -> UsageSnapshot {
-        let remaining = credits.usage_units_remaining.or(credits.usage_units_available);
-        let consumed = credits.usage_units_consumed_this_billing_cycle.unwrap_or(0.0).max(0.0);
+        let remaining = credits
+            .usage_units_remaining
+            .or(credits.usage_units_available);
+        let consumed = credits
+            .usage_units_consumed_this_billing_cycle
+            .unwrap_or(0.0)
+            .max(0.0);
         let total = remaining.map(|value| (value + consumed).max(0.0));
 
         let used_percent = total
@@ -130,7 +140,9 @@ impl AugmentProvider {
             used_percent,
             window_minutes: None,
             resets_at: resets_at.clone(),
-            reset_description: resets_at.as_ref().and_then(|date| self.format_reset_time(date)),
+            reset_description: resets_at
+                .as_ref()
+                .and_then(|date| self.format_reset_time(date)),
             label: Some("Credits".to_string()),
         });
 
@@ -190,7 +202,8 @@ impl AugmentProvider {
         let mut saw_unauthorized = false;
 
         for endpoint in SESSION_ENDPOINTS {
-            let response = self.client
+            let response = self
+                .client
                 .get(*endpoint)
                 .header("Cookie", cookie_header)
                 .header("Accept", "application/json")
@@ -213,7 +226,9 @@ impl AugmentProvider {
         if saw_unauthorized {
             Err(AugmentError::SessionExpired)
         } else {
-            Err(AugmentError::Api("All session endpoints failed".to_string()))
+            Err(AugmentError::Api(
+                "All session endpoints failed".to_string(),
+            ))
         }
     }
 
@@ -271,7 +286,10 @@ impl ProviderFetcher for AugmentProvider {
                 Ok(usage) => return Ok(usage),
                 Err(err) => {
                     tracing::debug!("Augment fetch with stored cookies failed: {}", err);
-                    if matches!(err, AugmentError::SessionExpired | AugmentError::NotLoggedIn) {
+                    if matches!(
+                        err,
+                        AugmentError::SessionExpired | AugmentError::NotLoggedIn
+                    ) {
                         self.clear_session().await;
                     }
                 }
@@ -298,6 +316,7 @@ struct AugmentCreditsResponse {
     usage_units_remaining: Option<f64>,
     usage_units_consumed_this_billing_cycle: Option<f64>,
     usage_units_available: Option<f64>,
+    #[allow(dead_code)]
     usage_balance_status: Option<String>,
 }
 
@@ -353,7 +372,10 @@ mod tests {
         let credits_snapshot = snapshot.credits.expect("credits");
 
         assert!((primary.used_percent - 20.0).abs() < 0.01);
-        assert_eq!(primary.resets_at, Some("2030-01-02T00:00:00+00:00".to_string()));
+        assert_eq!(
+            primary.resets_at,
+            Some("2030-01-02T00:00:00+00:00".to_string())
+        );
         assert_eq!(credits_snapshot.remaining, 120.0);
         assert_eq!(credits_snapshot.total, Some(150.0));
         assert_eq!(credits_snapshot.unit, "credits");

@@ -2,11 +2,13 @@
 //!
 //! Uses the Kiro CLI status probe to read usage data.
 
-use super::{ProviderFetcher, ProviderIdentity, ProviderStatus, RateWindow, StatusIndicator, UsageSnapshot};
+use super::{
+    ProviderFetcher, ProviderIdentity, ProviderStatus, RateWindow, StatusIndicator, UsageSnapshot,
+};
 use async_trait::async_trait;
 use chrono::Datelike;
-use regex::Regex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
+use regex::Regex;
 use std::io::Read;
 
 use crate::debug_settings;
@@ -206,7 +208,9 @@ impl ProviderFetcher for KiroProvider {
 #[derive(Debug, Clone)]
 struct KiroUsageSnapshot {
     plan_name: String,
+    #[allow(dead_code)]
     credits_used: f64,
+    #[allow(dead_code)]
     credits_total: f64,
     credits_percent: f64,
     bonus_credits_used: Option<f64>,
@@ -313,8 +317,8 @@ mod pty_tests {
     #[test]
     #[cfg(unix)]
     fn spawn_pty_command_captures_output() {
-        let (mut child, reader) = spawn_pty_command("/bin/sh", &["-c", "printf 'ok'"])
-            .expect("spawn");
+        let (mut child, reader) =
+            spawn_pty_command("/bin/sh", &["-c", "printf 'ok'"]).expect("spawn");
         let mut buffer = String::new();
         let mut reader = reader;
         let _ = reader.read_to_string(&mut buffer);
@@ -544,6 +548,10 @@ fn aws_indicator(text: &str) -> StatusIndicator {
     StatusIndicator::Unknown
 }
 
+fn saturating_exit_code<T: TryInto<i32>>(exit_code: T) -> i32 {
+    exit_code.try_into().unwrap_or(i32::MAX)
+}
+
 async fn run_command(
     arguments: &[&str],
     timeout: std::time::Duration,
@@ -553,9 +561,8 @@ async fn run_command(
     let (mut child, output_handle) = spawn_pty_command(&binary, arguments)?;
 
     let (stdout_sender, mut stdout_receiver) = tokio::sync::mpsc::unbounded_channel();
-    let output_task = tokio::task::spawn_blocking(move || {
-        read_stream_blocking(output_handle, stdout_sender)
-    });
+    let output_task =
+        tokio::task::spawn_blocking(move || read_stream_blocking(output_handle, stdout_sender));
     let stderr_task = tokio::task::spawn_blocking(|| Vec::new());
 
     let start = std::time::Instant::now();
@@ -579,7 +586,7 @@ async fn run_command(
             return Ok(CommandResult {
                 stdout: String::from_utf8_lossy(&stdout_bytes).to_string(),
                 stderr: String::from_utf8_lossy(&stderr_bytes).to_string(),
-                status: status.exit_code() as i32,
+                status: saturating_exit_code(status.exit_code()),
                 terminated_for_idle,
             });
         }
@@ -614,7 +621,13 @@ async fn run_command(
 fn spawn_pty_command(
     binary: &str,
     arguments: &[&str],
-) -> Result<(Box<dyn portable_pty::Child + Send + Sync>, Box<dyn Read + Send>), KiroError> {
+) -> Result<
+    (
+        Box<dyn portable_pty::Child + Send + Sync>,
+        Box<dyn Read + Send>,
+    ),
+    KiroError,
+> {
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -734,6 +747,12 @@ mod tests {
 
         let snapshot = provider.parse_output(output).expect("snapshot");
         assert_eq!(snapshot.credits_percent, 25.0);
+    }
+
+    #[test]
+    fn saturating_exit_code_overflow() {
+        let exit_code: u64 = i64::from(i32::MAX) as u64 + 1;
+        assert_eq!(saturating_exit_code(exit_code), i32::MAX);
     }
 
     #[test]

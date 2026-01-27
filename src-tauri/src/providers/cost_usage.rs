@@ -218,7 +218,10 @@ pub(crate) async fn load_cost_snapshot(provider: ProviderId) -> Option<CostSnaps
         .flatten()
 }
 
-pub(crate) fn scan_cost_snapshot(provider: ProviderId, options: &ScanOptions) -> Option<CostSnapshot> {
+pub(crate) fn scan_cost_snapshot(
+    provider: ProviderId,
+    options: &ScanOptions,
+) -> Option<CostSnapshot> {
     let (since_key, until_key) = day_key_range(options.now);
     let mut totals = HashMap::new();
 
@@ -401,7 +404,9 @@ fn scan_codex_file(
                 let info = payload.get("info");
                 let model = info
                     .and_then(|info| info.get("model").and_then(Value::as_str))
-                    .or_else(|| info.and_then(|info| info.get("model_name").and_then(Value::as_str)))
+                    .or_else(|| {
+                        info.and_then(|info| info.get("model_name").and_then(Value::as_str))
+                    })
                     .or_else(|| payload.get("model").and_then(Value::as_str))
                     .or_else(|| value.get("model").and_then(Value::as_str))
                     .map(|model| model.to_string())
@@ -417,9 +422,9 @@ fn scan_codex_file(
                     continue;
                 }
 
-                let mut delta_input;
-                let mut delta_cached;
-                let mut delta_output;
+                let delta_input;
+                let delta_cached;
+                let delta_output;
 
                 if let Some(total) = info.and_then(|info| info.get("total_token_usage")) {
                     let input = value_to_i64(total.get("input_tokens"));
@@ -442,8 +447,7 @@ fn scan_codex_file(
                 } else if let Some(last) = info.and_then(|info| info.get("last_token_usage")) {
                     delta_input = value_to_i64(last.get("input_tokens")).max(0);
                     delta_cached = value_to_i64(
-                        last
-                            .get("cached_input_tokens")
+                        last.get("cached_input_tokens")
                             .or_else(|| last.get("cache_read_input_tokens")),
                     )
                     .max(0);
@@ -638,13 +642,21 @@ fn day_key_from_date(date: NaiveDate) -> String {
 
 fn value_to_i64(value: Option<&Value>) -> i64 {
     match value {
-        Some(Value::Number(num)) => num.as_i64().or_else(|| num.as_f64().map(|n| n as i64)).unwrap_or(0),
+        Some(Value::Number(num)) => num
+            .as_i64()
+            .or_else(|| num.as_f64().map(|n| n as i64))
+            .unwrap_or(0),
         Some(Value::String(text)) => text.trim().parse::<i64>().unwrap_or(0),
         _ => 0,
     }
 }
 
-fn codex_cost_usd(model: &str, input_tokens: i64, cached_input_tokens: i64, output_tokens: i64) -> Option<f64> {
+fn codex_cost_usd(
+    model: &str,
+    input_tokens: i64,
+    cached_input_tokens: i64,
+    output_tokens: i64,
+) -> Option<f64> {
     let normalized = normalize_codex_model(model);
     let pricing = CODEX_PRICING.get(normalized.as_str())?;
     let cached = cached_input_tokens.max(0).min(input_tokens.max(0));

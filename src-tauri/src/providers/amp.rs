@@ -4,8 +4,8 @@
 //! Uses cookie-based authentication via browser cookie import.
 //! Endpoint: https://ampcode.com/settings
 
-use async_trait::async_trait;
 use super::{ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
+use async_trait::async_trait;
 
 const SETTINGS_URL: &str = "https://ampcode.com/settings";
 
@@ -24,10 +24,14 @@ impl AmpProvider {
     }
 
     async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<UsageSnapshot, AmpError> {
-        let response = self.client
+        let response = self
+            .client
             .get(SETTINGS_URL)
             .header("Cookie", cookie_header)
-            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+            .header(
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            )
             .header("Accept-Language", "en-US,en;q=0.9")
             .header("Origin", "https://ampcode.com")
             .header("Referer", SETTINGS_URL)
@@ -42,7 +46,10 @@ impl AmpProvider {
             status => return Err(AmpError::Api(format!("HTTP {}", status))),
         }
 
-        let html = response.text().await.map_err(|err| AmpError::Api(err.to_string()))?;
+        let html = response
+            .text()
+            .await
+            .map_err(|err| AmpError::Api(err.to_string()))?;
         self.parse_usage_response(&html)
     }
 
@@ -61,7 +68,11 @@ impl AmpProvider {
     fn build_snapshot(&self, usage: &FreeTierUsage) -> UsageSnapshot {
         let quota = usage.quota.max(0.0);
         let used = usage.used.max(0.0);
-        let used_percent = if quota > 0.0 { (used / quota) * 100.0 } else { 0.0 };
+        let used_percent = if quota > 0.0 {
+            (used / quota) * 100.0
+        } else {
+            0.0
+        };
 
         let window_minutes = usage
             .window_hours
@@ -217,7 +228,9 @@ impl AmpProvider {
     }
 
     fn is_word_boundary(&self, text: &str, index: usize, len: usize) -> bool {
-        let before = index.checked_sub(1).and_then(|idx| text.as_bytes().get(idx));
+        let before = index
+            .checked_sub(1)
+            .and_then(|idx| text.as_bytes().get(idx));
         let after = text.as_bytes().get(index + len);
 
         let before_ok = before.map(|b| !self.is_word_char(*b)).unwrap_or(true);

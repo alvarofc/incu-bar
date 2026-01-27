@@ -3,7 +3,7 @@
 //! Reads local IDE log files to extract monthly AI credits usage.
 
 use async_trait::async_trait;
-use chrono::Datelike;
+use chrono::{Datelike, TimeZone};
 use glob::glob;
 use std::path::{Path, PathBuf};
 
@@ -81,7 +81,11 @@ impl JetbrainsProvider {
 
     fn base_paths(&self) -> Result<Vec<PathBuf>, anyhow::Error> {
         if let Ok(path) = std::env::var("JETBRAINS_IDE_BASE_PATH") {
-            let separator = if cfg!(target_os = "windows") { ';' } else { ':' };
+            let separator = if cfg!(target_os = "windows") {
+                ';'
+            } else {
+                ':'
+            };
             let paths = path
                 .split(separator)
                 .filter(|entry| !entry.trim().is_empty())
@@ -154,7 +158,9 @@ impl JetbrainsProvider {
 
     fn parse_credits_line(&self, line: &str) -> Option<CreditsUsage> {
         let lower = line.to_lowercase();
-        if !lower.contains("credit") || (!contains_word(&lower, "ai") && !contains_word(&lower, "assistant")) {
+        if !lower.contains("credit")
+            || (!contains_word(&lower, "ai") && !contains_word(&lower, "assistant"))
+        {
             return None;
         }
 
@@ -163,9 +169,12 @@ impl JetbrainsProvider {
             return None;
         }
 
-        let has_remaining = lower.contains("remaining") || lower.contains("left") || lower.contains("available");
-        let has_used = lower.contains("used") || lower.contains("spent") || lower.contains("consumed");
-        let has_total = lower.contains("total") || lower.contains("limit") || lower.contains("quota");
+        let has_remaining =
+            lower.contains("remaining") || lower.contains("left") || lower.contains("available");
+        let has_used =
+            lower.contains("used") || lower.contains("spent") || lower.contains("consumed");
+        let _has_total =
+            lower.contains("total") || lower.contains("limit") || lower.contains("quota");
         let has_separator = lower.contains('/') || lower.contains("of");
 
         if has_remaining {
@@ -262,7 +271,7 @@ impl JetbrainsProvider {
             .unwrap_or_else(|| chrono::NaiveDate::from_ymd_opt(year, month, 1).unwrap());
         let first_next_month = first_next_month.and_hms_opt(0, 0, 0).unwrap();
         let end_of_month = first_next_month - chrono::Duration::seconds(1);
-        chrono::DateTime::<chrono::Utc>::from_utc(end_of_month, chrono::Utc)
+        chrono::Utc.from_utc_datetime(&end_of_month)
     }
 
     fn format_reset_time(&self, reset_date: &chrono::DateTime<chrono::Utc>) -> String {
@@ -305,7 +314,9 @@ fn contains_word(text: &str, word: &str) -> bool {
     let mut start = 0usize;
     while let Some(pos) = text[start..].find(word) {
         let index = start + pos;
-        let before = index.checked_sub(1).and_then(|idx| text.as_bytes().get(idx));
+        let before = index
+            .checked_sub(1)
+            .and_then(|idx| text.as_bytes().get(idx));
         let after = text.as_bytes().get(index + word.len());
         let before_ok = before.map(|b| !is_word_char(*b)).unwrap_or(true);
         let after_ok = after.map(|b| !is_word_char(*b)).unwrap_or(true);
@@ -389,7 +400,9 @@ mod tests {
     #[test]
     fn ignores_lines_without_ai_context() {
         let provider = JetbrainsProvider::new();
-        assert!(provider.parse_credits_line("Credits remaining: 100").is_none());
+        assert!(provider
+            .parse_credits_line("Credits remaining: 100")
+            .is_none());
     }
 
     #[test]

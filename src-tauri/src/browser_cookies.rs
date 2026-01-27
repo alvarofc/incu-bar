@@ -4,7 +4,7 @@
 //! providers that require cookie-based authentication.
 //!
 //! ## Permissions Required
-//! 
+//!
 //! ### Chrome/Chromium browsers (macOS)
 //! - Keychain access: The app will prompt for keychain access to decrypt cookies
 //! - If denied, cookie import will fail with a keychain error
@@ -18,11 +18,13 @@
 //! - Grant in System Settings > Privacy & Security > Full Disk Access
 
 use anyhow::Result;
-use decrypt_cookies::prelude::*;
 use decrypt_cookies::chromium::{ChromiumCookie, GetCookies};
+use decrypt_cookies::prelude::*;
 
 // Firefox support
-use decrypt_cookies::firefox::{builder::FirefoxBuilder, GetCookies as FirefoxGetCookies, MozCookie};
+use decrypt_cookies::firefox::{
+    builder::FirefoxBuilder, GetCookies as FirefoxGetCookies, MozCookie,
+};
 
 // Safari support (macOS only) - SafariCookie is re-exported from prelude
 #[cfg(target_os = "macos")]
@@ -30,6 +32,7 @@ use decrypt_cookies::safari::SafariBuilder;
 
 /// Domains to extract cookies for Cursor
 const CURSOR_DOMAINS: &[&str] = &["cursor.com", "cursor.sh", "workos.com"];
+const CODEX_DOMAINS: &[&str] = &["chatgpt.com", "openai.com"];
 const FACTORY_DOMAINS: &[&str] = &["factory.ai", "app.factory.ai"];
 const AUGMENT_DOMAINS: &[&str] = &["augmentcode.com", "app.augmentcode.com"];
 const KIMI_DOMAINS: &[&str] = &["kimi.moonshot.cn", "kimi.com"];
@@ -46,7 +49,7 @@ pub struct BrowserCookieResult {
 }
 
 /// Import Cursor cookies from system browsers
-/// 
+///
 /// Tries Chrome first (most common), then other Chromium browsers.
 /// Returns the first successful result.
 pub async fn import_cursor_cookies_from_browser() -> Result<BrowserCookieResult> {
@@ -57,6 +60,17 @@ pub async fn import_cursor_cookies_from_browser_source(
     source: BrowserCookieSource,
 ) -> Result<BrowserCookieResult> {
     import_cookies_for_domains_from_source(CURSOR_DOMAINS, source).await
+}
+
+/// Import Codex (ChatGPT) cookies from system browsers
+pub async fn import_codex_cookies_from_browser() -> Result<BrowserCookieResult> {
+    import_cookies_for_domains(CODEX_DOMAINS).await
+}
+
+pub async fn import_codex_cookies_from_browser_source(
+    source: BrowserCookieSource,
+) -> Result<BrowserCookieResult> {
+    import_cookies_for_domains_from_source(CODEX_DOMAINS, source).await
 }
 
 /// Import Factory (Droid) cookies from system browsers
@@ -131,33 +145,33 @@ pub async fn import_cookies_for_domains(domains: &[&str]) -> Result<BrowserCooki
     if let Ok(result) = try_firefox_cookies(domains).await {
         return Ok(result);
     }
-    
+
     // Try Chrome (most common browser)
     if let Ok(result) = try_chrome_cookies(domains).await {
         return Ok(result);
     }
-    
+
     // Try Safari (macOS only) - second preference for Mac users
     #[cfg(target_os = "macos")]
     if let Ok(result) = try_safari_cookies(domains).await {
         return Ok(result);
     }
-    
+
     // Try Edge
     if let Ok(result) = try_edge_cookies(domains).await {
         return Ok(result);
     }
-    
+
     // Try Brave
     if let Ok(result) = try_brave_cookies(domains).await {
         return Ok(result);
     }
-    
+
     // Try Chromium
     if let Ok(result) = try_chromium_cookies(domains).await {
         return Ok(result);
     }
-    
+
     Err(anyhow::anyhow!(
         "Could not find cookies in any browser for domains: {:?}. \
         Make sure you're logged in, then try again. \
@@ -214,7 +228,7 @@ pub async fn import_cookies_for_domains_from_source(
 
 async fn try_firefox_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Firefox...");
-    
+
     let firefox = FirefoxBuilder::<Firefox>::new()
         .build_cookie()
         .await
@@ -223,23 +237,25 @@ async fn try_firefox_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
             if err_str.contains("locked") || err_str.contains("busy") {
                 anyhow::anyhow!("Firefox database is locked. Please close Firefox and try again.")
             } else if err_str.contains("No such file") || err_str.contains("not found") {
-                anyhow::anyhow!("Firefox profile not found. Make sure Firefox is installed and has been used.")
+                anyhow::anyhow!(
+                    "Firefox profile not found. Make sure Firefox is installed and has been used."
+                )
             } else {
                 anyhow::anyhow!("Firefox not available: {}", e)
             }
         })?;
-    
+
     let all_cookies: Vec<MozCookie> = firefox
         .cookies_all()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to read Firefox cookies: {}", e))?;
-    
+
     extract_firefox_cookies("Firefox", all_cookies, domains)
 }
 
 async fn try_chrome_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Chrome...");
-    
+
     let chromium = ChromiumBuilder::<Chrome>::new()
         .build()
         .await
@@ -251,67 +267,66 @@ async fn try_chrome_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
                 anyhow::anyhow!("Chrome not available: {}", e)
             }
         })?;
-    
-    let all_cookies: Vec<ChromiumCookie> = chromium
-        .cookies_all()
-        .await
-        .map_err(|e| {
-            let err_str = e.to_string();
-            if err_str.contains("keychain") || err_str.contains("Keychain") {
-                anyhow::anyhow!("Failed to decrypt Chrome cookies. Please allow keychain access when prompted.")
-            } else {
-                anyhow::anyhow!("Failed to read Chrome cookies: {}", e)
-            }
-        })?;
-    
+
+    let all_cookies: Vec<ChromiumCookie> = chromium.cookies_all().await.map_err(|e| {
+        let err_str = e.to_string();
+        if err_str.contains("keychain") || err_str.contains("Keychain") {
+            anyhow::anyhow!(
+                "Failed to decrypt Chrome cookies. Please allow keychain access when prompted."
+            )
+        } else {
+            anyhow::anyhow!("Failed to read Chrome cookies: {}", e)
+        }
+    })?;
+
     extract_chromium_cookies("Chrome", all_cookies, domains)
 }
 
 async fn try_edge_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Edge...");
-    
+
     let chromium = ChromiumBuilder::<Edge>::new()
         .build()
         .await
         .map_err(|e| anyhow::anyhow!("Edge not available: {}", e))?;
-    
+
     let all_cookies: Vec<ChromiumCookie> = chromium
         .cookies_all()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to read Edge cookies: {}", e))?;
-    
+
     extract_chromium_cookies("Edge", all_cookies, domains)
 }
 
 async fn try_brave_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Brave...");
-    
+
     let chromium = ChromiumBuilder::<Brave>::new()
         .build()
         .await
         .map_err(|e| anyhow::anyhow!("Brave not available: {}", e))?;
-    
+
     let all_cookies: Vec<ChromiumCookie> = chromium
         .cookies_all()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to read Brave cookies: {}", e))?;
-    
+
     extract_chromium_cookies("Brave", all_cookies, domains)
 }
 
 async fn try_chromium_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Chromium...");
-    
+
     let chromium = ChromiumBuilder::<Chromium>::new()
         .build()
         .await
         .map_err(|e| anyhow::anyhow!("Chromium not available: {}", e))?;
-    
+
     let all_cookies: Vec<ChromiumCookie> = chromium
         .cookies_all()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to read Chromium cookies: {}", e))?;
-    
+
     extract_chromium_cookies("Chromium", all_cookies, domains)
 }
 
@@ -362,7 +377,7 @@ fn extract_chromium_cookies(
     domains: &[&str],
 ) -> Result<BrowserCookieResult> {
     let mut cookie_parts: Vec<String> = Vec::new();
-    
+
     for cookie in cookies {
         let cookie_domain = cookie.host_key.to_lowercase();
         for &target_domain in domains {
@@ -372,7 +387,10 @@ fn extract_chromium_cookies(
                 if !value.is_empty() {
                     let part = format!("{}={}", cookie.name, value);
                     // Avoid duplicate cookie names
-                    if !cookie_parts.iter().any(|p| p.starts_with(&format!("{}=", cookie.name))) {
+                    if !cookie_parts
+                        .iter()
+                        .any(|p| p.starts_with(&format!("{}=", cookie.name)))
+                    {
                         cookie_parts.push(part);
                     }
                 }
@@ -380,7 +398,7 @@ fn extract_chromium_cookies(
             }
         }
     }
-    
+
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
             "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
@@ -388,16 +406,16 @@ fn extract_chromium_cookies(
             domains
         ));
     }
-    
+
     let cookie_header = cookie_parts.join("; ");
     let cookie_count = cookie_parts.len();
-    
+
     tracing::info!(
         "Found {} cookies in {} for target domains",
         cookie_count,
         browser_name
     );
-    
+
     Ok(BrowserCookieResult {
         browser_name: browser_name.to_string(),
         cookie_header,
@@ -420,7 +438,7 @@ fn extract_firefox_cookies(
     domains: &[&str],
 ) -> Result<BrowserCookieResult> {
     let mut cookie_parts: Vec<String> = Vec::new();
-    
+
     for cookie in cookies {
         let cookie_domain = cookie.host.to_lowercase();
         for &target_domain in domains {
@@ -428,7 +446,10 @@ fn extract_firefox_cookies(
                 if !cookie.value.is_empty() {
                     let part = format!("{}={}", cookie.name, cookie.value);
                     // Avoid duplicate cookie names
-                    if !cookie_parts.iter().any(|p| p.starts_with(&format!("{}=", cookie.name))) {
+                    if !cookie_parts
+                        .iter()
+                        .any(|p| p.starts_with(&format!("{}=", cookie.name)))
+                    {
                         cookie_parts.push(part);
                     }
                 }
@@ -436,7 +457,7 @@ fn extract_firefox_cookies(
             }
         }
     }
-    
+
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
             "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
@@ -444,16 +465,16 @@ fn extract_firefox_cookies(
             domains
         ));
     }
-    
+
     let cookie_header = cookie_parts.join("; ");
     let cookie_count = cookie_parts.len();
-    
+
     tracing::info!(
         "Found {} cookies in {} for target domains",
         cookie_count,
         browser_name
     );
-    
+
     Ok(BrowserCookieResult {
         browser_name: browser_name.to_string(),
         cookie_header,
@@ -466,7 +487,7 @@ fn extract_firefox_cookies(
 #[cfg(target_os = "macos")]
 async fn try_safari_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
     tracing::info!("Attempting to import cookies from Safari...");
-    
+
     let safari = SafariBuilder::new()
         .build()
         .await
@@ -480,10 +501,10 @@ async fn try_safari_cookies(domains: &[&str]) -> Result<BrowserCookieResult> {
                 anyhow::anyhow!("Safari not available: {}", e)
             }
         })?;
-    
+
     // SafariCookie is from the prelude
     let all_cookies = safari.cookies_all();
-    
+
     extract_safari_cookies("Safari", all_cookies, domains)
 }
 
@@ -494,7 +515,7 @@ fn extract_safari_cookies(
     domains: &[&str],
 ) -> Result<BrowserCookieResult> {
     let mut cookie_parts: Vec<String> = Vec::new();
-    
+
     for cookie in cookies {
         let cookie_domain = cookie.domain.to_lowercase();
         for &target_domain in domains {
@@ -502,7 +523,10 @@ fn extract_safari_cookies(
                 if !cookie.value.is_empty() {
                     let part = format!("{}={}", cookie.name, cookie.value);
                     // Avoid duplicate cookie names
-                    if !cookie_parts.iter().any(|p| p.starts_with(&format!("{}=", cookie.name))) {
+                    if !cookie_parts
+                        .iter()
+                        .any(|p| p.starts_with(&format!("{}=", cookie.name)))
+                    {
                         cookie_parts.push(part);
                     }
                 }
@@ -510,7 +534,7 @@ fn extract_safari_cookies(
             }
         }
     }
-    
+
     if cookie_parts.is_empty() {
         return Err(anyhow::anyhow!(
             "No cookies found in {} for domains: {:?}. Make sure you're logged in.",
@@ -518,16 +542,16 @@ fn extract_safari_cookies(
             domains
         ));
     }
-    
+
     let cookie_header = cookie_parts.join("; ");
     let cookie_count = cookie_parts.len();
-    
+
     tracing::info!(
         "Found {} cookies in {} for target domains",
         cookie_count,
         browser_name
     );
-    
+
     Ok(BrowserCookieResult {
         browser_name: browser_name.to_string(),
         cookie_header,

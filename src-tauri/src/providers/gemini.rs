@@ -649,7 +649,7 @@ async fn run_cli_with_pty(
     };
 
     let output_bytes = output_task.await.unwrap_or_default();
-    let exit_code = i32::try_from(status.exit_code()).unwrap_or(-1);
+    let exit_code = status.exit_code().try_into().unwrap_or(i32::MAX);
     Ok(CliRunResult {
         success: status.success(),
         exit_code,
@@ -682,8 +682,14 @@ async fn find_gemini_cli() -> Option<String> {
     let candidates = [
         "/usr/local/bin/gemini",
         "/opt/homebrew/bin/gemini",
-        &format!("{}/.local/bin/gemini", std::env::var("HOME").unwrap_or_default()),
-        &format!("{}/.npm-global/bin/gemini", std::env::var("HOME").unwrap_or_default()),
+        &format!(
+            "{}/.local/bin/gemini",
+            std::env::var("HOME").unwrap_or_default()
+        ),
+        &format!(
+            "{}/.npm-global/bin/gemini",
+            std::env::var("HOME").unwrap_or_default()
+        ),
     ];
 
     candidates
@@ -763,5 +769,11 @@ exit 0
 
         let refreshed = result.expect("credentials");
         assert_eq!(refreshed.access_token.as_deref(), Some("cli-token"));
+    }
+
+    #[test]
+    fn exit_code_saturates_on_overflow() {
+        let exit_code: u64 = i64::from(i32::MAX) as u64 + 1;
+        assert_eq!(exit_code.try_into().unwrap_or(i32::MAX), i32::MAX);
     }
 }

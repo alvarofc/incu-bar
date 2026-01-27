@@ -5,13 +5,13 @@
 
 pub mod browser_cookies;
 pub mod commands;
-pub mod login;
 pub mod debug_settings;
+pub mod login;
 pub mod providers;
 pub mod storage;
 pub mod tray;
 
-use tauri::{Emitter, Manager};
+use tauri::{ActivationPolicy, Emitter, Manager};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_process;
@@ -21,9 +21,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 fn init_logging() {
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_subscriber::fmt::layer().with_writer(debug_settings::file_writer()),
-        )
+        .with(tracing_subscriber::fmt::layer().with_writer(debug_settings::file_writer()))
         .with(
             tracing_subscriber::EnvFilter::from_default_env()
                 .add_directive("incubar_tauri=debug".parse().unwrap()),
@@ -37,6 +35,7 @@ fn format_run_error(error: impl std::fmt::Display) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    eprintln!("IncuBar starting...");
     init_logging();
 
     let run_result = tauri::Builder::default()
@@ -53,11 +52,21 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            // Initialize the tray icon
-            tray::setup_tray(app.handle())?;
-
+            eprintln!("Running setup...");
+            app.set_activation_policy(ActivationPolicy::Regular);
             // Create the popup window (hidden by default)
             tray::create_popup_window(app.handle())?;
+            eprintln!("Popup window created");
+
+            // Initialize the tray icon after the window exists
+            let tray_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                if let Err(err) = tray::setup_tray(&tray_app) {
+                    tracing::error!("Tray setup failed: {err}");
+                }
+            });
+            eprintln!("Tray setup scheduled");
 
             // Initialize the provider registry
             let registry = providers::ProviderRegistry::new();
@@ -69,9 +78,10 @@ pub fn run() {
                 providers::start_refresh_loop(handle).await;
             });
 
-            app.global_shortcut().on_shortcut("CmdOrCtrl+R", move |app, _, _| {
-                let _ = app.emit("refresh-requested", ());
-            })?;
+            app.global_shortcut()
+                .on_shortcut("CmdOrCtrl+R", move |app, _, _| {
+                    let _ = app.emit("refresh-requested", ());
+                })?;
 
             tracing::info!("IncuBar initialized successfully");
             Ok(())

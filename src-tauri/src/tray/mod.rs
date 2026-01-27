@@ -10,8 +10,7 @@ use std::f64::consts::PI;
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
-    menu::{MenuBuilder, MenuItemBuilder},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
 use tauri_plugin_positioner::{Position, WindowExt};
@@ -34,7 +33,6 @@ const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
 const RANDOM_BLINK_INTERVAL_MS: u64 = 4200;
 const RANDOM_BLINK_VARIANCE_MS: u64 = 1600;
-const TRAY_REFRESH_MENU_ID: &str = "tray_refresh";
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> =
     Lazy::new(|| RwLock::new(TrayUsageState::default()));
@@ -44,6 +42,24 @@ static TRAY_DISPLAY_TEXT_STATE: Lazy<RwLock<TrayDisplayTextState>> =
 
 static TRAY_ANIMATION_CONTROL: Lazy<Mutex<Option<mpsc::UnboundedSender<AnimationCommand>>>> =
     Lazy::new(|| Mutex::new(None));
+
+static TRAY_HANDLE: Lazy<Mutex<Option<TrayIcon>>> = Lazy::new(|| Mutex::new(None));
+static TRAY_ICON_TEMPLATE: Lazy<Image<'static>> = Lazy::new(|| {
+    let bytes = include_bytes!("../../icons/32x32.png");
+    Image::from_bytes(bytes)
+        .map(|image| image.to_owned())
+        .unwrap_or_else(|err| {
+            tracing::warn!("Failed to load tray icon bytes: {err}");
+            render_tray_icon(TrayRenderState {
+                usage_rings: Vec::new(),
+                status: TrayStatus::Disabled,
+                primary_provider: None,
+                animation_phase: 0,
+                blink_enabled: false,
+                theme: Theme::Light,
+            })
+        })
+});
 
 enum AnimationCommand {
     Wake(AppHandle),
@@ -602,18 +618,24 @@ fn should_start_animation_thread(state: &TrayRenderState, from_animation_thread:
 }
 
 fn update_tray_icon_with_animation(app: &AppHandle, from_animation_thread: bool) -> Result<()> {
-    let tray = match app.tray_by_id(TRAY_ICON_ID) {
-        Some(tray) => tray,
-        None => {
-            tracing::warn!("Tray icon not found for updates");
-            return Ok(());
-        }
+    let tray = {
+        let guard = TRAY_HANDLE.lock().unwrap();
+        guard.clone()
+    };
+
+    let Some(tray) = tray else {
+        tracing::warn!("Tray icon not found for updates");
+        return Ok(());
     };
 
     let state = compute_render_state();
-    let icon = render_tray_icon(state.clone());
+    let icon = if matches!(state.status, TrayStatus::Loading) {
+        render_tray_icon(state.clone())
+    } else {
+        TRAY_ICON_TEMPLATE.clone()
+    };
     tray.set_icon(Some(icon))?;
-    tray.set_icon_as_template(false)?;
+    tray.set_icon_as_template(true)?;
     tray.set_tooltip(Some(build_tray_tooltip()))?;
     tray.set_title(build_tray_title(&state))?;
 
@@ -1032,24 +1054,18 @@ fn format_tray_tooltip(state: &TrayUsageState) -> String {
 /// Set up the system tray icon
 pub fn setup_tray(app: &AppHandle) -> Result<()> {
     tracing::info!("Setting up tray icon...");
-    let refresh_menu_item = MenuItemBuilder::with_id(TRAY_REFRESH_MENU_ID, "Refresh")
-        .accelerator("CmdOrCtrl+R")
-        .build(app)?;
-    let tray_menu = MenuBuilder::new(app).item(&refresh_menu_item).build()?;
-
     tracing::info!("Building tray icon with initial state...");
-    let _tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
+    
+    let initial_icon = TRAY_ICON_TEMPLATE.clone();
+    tracing::info!(
+        "Loaded tray icon: {}x{}",
+        initial_icon.width(),
+        initial_icon.height()
+    );
+    let tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
-        .menu(&tray_menu)
-        .icon(render_tray_icon(TrayRenderState {
-            usage_rings: Vec::new(),
-            status: TrayStatus::Disabled,
-            primary_provider: None,
-            animation_phase: 0,
-            blink_enabled: false,
-            theme: Theme::Light,
-        }))
-        .icon_as_template(false)
+        .icon(initial_icon)
+        .icon_as_template(true)
         .on_tray_icon_event(|tray, event| {
             // Forward tray events to the positioner plugin
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
@@ -1069,12 +1085,12 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
                 _ => {}
             }
         })
-        .on_menu_event(|tray, event| {
-            if event.id().as_ref() == TRAY_REFRESH_MENU_ID {
-                let _ = tray.app_handle().emit("refresh-requested", ());
-            }
-        })
         .build(app)?;
+
+    tracing::info!("Tray icon build complete");
+
+    let mut tray_guard = TRAY_HANDLE.lock().unwrap();
+    *tray_guard = Some(tray);
 
     update_tray_icon(app)?;
     start_random_blinking_loop(app);
@@ -1417,21 +1433,25 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
             tracing::info!("Hiding popup");
             window.hide()?;
         } else {
-            // Use the positioner plugin to position at tray center
-            // This handles multi-monitor setups correctly
-            if let Err(e) = window.as_ref().window().move_window(Position::TrayCenter) {
-                tracing::warn!(
-                    "Failed to position at TrayCenter: {}, trying TrayBottomCenter",
-                    e
-                );
-                // Fallback to TrayBottomCenter if TrayCenter fails
-                if let Err(e2) = window
-                    .as_ref()
-                    .window()
-                    .move_window(Position::TrayBottomCenter)
-                {
-                    tracing::error!("Failed to position popup: {}", e2);
+            // Use the positioner plugin to position at tray center.
+            // Guard against missing tray icon to avoid plugin panic.
+            if app.tray_by_id(TRAY_ICON_ID).is_some() {
+                if let Err(e) = window.as_ref().window().move_window(Position::TrayCenter) {
+                    tracing::warn!(
+                        "Failed to position at TrayCenter: {}, trying TrayBottomCenter",
+                        e
+                    );
+                    // Fallback to TrayBottomCenter if TrayCenter fails
+                    if let Err(e2) = window
+                        .as_ref()
+                        .window()
+                        .move_window(Position::TrayBottomCenter)
+                    {
+                        tracing::error!("Failed to position popup: {}", e2);
+                    }
                 }
+            } else {
+                tracing::warn!("Tray icon not ready; skipping positioner move");
             }
 
             tracing::info!("Showing popup at TrayCenter");

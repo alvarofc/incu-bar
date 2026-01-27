@@ -11,11 +11,6 @@
   },
   "app": {
     "windows": [],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "tooltip": "IncuBar - AI Usage Tracker"
-    },
     "security": {
       "csp": {
         "default-src": "'self'",
@@ -31,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": "v1Compatible",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -41,5 +37,14 @@
     "category": "Utility",
     "shortDescription": "AI Usage Tracker",
     "longDescription": "Track API usage limits across Claude, Codex, Cursor, and other AI coding assistants"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://updates.incubar.app/{{target}}/{{current_version}}"
+      ]
+    },
+    "process": {}
   }
 }

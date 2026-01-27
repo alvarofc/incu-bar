@@ -8,6 +8,7 @@ export const COOKIE_SOURCES: CookieSource[] = [
   'edge',
   'brave',
   'opera',
+  'manual',
 ];
 
 export const COOKIE_SOURCE_LABELS: Record<CookieSource, string> = {
@@ -18,6 +19,7 @@ export const COOKIE_SOURCE_LABELS: Record<CookieSource, string> = {
   edge: 'Edge',
   brave: 'Brave',
   opera: 'Opera',
+  manual: 'Manual',
 };
 
 export const DEFAULT_COOKIE_SOURCE: CookieSource = 'chrome';

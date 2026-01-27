@@ -4,9 +4,9 @@
 //! Uses cookie-based authentication via browser cookie import.
 //! Endpoint: https://platform.minimax.io/platform/api/subscription/coding_plan/remains
 
+use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 use async_trait::async_trait;
 use serde::Deserialize;
-use super::{Credits, ProviderFetcher, ProviderIdentity, RateWindow, UsageSnapshot};
 
 const USAGE_URL: &str = "https://platform.minimax.io/platform/api/subscription/coding_plan/remains";
 
@@ -24,8 +24,12 @@ impl MinimaxProvider {
         Self { client }
     }
 
-    async fn fetch_with_cookies(&self, cookie_header: &str) -> Result<MinimaxUsageResponse, MinimaxError> {
-        let response = self.client
+    async fn fetch_with_cookies(
+        &self,
+        cookie_header: &str,
+    ) -> Result<MinimaxUsageResponse, MinimaxError> {
+        let response = self
+            .client
             .get(USAGE_URL)
             .header("Cookie", cookie_header)
             .header("Accept", "application/json")
@@ -51,7 +55,10 @@ impl MinimaxProvider {
         }
     }
 
-    fn build_snapshot(&self, response: &MinimaxUsageResponse) -> Result<UsageSnapshot, MinimaxError> {
+    fn build_snapshot(
+        &self,
+        response: &MinimaxUsageResponse,
+    ) -> Result<UsageSnapshot, MinimaxError> {
         let data = response.data.as_ref().unwrap_or(&response.flat);
         if data.remaining_credits.is_none() && data.total_credits.is_none() {
             return Err(MinimaxError::MissingData);
@@ -154,7 +161,10 @@ impl ProviderFetcher for MinimaxProvider {
                 Ok(usage) => return Ok(self.build_snapshot(&usage)?),
                 Err(err) => {
                     tracing::debug!("MiniMax fetch with stored cookies failed: {}", err);
-                    if matches!(err, MinimaxError::SessionExpired | MinimaxError::NotLoggedIn) {
+                    if matches!(
+                        err,
+                        MinimaxError::SessionExpired | MinimaxError::NotLoggedIn
+                    ) {
                         self.clear_session().await;
                     }
                 }
@@ -167,7 +177,8 @@ impl ProviderFetcher for MinimaxProvider {
                     tracing::debug!("Failed to store MiniMax session: {}", err);
                 }
                 let response = self.fetch_with_cookies(&result.cookie_header).await?;
-                self.build_snapshot(&response).map_err(|err| anyhow::anyhow!(err.to_string()))
+                self.build_snapshot(&response)
+                    .map_err(|err| anyhow::anyhow!(err.to_string()))
             }
             Err(err) => Err(anyhow::anyhow!("Not authenticated: {}", err)),
         }

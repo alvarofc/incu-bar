@@ -3,12 +3,7 @@
 //! Uses local Antigravity language server status probe to read usage data.
 
 use super::{
-    ProviderFetcher,
-    ProviderIdentity,
-    ProviderStatus,
-    RateWindow,
-    StatusIndicator,
-    UsageSnapshot,
+    ProviderFetcher, ProviderIdentity, ProviderStatus, RateWindow, StatusIndicator, UsageSnapshot,
 };
 use async_trait::async_trait;
 use regex::Regex;
@@ -139,8 +134,10 @@ impl AntigravityProvider {
             }
             saw_antigravity_process = true;
 
-            let csrf_token =
-                extract_flag("--csrf_token", command).ok_or(AntigravityError::MissingCsrfToken)?;
+            let csrf_token = match extract_flag("--csrf_token", command) {
+                Some(token) => token,
+                None => continue, // Keep searching for a process with csrf_token
+            };
             let extension_port = extract_flag("--extension_server_port", command)
                 .and_then(|raw| raw.parse::<i32>().ok());
 
@@ -396,6 +393,7 @@ struct AntigravityStatusSnapshot {
 #[derive(Debug, Clone)]
 struct AntigravityModelQuota {
     label: String,
+    #[allow(dead_code)]
     model_id: String,
     remaining_fraction: Option<f64>,
     reset_time: Option<String>,
@@ -715,6 +713,7 @@ impl GoogleWorkspaceIncident {
 
 #[derive(Debug, serde::Deserialize, Clone)]
 struct GoogleWorkspaceProduct {
+    #[allow(dead_code)]
     title: Option<String>,
     id: String,
 }
@@ -740,6 +739,7 @@ fn invalid_code(code: Option<&CodeValue>) -> Option<String> {
 #[serde(rename_all = "camelCase")]
 struct UserStatusResponse {
     code: Option<CodeValue>,
+    #[allow(dead_code)]
     message: Option<String>,
     user_status: Option<UserStatus>,
 }
@@ -748,6 +748,7 @@ struct UserStatusResponse {
 #[serde(rename_all = "camelCase")]
 struct CommandModelConfigResponse {
     code: Option<CodeValue>,
+    #[allow(dead_code)]
     message: Option<String>,
     client_model_configs: Option<Vec<ModelConfig>>,
 }

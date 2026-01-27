@@ -37,6 +37,10 @@ struct CliRunResult {
     output: String,
 }
 
+fn saturating_exit_code<T: TryInto<i32>>(exit_code: T) -> i32 {
+    exit_code.try_into().unwrap_or(i32::MAX)
+}
+
 async fn run_cli_with_pty(
     binary: &str,
     args: &[&str],
@@ -73,7 +77,7 @@ async fn run_cli_with_pty(
     };
 
     let output_bytes = output_task.await.unwrap_or_default();
-    let exit_code = i32::try_from(status.exit_code()).unwrap_or(-1);
+    let exit_code = saturating_exit_code(status.exit_code());
     Ok(CliRunResult {
         success: status.success(),
         exit_code,
@@ -1282,7 +1286,7 @@ pub async fn run_gemini_login() -> Result<LoginResult, anyhow::Error> {
 
 #[cfg(test)]
 mod tests {
-    use super::run_cli_with_pty;
+    use super::{run_cli_with_pty, saturating_exit_code};
 
     #[tokio::test]
     #[cfg(unix)]
@@ -1297,5 +1301,11 @@ mod tests {
 
         assert!(result.success);
         assert!(result.output.contains("ok"));
+    }
+
+    #[test]
+    fn saturating_exit_code_overflow() {
+        let exit_code: u64 = i64::from(i32::MAX) as u64 + 1;
+        assert_eq!(saturating_exit_code(exit_code), i32::MAX);
     }
 }

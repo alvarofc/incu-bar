@@ -1,5 +1,5 @@
 use incubar_tauri_lib::providers::{
-    load_cost_snapshot, ProviderId, ProviderRegistry, ProviderStatus, StatusIndicator,
+    load_cost_snapshot, ProviderId, ProviderRegistry, StatusIndicator,
 };
 use serde::Serialize;
 
@@ -227,7 +227,11 @@ fn render_status_text(provider: &str, payload: &StatusPayload) -> String {
     let mut lines = Vec::new();
     lines.push(format!("== {provider} Status =="));
     let mut status_line = format!("Status: {}", status_label(payload.indicator.as_str()));
-    if let Some(description) = payload.description.as_ref().filter(|value| !value.is_empty()) {
+    if let Some(description) = payload
+        .description
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
         status_line.push_str(" - ");
         status_line.push_str(description);
     }
@@ -244,7 +248,10 @@ fn render_status_text(provider: &str, payload: &StatusPayload) -> String {
 fn render_cost_text(provider: &str, payload: &CostPayload) -> String {
     let mut lines = Vec::new();
     lines.push(format!("{provider} Cost (local)"));
-    let today_cost = payload.session_cost_usd.map(format_usd).unwrap_or_else(|| "—".to_string());
+    let today_cost = payload
+        .session_cost_usd
+        .map(format_usd)
+        .unwrap_or_else(|| "—".to_string());
     let today_tokens = payload
         .session_tokens
         .map(format_tokens)
