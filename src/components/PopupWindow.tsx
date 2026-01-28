@@ -36,10 +36,14 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const settingsEnabledIds = [...settingsEnabledProviders].sort().join('|');
   const isProvidersSynced = usageEnabledIds === settingsEnabledIds;
 
+  // Check if any enabled provider already has results (usage or error)
+  const hasAnyResult = enabledProviders.some((p) => p.usage || p.lastError);
+
   // Timeout for initial loading - don't show spinner forever
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   useEffect(() => {
-    if (lastGlobalRefresh) {
+    // Reset timeout when we get any result or global refresh completes
+    if (hasAnyResult || lastGlobalRefresh) {
       setLoadingTimedOut(false);
       return;
     }
@@ -48,11 +52,12 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
       setLoadingTimedOut(true);
     }, 5000);
     return () => clearTimeout(timer);
-  }, [lastGlobalRefresh]);
+  }, [hasAnyResult, lastGlobalRefresh]);
 
   // Check if we're still loading (first refresh in progress)
+  // Show loading only if we have no results yet from any provider
   // But cap it at 5 seconds to avoid infinite loading
-  const isInitialLoading = hasHydrated && !lastGlobalRefresh && hasEnabledProvidersInSettings && !loadingTimedOut;
+  const isInitialLoading = hasHydrated && !hasAnyResult && hasEnabledProvidersInSettings && !loadingTimedOut;
 
   // DEBUG: Log state for troubleshooting
   console.log('[PopupWindow] State:', {
@@ -66,6 +71,7 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
     isRefreshing,
     isProvidersSynced,
     loadingTimedOut,
+    hasAnyResult,
   });
 
   const handleRefreshAll = useCallback(() => {
@@ -241,17 +247,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
             >
               Enable Providers
             </button>
-          </div>
-        ) : isRefreshing ? (
-          // Show loading while refresh is in progress (even after initial timeout)
-          <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
-            <RefreshCw 
-              className="w-5 h-5 text-[var(--text-quaternary)] animate-spin" 
-              aria-hidden="true"
-            />
-            <p className="mt-3 text-sm text-[var(--text-tertiary)]">
-              Refreshing…
-            </p>
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up">
