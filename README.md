@@ -1,7 +1,27 @@
-# Tauri + React + Typescript
+# IncuBar
 
-This template should help get you started developing with Tauri, React and Typescript in Vite.
+AI usage tracker for Claude, Codex, Cursor, and other assistants. Built with Tauri, React, and TypeScript.
 
-## Recommended IDE Setup
+## Downloads
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Prebuilt apps are available from GitHub Releases.
+Supported platforms: macOS (arm64 + x64), Windows (x64), Linux (x64).
+
+## Development
+
+Requirements:
+- Rust toolchain
+- Bun
+
+Commands:
+- `bun install`
+- `bun run tauri dev`
+
+## Build
+
+- `bun install`
+- `bun run tauri build`
+
+## Release
+
+Create a GitHub Release with a `vX.Y.Z` tag. The release workflow builds installers for macOS (arm64 + x64), Windows (x64), and Linux (x64) and uploads them to the release.

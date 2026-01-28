@@ -1,0 +1,109 @@
+name: Release App
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            arch: aarch64
+            runs-on: macos-14
+            args: "--target aarch64-apple-darwin"
+          - platform: macos
+            arch: x86_64
+            runs-on: macos-13
+            args: "--target x86_64-apple-darwin"
+          - platform: windows
+            arch: x86_64
+            runs-on: windows-2022
+            args: ""
+          - platform: linux
+            arch: x86_64
+            runs-on: ubuntu-24.04
+            args: ""
+    runs-on: ${{ matrix.runs-on }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos' && (matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin') || '' }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            build-essential
+
+      - name: Install Windows build dependencies
+        if: matrix.platform == 'windows'
+        run: choco install -y nsis
+
+      - name: Build Tauri app
+        run: bun run tauri build ${{ matrix.args }}
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          if [[ -z "$TAG" ]]; then
+            echo "Missing tag (GITHUB_REF_NAME)." >&2
+            exit 1
+          fi
+
+          if [[ "${{ matrix.platform }}" == "macos" ]]; then
+            DMG_PATH="src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}/release/bundle/dmg"
+            APP_PATH="src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}/release/bundle/macos"
+            ASSET_PATHS=("$DMG_PATH"/*.dmg "$APP_PATH"/*.app.tar.gz)
+          elif [[ "${{ matrix.platform }}" == "windows" ]]; then
+            MSI_PATH="src-tauri/target/release/bundle/msi"
+            NSIS_PATH="src-tauri/target/release/bundle/nsis"
+            ASSET_PATHS=("$MSI_PATH"/*.msi "$NSIS_PATH"/*.exe)
+          else
+            DEB_PATH="src-tauri/target/release/bundle/deb"
+            RPM_PATH="src-tauri/target/release/bundle/rpm"
+            APPIMAGE_PATH="src-tauri/target/release/bundle/appimage"
+            ASSET_PATHS=("$DEB_PATH"/*.deb "$RPM_PATH"/*.rpm "$APPIMAGE_PATH"/*.AppImage)
+          fi
+
+          for asset in "${ASSET_PATHS[@]}"; do
+            if [[ -e "$asset" ]]; then
+              gh release upload "$TAG" "$asset" --clobber
+            fi
+          done
+
+      - name: Upload workflow artifact (manual runs)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v4
+        with:
+          name: incubar-${{ matrix.platform }}-${{ matrix.arch }}
+          path: src-tauri/target/**/bundle/**/*
