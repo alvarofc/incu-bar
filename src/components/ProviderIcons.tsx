@@ -156,11 +156,11 @@ export function KimiIcon({ className, 'aria-hidden': ariaHidden = true }: IconPr
   );
 }
 
-// Antigravity - Rocket icon (upward arrow with thrust flames)
+// Antigravity - Official logo
 export function AntigravityIcon({ className, 'aria-hidden': ariaHidden = true }: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden={ariaHidden}>
-      <path d="M12 2.5c1.5 0 2.75 1.08 3 2.5h-6c.25-1.42 1.5-2.5 3-2.5Zm3.5 3.5v7l2.5 4h-2v4.5h-8V17H6l2.5-4V6h7ZM9.5 17v2h1v-2h-1Zm2 0v2h1v-2h-1Zm2 0v2h1v-2h-1Z"/>
+    <svg viewBox="0 0 16 15" fill="currentColor" className={className} aria-hidden={ariaHidden}>
+      <path d="M14.0777 13.984C14.945 14.6345 16.2458 14.2008 15.0533 13.0084C11.476 9.53949 12.2349 0 7.79033 0C3.34579 0 4.10461 9.53949 0.527295 13.0084C-0.773543 14.3092 0.635692 14.6345 1.50293 13.984C4.86344 11.7076 4.64663 7.69664 7.79033 7.69664C10.934 7.69664 10.7172 11.7076 14.0777 13.984Z"/>
     </svg>
   );
 }
