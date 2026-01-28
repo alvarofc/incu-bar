@@ -1,3 +1,4 @@
+import { AlertCircle } from 'lucide-react';
 import type { ProviderId } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { useUsageStore, useEnabledProviders } from '../stores/usageStore';
@@ -9,12 +10,12 @@ export function ProviderTabs() {
   const setActiveProvider = useUsageStore((s) => s.setActiveProvider);
   const enabledProviders = useEnabledProviders();
 
-  // Only show providers that have valid usage data (authenticated)
-  const authenticatedProviders = enabledProviders.filter(
-    (p) => p.usage && !p.lastError
+  // Show providers that have usage data, have an error, or are the currently selected provider
+  const visibleProviders = enabledProviders.filter(
+    (p) => p.usage || p.lastError || p.id === activeProvider
   );
 
-  if (authenticatedProviders.length <= 1) {
+  if (visibleProviders.length <= 1) {
     return null;
   }
 
@@ -24,9 +25,11 @@ export function ProviderTabs() {
       role="tablist"
       aria-label="Provider tabs"
     >
-      {authenticatedProviders.map((provider) => {
+      {visibleProviders.map((provider) => {
         const metadata = PROVIDERS[provider.id];
         const isActive = activeProvider === provider.id;
+        const hasError = provider.lastError && !provider.usage;
+        const hasNoData = !provider.usage && !provider.lastError;
 
         return (
           <button
@@ -48,10 +51,16 @@ export function ProviderTabs() {
             <span className="relative">
               <BrandIcon 
                 providerId={provider.id} 
-                className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
+                className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'} ${hasNoData ? 'opacity-50' : ''}`}
                 aria-hidden="true"
               />
-              <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+              {hasError ? (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[var(--accent-warning)] rounded-full flex items-center justify-center">
+                  <AlertCircle className="w-2 h-2 text-white" aria-hidden="true" />
+                </span>
+              ) : (
+                <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+              )}
             </span>
             <span>{metadata.name}</span>
           </button>
@@ -67,11 +76,12 @@ export function ProviderSwitcherButtons() {
   const enabledProviders = useEnabledProviders();
   const switcherShowsIcons = useSettingsStore((s) => s.switcherShowsIcons);
 
-  const authenticatedProviders = enabledProviders.filter(
-    (provider) => provider.usage && !provider.lastError
+  // Show providers that have usage data, have an error, or are the currently selected provider
+  const visibleProviders = enabledProviders.filter(
+    (provider) => provider.usage || provider.lastError || provider.id === activeProvider
   );
 
-  if (authenticatedProviders.length <= 1) {
+  if (visibleProviders.length <= 1) {
     return null;
   }
 
@@ -83,8 +93,10 @@ export function ProviderSwitcherButtons() {
         aria-label="Provider switcher"
         data-testid="provider-switcher"
       >
-        {authenticatedProviders.map((provider) => {
+        {visibleProviders.map((provider) => {
           const isActive = activeProvider === provider.id;
+          const hasError = provider.lastError && !provider.usage;
+          const hasNoData = !provider.usage && !provider.lastError;
 
           return (
             <button
@@ -97,16 +109,22 @@ export function ProviderSwitcherButtons() {
                   : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-surface)]'
               }`}
               aria-pressed={isActive}
-              aria-label={`Switch to ${PROVIDERS[provider.id].name}`}
+              aria-label={`Switch to ${PROVIDERS[provider.id].name}${hasError ? ' (needs attention)' : hasNoData ? ' (no data)' : ''}`}
               data-testid={`provider-switcher-button-${provider.id}`}
             >
               <span className="relative">
                 <BrandIcon
                   providerId={provider.id}
-                  className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'}`}
+                  className={`w-4 h-4 ${isActive ? 'opacity-100' : 'opacity-70'} ${hasNoData ? 'opacity-50' : ''}`}
                   aria-hidden="true"
                 />
-                <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+                {hasError ? (
+                  <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-[var(--accent-warning)] rounded-full flex items-center justify-center">
+                    <AlertCircle className="w-2 h-2 text-white" aria-hidden="true" />
+                  </span>
+                ) : (
+                  <ProviderIconWithOverlay indicator={provider.status?.indicator} />
+                )}
               </span>
             </button>
           );

@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { check } from '@tauri-apps/plugin-updater';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { sendNotification } from '@tauri-apps/plugin-notification';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
 import { useUsageStore } from './stores/usageStore';
@@ -27,14 +28,18 @@ import { getStaleAfterMs, isTimestampStale } from './lib/staleness';
 import { restoreSafeStateAfterCrash } from './lib/crashRecovery';
 import './styles/globals.css';
 
-type View = 'main' | 'settings';
-
 interface AuthStatus {
   authenticated: boolean;
 }
 
 function App() {
-  const [currentView, setCurrentView] = useState<View>('main');
+  const isSettingsWindow = useMemo(
+    () => new URLSearchParams(window.location.search).get('view') === 'settings',
+    []
+  );
+
+  // Debug: log which view we're rendering
+  console.log('[App] Rendering, isSettingsWindow:', isSettingsWindow, 'location.search:', window.location.search);
   const setProviderUsage = useUsageStore((s) => s.setProviderUsage);
   const setProviderStatus = useUsageStore((s) => s.setProviderStatus);
   const initializeProviders = useUsageStore((s) => s.initializeProviders);
@@ -344,16 +349,25 @@ function App() {
     };
   }, [pollProviderStatus, refreshIntervalSeconds, setProviderStatus]);
 
-  const handleOpenSettings = () => {
-    setCurrentView('settings');
-  };
+  const handleOpenSettings = useCallback(async () => {
+    try {
+      await invoke('open_settings_window');
+      if (!isSettingsWindow) {
+        const win = getCurrentWindow();
+        await win.hide();
+      }
+    } catch (error) {
+      console.error('Failed to open settings window', error);
+    }
+  }, [isSettingsWindow]);
 
-  const handleBackToMain = () => {
-    setCurrentView('main');
-  };
+  const handleCloseSettings = useCallback(() => {
+    const win = getCurrentWindow();
+    void win.close();
+  }, []);
 
-  if (currentView === 'settings') {
-    return <SettingsPanel onBack={handleBackToMain} />;
+  if (isSettingsWindow) {
+    return <SettingsPanel onBack={handleCloseSettings} showTabs />;
   }
 
   return <PopupWindow onOpenSettings={handleOpenSettings} />;

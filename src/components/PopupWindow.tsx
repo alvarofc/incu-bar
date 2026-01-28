@@ -21,12 +21,15 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const lastGlobalRefresh = useUsageStore((s) => s.lastGlobalRefresh);
   const hasHydrated = useSettingsStore((s) => s.hasHydrated);
   const displayMode = useSettingsStore((s) => s.displayMode);
+  const selectedProviderId = useUsageStore((s) => s.activeProvider);
   const lastRefreshKeyRef = useRef<string | null>(null);
-  const errorProviders = enabledProviders.filter(
-    (provider) => provider.lastError && !provider.usage
-  );
-  const primaryErrorProvider = errorProviders[0];
   const hasEnabledProvidersInSettings = settingsEnabledProviders.length > 0;
+  
+  // Get the currently selected provider (might be an error provider)
+  const selectedProvider = enabledProviders.find((p) => p.id === selectedProviderId);
+  const selectedHasError = selectedProvider?.lastError && !selectedProvider?.usage;
+  const selectedIsLoading = selectedProvider?.isLoading;
+  const selectedHasNoData = selectedProvider && !selectedProvider.usage && !selectedProvider.lastError && !selectedProvider.isLoading;
   
   // Check if usage store is synced with settings store
   const usageEnabledIds = enabledProviders.map((p) => p.id).sort().join('|');
@@ -134,36 +137,46 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
               Loading…
             </p>
           </div>
-        ) : activeProvider ? (
-          <MenuCard provider={activeProvider} />
-        ) : primaryErrorProvider ? (
+        ) : selectedIsLoading && selectedProvider ? (
+          // Show loading for selected provider
+          <div className="flex flex-col items-center justify-center py-12 animate-fade-in">
+            <RefreshCw 
+              className="w-5 h-5 text-[var(--text-quaternary)] animate-spin" 
+              aria-hidden="true"
+            />
+            <p className="mt-3 text-sm text-[var(--text-tertiary)]">
+              Loading {PROVIDERS[selectedProvider.id].name}…
+            </p>
+          </div>
+        ) : selectedHasError && selectedProvider ? (
+          // Show error details for the selected error provider
           <div
             className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"
             data-testid="provider-error-detail"
             role="alert"
           >
-            <div className="w-11 h-11 rounded-full bg-[var(--accent-danger)]/10 flex items-center justify-center mb-4">
-              <AlertCircle className="w-5 h-5 text-[var(--accent-danger)]" aria-hidden="true" />
+            <div className="w-11 h-11 rounded-full bg-[var(--accent-warning)]/10 flex items-center justify-center mb-4">
+              <AlertCircle className="w-5 h-5 text-[var(--accent-warning)]" aria-hidden="true" />
             </div>
             <div className="flex items-center gap-2 mb-2">
-              <ProviderIcon providerId={primaryErrorProvider.id} className="w-4 h-4" aria-hidden="true" />
+              <ProviderIcon providerId={selectedProvider.id} className="w-4 h-4" aria-hidden="true" />
               <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
-                {PROVIDERS[primaryErrorProvider.id].name} needs attention
+                {PROVIDERS[selectedProvider.id].name} needs attention
               </h2>
             </div>
             <p className="text-sm text-[var(--text-tertiary)] mb-3 max-w-[230px]">
-              We could not refresh usage. Reconnect in Settings or try again after updating your login.
+              We could not refresh usage. Reconnect in Settings or try again.
             </p>
-            <div className="w-full max-w-[240px] rounded-lg border border-[var(--accent-danger)]/20 bg-[var(--accent-danger)]/5 px-3 py-2 text-[12px] text-[var(--accent-danger)]/90 mb-4">
-              {primaryErrorProvider.lastError}
+            <div className="w-full max-w-[240px] rounded-lg border border-[var(--accent-warning)]/20 bg-[var(--accent-warning)]/5 px-3 py-2 text-[12px] text-[var(--accent-warning)]/90 mb-4">
+              {selectedProvider.lastError}
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => handleRefreshProvider(primaryErrorProvider.id)}
-                disabled={primaryErrorProvider.isLoading}
+                onClick={() => handleRefreshProvider(selectedProvider.id)}
+                disabled={selectedProvider.isLoading}
                 className="btn btn-primary focus-ring"
               >
-                {primaryErrorProvider.isLoading ? 'Refreshing…' : 'Try Again'}
+                {selectedProvider.isLoading ? 'Refreshing…' : 'Try Again'}
               </button>
               <button
                 onClick={onOpenSettings}
@@ -173,6 +186,41 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
               </button>
             </div>
           </div>
+        ) : selectedHasNoData && selectedProvider ? (
+          // Selected provider has no data yet - needs setup or app not running
+          <div
+            className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"
+            data-testid="provider-no-data"
+          >
+            <div className="w-11 h-11 rounded-full bg-[var(--bg-subtle)] flex items-center justify-center mb-4">
+              <ProviderIcon providerId={selectedProvider.id} className="w-5 h-5 text-[var(--text-quaternary)]" aria-hidden="true" />
+            </div>
+            <h2 className="text-[15px] font-semibold text-[var(--text-primary)] mb-1.5 text-balance">
+              {PROVIDERS[selectedProvider.id].name}
+            </h2>
+            <p className="text-sm text-[var(--text-tertiary)] mb-5 max-w-[220px]">
+              {PROVIDERS[selectedProvider.id].authMethod === 'local_config'
+                ? `Launch ${PROVIDERS[selectedProvider.id].name} to see usage data`
+                : 'No usage data available. Try refreshing or reconnect in Settings.'}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleRefreshProvider(selectedProvider.id)}
+                disabled={selectedProvider.isLoading}
+                className="btn btn-primary focus-ring"
+              >
+                Refresh
+              </button>
+              <button
+                onClick={onOpenSettings}
+                className="btn btn-ghost focus-ring"
+              >
+                Settings
+              </button>
+            </div>
+          </div>
+        ) : activeProvider ? (
+          <MenuCard provider={activeProvider} />
         ) : !hasEnabledProvidersInSettings ? (
           <div
             className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"

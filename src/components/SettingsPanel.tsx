@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
-import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Cookie, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
+import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
   MenuBarDisplayTextMode,
@@ -9,6 +9,7 @@ import type {
 } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import type { ProviderId, CookieSource } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { COOKIE_SOURCES, COOKIE_SOURCE_LABELS } from '../lib/cookieSources';
@@ -37,11 +38,25 @@ interface CopilotDeviceCode {
   interval: number;
 }
 
-interface SettingsPanelProps {
-  onBack: () => void;
+// Per-provider UI state for inline login flows
+interface ProviderLoginState {
+  isLoggingIn: boolean;
+  message: string | null;
+  isError: boolean;
+  showCookieInput: boolean;
+  deviceCode: CopilotDeviceCode | null;
+  deviceCodeCopied: boolean;
+  isPolling: boolean;
 }
 
-export function SettingsPanel({ onBack }: SettingsPanelProps) {
+type SettingsTab = 'providers' | 'preferences' | 'updates' | 'debug' | 'advanced' | 'about';
+
+interface SettingsPanelProps {
+  onBack: () => void;
+  showTabs?: boolean;
+}
+
+export function SettingsPanel({ onBack, showTabs = true }: SettingsPanelProps) {
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const providerOrder = useSettingsStore((s) => s.providerOrder);
   const setProviderOrder = useSettingsStore((s) => s.setProviderOrder);
@@ -83,16 +98,58 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   const setMenuBarDisplayTextMode = useSettingsStore((s) => s.setMenuBarDisplayTextMode);
 
   const [authStatus, setAuthStatus] = useState<Record<string, AuthStatus>>({});
-  const [loggingIn, setLoggingIn] = useState<string | null>(null);
-  const [loginMessage, setLoginMessage] = useState<string | null>(null);
-  const [cursorLoginOpen, setCursorLoginOpen] = useState(false);
+  // Per-provider login state for inline flows
+  const [providerLoginStates, setProviderLoginStates] = useState<Partial<Record<ProviderId, ProviderLoginState>>>({});
   const [manualCookieInputs, setManualCookieInputs] = useState<Partial<Record<ProviderId, string>>>({});
-  const [manualCookiePanels, setManualCookiePanels] = useState<Partial<Record<ProviderId, boolean>>>({});
+  const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(null);
   const [supportExportPath, setSupportExportPath] = useState<string | null>(null);
   const [supportExporting, setSupportExporting] = useState(false);
+  const [supportMessage, setSupportMessage] = useState<string | null>(null);
   const cookieSources = useSettingsStore((s) => s.cookieSources);
   const [draggingProviderId, setDraggingProviderId] = useState<ProviderId | null>(null);
   const [dragOverProviderId, setDragOverProviderId] = useState<ProviderId | null>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>('providers');
+  const headerPaddingClass = showTabs ? 'px-6 py-4' : 'px-4 py-3';
+  const sectionPaddingClass = showTabs ? 'p-6' : 'p-4';
+  const dividerClass = showTabs ? 'divider mx-6' : 'divider mx-4';
+  const messageMarginClass = showTabs ? 'mx-6' : 'mx-4';
+  const footerPaddingClass = showTabs ? 'px-6 pb-6 pt-3' : 'px-4 pb-4 pt-2';
+
+  const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: 'providers', label: 'Providers' },
+    { id: 'preferences', label: 'Preferences' },
+    { id: 'updates', label: 'Updates' },
+    { id: 'debug', label: 'Debug' },
+    { id: 'advanced', label: 'Advanced' },
+    { id: 'about', label: 'About' },
+  ];
+
+  // Helper to update per-provider login state
+  const updateProviderLoginState = useCallback((providerId: ProviderId, updates: Partial<ProviderLoginState>) => {
+    setProviderLoginStates((prev) => ({
+      ...prev,
+      [providerId]: {
+        isLoggingIn: false,
+        message: null,
+        isError: false,
+        showCookieInput: false,
+        deviceCode: null,
+        deviceCodeCopied: false,
+        isPolling: false,
+        ...prev[providerId],
+        ...updates,
+      },
+    }));
+  }, []);
+
+  const clearProviderLoginState = useCallback((providerId: ProviderId) => {
+    setProviderLoginStates((prev) => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
+    setExpandedProvider(null);
+  }, []);
 
   const syncAuthStatus = useCallback((status: Record<string, AuthStatus>) => {
     setAuthStatus(status);
@@ -133,14 +190,6 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     [orderedProviderIds]
   );
 
-  const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(
-    () => implementedProviders[0] ?? 'claude'
-  );
-  
-  const [copilotDeviceCode, setCopilotDeviceCode] = useState<CopilotDeviceCode | null>(null);
-  const [copilotCodeCopied, setCopilotCodeCopied] = useState(false);
-  const [copilotPolling, setCopilotPolling] = useState(false);
-
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -160,20 +209,17 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, [orderedProviderIds, providerOrder, setProviderOrder]);
 
   useEffect(() => {
-    if (!implementedProviders.includes(selectedProviderId)) {
-      setSelectedProviderId(implementedProviders[0] ?? 'claude');
-    }
-  }, [implementedProviders, selectedProviderId]);
-
-  useEffect(() => {
     const unlistenLogin = listen('cursor-login-detected', async () => {
-      setLoginMessage('Login detected! Extracting cookies…');
+      updateProviderLoginState('cursor', { message: 'Login detected! Extracting cookies…' });
       try {
         const result = await invoke<LoginResult>('extract_cursor_cookies');
         if (result.success) {
-          setLoginMessage(result.message);
-          setCursorLoginOpen(false);
-          setManualCookiePanels((state) => ({ ...state, cursor: false }));
+          updateProviderLoginState('cursor', { 
+            message: result.message, 
+            isError: false,
+            showCookieInput: false,
+            isLoggingIn: false,
+          });
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           syncAuthStatus(status);
           const settingsStore = useSettingsStore.getState();
@@ -181,26 +227,37 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           void settingsStore.syncProviderEnabled('cursor', true);
           useUsageStore.getState().setProviderEnabled('cursor', true);
           useUsageStore.getState().refreshProvider('cursor');
+          // Auto-collapse after success
+          setTimeout(() => clearProviderLoginState('cursor'), 2000);
         }
       } catch (e) {
-        setLoginMessage(`Cookie extraction error: ${e}`);
-        setManualCookiePanels((state) => ({ ...state, cursor: true }));
+        updateProviderLoginState('cursor', { 
+          message: `Cookie extraction error: ${e}`,
+          isError: true,
+          showCookieInput: true,
+          isLoggingIn: false,
+        });
       }
     });
 
     const unlistenCompleted = listen('login-completed', async (event: { payload: { providerId: ProviderId; success: boolean; message: string } }) => {
       const { providerId, success, message } = event.payload;
       if (success) {
-        setLoginMessage(message);
-        setCursorLoginOpen(false);
-        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
+        updateProviderLoginState(providerId, { 
+          message, 
+          isError: false,
+          showCookieInput: false,
+          isLoggingIn: false,
+        });
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
-        settingsStore.enableProvider(providerId as ProviderId);
-        void settingsStore.syncProviderEnabled(providerId as ProviderId, true);
-        useUsageStore.getState().setProviderEnabled(providerId as ProviderId, true);
-        useUsageStore.getState().refreshProvider(providerId as ProviderId);
+        settingsStore.enableProvider(providerId);
+        void settingsStore.syncProviderEnabled(providerId, true);
+        useUsageStore.getState().setProviderEnabled(providerId, true);
+        useUsageStore.getState().refreshProvider(providerId);
+        // Auto-collapse after success
+        setTimeout(() => clearProviderLoginState(providerId), 2000);
       }
     });
 
@@ -208,7 +265,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
       unlistenLogin.then(fn => fn());
       unlistenCompleted.then(fn => fn());
     };
-  }, []);
+  }, [updateProviderLoginState, clearProviderLoginState, syncAuthStatus]);
 
   const handleToggleProvider = useCallback((id: ProviderId) => {
     const store = useSettingsStore.getState();
@@ -439,97 +496,113 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   }, []);
 
   const handleLogin = useCallback(async (providerId: ProviderId) => {
-    setLoggingIn(providerId);
-    setLoginMessage(null);
+    setExpandedProvider(providerId);
+    updateProviderLoginState(providerId, { isLoggingIn: true, message: null, isError: false });
     
     try {
-      if (providerId === 'cursor') {
-        const cookieSource = useSettingsStore.getState().getCookieSource('cursor');
-        setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
-        const importResult = await invoke<LoginResult>('import_cursor_browser_cookies_from_source', {
+      // Cookie-based providers
+      const cookieProviders: ProviderId[] = ['cursor', 'factory', 'augment', 'kimi', 'minimax', 'amp', 'opencode'];
+      if (cookieProviders.includes(providerId)) {
+        const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
+        if (cookieSource === 'manual') {
+          updateProviderLoginState(providerId, { 
+            message: 'Paste your Cookie header below to continue.',
+            showCookieInput: true,
+            isLoggingIn: false,
+          });
+          return;
+        }
+
+        updateProviderLoginState(providerId, { message: `Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…` });
+        
+        const importCommands: Record<string, string> = {
+          cursor: 'import_cursor_browser_cookies_from_source',
+          factory: 'import_factory_browser_cookies_from_source',
+          augment: 'import_augment_browser_cookies_from_source',
+          kimi: 'import_kimi_browser_cookies_from_source',
+          minimax: 'import_minimax_browser_cookies_from_source',
+          amp: 'import_amp_browser_cookies_from_source',
+          opencode: 'import_opencode_browser_cookies_from_source',
+        };
+        
+        const importResult = await invoke<LoginResult>(importCommands[providerId], {
           source: { source: cookieSource },
         });
 
         if (importResult.success) {
-          setLoginMessage(importResult.message);
+          updateProviderLoginState(providerId, { 
+            message: importResult.message,
+            isError: false,
+            isLoggingIn: false,
+          });
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
           syncAuthStatus(status);
           const settingsStore = useSettingsStore.getState();
-          settingsStore.enableProvider('cursor');
-          void settingsStore.syncProviderEnabled('cursor', true);
-          useUsageStore.getState().setProviderEnabled('cursor', true);
-          useUsageStore.getState().refreshProvider('cursor');
-          setLoggingIn(null);
+          settingsStore.enableProvider(providerId);
+          void settingsStore.syncProviderEnabled(providerId, true);
+          useUsageStore.getState().setProviderEnabled(providerId, true);
+          useUsageStore.getState().refreshProvider(providerId);
+          setTimeout(() => clearProviderLoginState(providerId), 2000);
           return;
         }
 
-        setLoginMessage('Could not import from browser. Opening login window…');
-      }
-
-    if (providerId === 'factory' || providerId === 'augment' || providerId === 'kimi' || providerId === 'minimax' || providerId === 'amp' || providerId === 'opencode') {
-      const cookieSource = useSettingsStore.getState().getCookieSource(providerId as ProviderId);
-      if (cookieSource === 'manual') {
-        setLoginMessage('Paste your Cookie header below to continue.');
-        setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
-        setLoggingIn(null);
+        updateProviderLoginState(providerId, { 
+          message: 'Could not import from browser. You can paste cookies manually below.',
+          isError: true,
+          showCookieInput: true,
+          isLoggingIn: false,
+        });
         return;
       }
 
-      setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
-      const importCommand = providerId === 'factory'
-        ? 'import_factory_browser_cookies_from_source'
-        : providerId === 'augment'
-          ? 'import_augment_browser_cookies_from_source'
-          : providerId === 'minimax'
-            ? 'import_minimax_browser_cookies_from_source'
-            : providerId === 'amp'
-              ? 'import_amp_browser_cookies_from_source'
-              : providerId === 'opencode'
-                ? 'import_opencode_browser_cookies_from_source'
-                : 'import_kimi_browser_cookies_from_source';
-      const importResult = await invoke<LoginResult>(importCommand, {
-        source: { source: cookieSource },
-      });
-
-      if (importResult.success) {
-        setLoginMessage(importResult.message);
-        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        syncAuthStatus(status);
-        const settingsStore = useSettingsStore.getState();
-        settingsStore.enableProvider(providerId);
-        void settingsStore.syncProviderEnabled(providerId, true);
-        useUsageStore.getState().setProviderEnabled(providerId, true);
-        useUsageStore.getState().refreshProvider(providerId);
-        setLoggingIn(null);
-        return;
-      }
-
-      setLoginMessage('Could not import from browser. You can paste cookies manually below.');
-      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
-      setLoggingIn(null);
-      return;
-    }
-
+      // CLI-based providers
       if (providerId === 'kiro') {
-        setLoginMessage('Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.');
-        setLoggingIn(null);
+        updateProviderLoginState(providerId, { 
+          message: 'Kiro uses the CLI. Run `kiro-cli login` in Terminal, then refresh.',
+          isLoggingIn: false,
+        });
+        return;
+      }
+
+      // Auto-detect providers
+      if (providerId === 'antigravity') {
+        updateProviderLoginState(providerId, { 
+          message: 'Launch Antigravity to connect automatically. Usage is detected when the app is running.',
+          isLoggingIn: false,
+        });
+        return;
+      }
+
+      if (providerId === 'jetbrains') {
+        updateProviderLoginState(providerId, { 
+          message: 'Open a JetBrains IDE with AI Assistant enabled to connect automatically.',
+          isLoggingIn: false,
+        });
         return;
       }
       
+      // Copilot device flow
       if (providerId === 'copilot') {
-        setLoginMessage('Requesting device code from GitHub…');
+        updateProviderLoginState(providerId, { message: 'Requesting device code from GitHub…' });
         const deviceCode = await invoke<CopilotDeviceCode>('copilot_request_device_code');
-        setCopilotDeviceCode(deviceCode);
-        setCopilotCodeCopied(false);
-        setLoginMessage(null);
-        setLoggingIn(null);
+        updateProviderLoginState(providerId, { 
+          deviceCode,
+          deviceCodeCopied: false,
+          message: null,
+          isLoggingIn: false,
+        });
         return;
       }
       
+      // Generic OAuth/login flow
       const result = await invoke<LoginResult>('start_login', { providerId });
 
       if (result.success) {
-        setLoginMessage(`${PROVIDERS[providerId].name} connected!`);
+        updateProviderLoginState(providerId, { 
+          message: `${PROVIDERS[providerId].name} connected!`,
+          isError: false,
+          isLoggingIn: false,
+        });
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
@@ -537,47 +610,54 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         void settingsStore.syncProviderEnabled(providerId, true);
         useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
+        setTimeout(() => clearProviderLoginState(providerId), 2000);
       } else {
-        setLoginMessage(result.message);
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: true,
+          isLoggingIn: false,
+        });
       }
     } catch (e) {
-      setLoginMessage(`Login failed: ${e}`);
-    } finally {
-      setLoggingIn(null);
+      updateProviderLoginState(providerId, { 
+        message: `Login failed: ${e}`,
+        isError: true,
+        isLoggingIn: false,
+      });
     }
-  }, []);
+  }, [updateProviderLoginState, clearProviderLoginState, syncAuthStatus]);
 
   const handleSubmitCookies = useCallback(async (providerId: ProviderId) => {
     const cookieHeader = manualCookieInputs[providerId]?.trim() ?? '';
     if (!cookieHeader) {
-      setLoginMessage('Please paste your cookies first');
+      updateProviderLoginState(providerId, { message: 'Please paste your cookies first', isError: true });
       return;
     }
 
-    setLoggingIn(providerId);
+    updateProviderLoginState(providerId, { isLoggingIn: true });
     try {
-      const storeCommand = providerId === 'factory'
-        ? 'store_factory_cookies'
-        : providerId === 'augment'
-          ? 'store_augment_cookies'
-          : providerId === 'kimi'
-            ? 'store_kimi_cookies'
-            : providerId === 'minimax'
-              ? 'store_minimax_cookies'
-              : providerId === 'amp'
-                ? 'store_amp_cookies'
-                : providerId === 'opencode'
-                  ? 'store_opencode_cookies'
-                  : providerId === 'codex'
-                    ? 'store_codex_cookies'
-                    : 'store_cursor_cookies';
+      const storeCommands: Record<string, string> = {
+        factory: 'store_factory_cookies',
+        augment: 'store_augment_cookies',
+        kimi: 'store_kimi_cookies',
+        minimax: 'store_minimax_cookies',
+        amp: 'store_amp_cookies',
+        opencode: 'store_opencode_cookies',
+        codex: 'store_codex_cookies',
+        cursor: 'store_cursor_cookies',
+      };
+      const storeCommand = storeCommands[providerId] || 'store_cursor_cookies';
       const result = await invoke<LoginResult>(storeCommand, { cookieHeader });
+      
       if (result.success) {
-        setLoginMessage(`${PROVIDERS[providerId].name} cookies saved!`);
+        updateProviderLoginState(providerId, { 
+          message: `${PROVIDERS[providerId].name} cookies saved!`,
+          isError: false,
+          showCookieInput: false,
+          isLoggingIn: false,
+        });
         setManualCookieInputs((state) => ({ ...state, [providerId]: '' }));
-        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
         if (providerId === 'cursor') {
-          setCursorLoginOpen(false);
           await invoke('close_cursor_login');
         }
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
@@ -587,81 +667,71 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         void settingsStore.syncProviderEnabled(providerId, true);
         useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
+        setTimeout(() => clearProviderLoginState(providerId), 2000);
       } else {
-        setLoginMessage(result.message);
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: true,
+          isLoggingIn: false,
+        });
       }
     } catch (e) {
-      setLoginMessage(`Failed to save cookies: ${e}`);
-    } finally {
-      setLoggingIn(null);
+      updateProviderLoginState(providerId, { 
+        message: `Failed to save cookies: ${e}`,
+        isError: true,
+        isLoggingIn: false,
+      });
     }
-  }, [manualCookieInputs]);
-
-  const handleExtractCookies = useCallback(async () => {
-    setLoggingIn('cursor');
-    setLoginMessage('Extracting cookies…');
-
-    try {
-      const result = await invoke<LoginResult>('extract_cursor_cookies');
-      if (result.success) {
-        setLoginMessage(result.message);
-        setCursorLoginOpen(false);
-        setManualCookiePanels((state) => ({ ...state, cursor: false }));
-        const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        syncAuthStatus(status);
-        useUsageStore.getState().refreshProvider('cursor');
-      } else {
-        setLoginMessage(result.message);
-        setManualCookiePanels((state) => ({ ...state, cursor: true }));
-      }
-    } catch (e) {
-      setLoginMessage(`Failed to extract cookies: ${e}`);
-      setManualCookiePanels((state) => ({ ...state, cursor: true }));
-    } finally {
-      setLoggingIn(null);
-    }
-  }, []);
+  }, [manualCookieInputs, updateProviderLoginState, clearProviderLoginState, syncAuthStatus]);
 
   const handleImportBrowserCookies = useCallback(async (providerId: ProviderId) => {
     if (debugDisableKeychainAccess) {
-      setLoginMessage('Keychain access is disabled. Paste cookies manually to continue.');
-      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
+      updateProviderLoginState(providerId, { 
+        message: 'Keychain access is disabled. Paste cookies manually to continue.',
+        showCookieInput: true,
+      });
+      setExpandedProvider(providerId);
       return;
     }
-    setLoggingIn(providerId);
-    const cookieSource = useSettingsStore.getState().getCookieSource(providerId as ProviderId);
+    
+    updateProviderLoginState(providerId, { isLoggingIn: true });
+    setExpandedProvider(providerId);
+    
+    const cookieSource = useSettingsStore.getState().getCookieSource(providerId);
     if (cookieSource === 'manual') {
-      setLoginMessage('Paste your Cookie header below to continue.');
-      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
-      setLoggingIn(null);
+      updateProviderLoginState(providerId, { 
+        message: 'Paste your Cookie header below to continue.',
+        showCookieInput: true,
+        isLoggingIn: false,
+      });
       return;
     }
-    setLoginMessage(`Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…`);
+    
+    updateProviderLoginState(providerId, { message: `Importing cookies from ${COOKIE_SOURCE_LABELS[cookieSource]}…` });
 
-    const importCommand = providerId === 'factory'
-      ? 'import_factory_browser_cookies_from_source'
-      : providerId === 'augment'
-        ? 'import_augment_browser_cookies_from_source'
-        : providerId === 'kimi'
-          ? 'import_kimi_browser_cookies_from_source'
-          : providerId === 'minimax'
-            ? 'import_minimax_browser_cookies_from_source'
-            : providerId === 'amp'
-              ? 'import_amp_browser_cookies_from_source'
-              : providerId === 'opencode'
-                ? 'import_opencode_browser_cookies_from_source'
-                : providerId === 'codex'
-                  ? 'import_codex_browser_cookies_from_source'
-                  : 'import_cursor_browser_cookies_from_source';
+    const importCommands: Record<string, string> = {
+      factory: 'import_factory_browser_cookies_from_source',
+      augment: 'import_augment_browser_cookies_from_source',
+      kimi: 'import_kimi_browser_cookies_from_source',
+      minimax: 'import_minimax_browser_cookies_from_source',
+      amp: 'import_amp_browser_cookies_from_source',
+      opencode: 'import_opencode_browser_cookies_from_source',
+      codex: 'import_codex_browser_cookies_from_source',
+      cursor: 'import_cursor_browser_cookies_from_source',
+    };
+    const importCommand = importCommands[providerId] || 'import_cursor_browser_cookies_from_source';
 
     try {
       const result = await invoke<LoginResult>(importCommand, {
         source: { source: cookieSource },
       });
       if (result.success) {
-        setLoginMessage(result.message);
-        setCursorLoginOpen(false);
-        setManualCookiePanels((state) => ({ ...state, [providerId]: false }));
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: false,
+          showCookieInput: false,
+          isLoggingIn: false,
+        });
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
@@ -669,52 +739,65 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         void settingsStore.syncProviderEnabled(providerId, true);
         useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
+        setTimeout(() => clearProviderLoginState(providerId), 2000);
       } else {
-        setLoginMessage(result.message);
-        setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: true,
+          showCookieInput: true,
+          isLoggingIn: false,
+        });
       }
     } catch (e) {
-      setLoginMessage(`Failed to import cookies: ${e}`);
-      setManualCookiePanels((state) => ({ ...state, [providerId]: true }));
-    } finally {
-      setLoggingIn(null);
+      updateProviderLoginState(providerId, { 
+        message: `Failed to import cookies: ${e}`,
+        isError: true,
+        showCookieInput: true,
+        isLoggingIn: false,
+      });
     }
-  }, []);
+  }, [debugDisableKeychainAccess, updateProviderLoginState, clearProviderLoginState, syncAuthStatus]);
 
   const handleCookieSourceChange = useCallback((providerId: ProviderId, source: CookieSource) => {
     useSettingsStore.getState().setCookieSource(providerId, source);
   }, []);
 
-  const handleCopyCopilotCode = useCallback(async () => {
-    if (!copilotDeviceCode) return;
+  const handleCopyCopilotCode = useCallback(async (providerId: ProviderId) => {
+    const state = providerLoginStates[providerId];
+    if (!state?.deviceCode) return;
     try {
-      await navigator.clipboard.writeText(copilotDeviceCode.userCode);
-      setCopilotCodeCopied(true);
-      setTimeout(() => setCopilotCodeCopied(false), 2000);
+      await navigator.clipboard.writeText(state.deviceCode.userCode);
+      updateProviderLoginState(providerId, { deviceCodeCopied: true });
+      setTimeout(() => updateProviderLoginState(providerId, { deviceCodeCopied: false }), 2000);
     } catch (e) {
       console.error('Failed to copy:', e);
     }
-  }, [copilotDeviceCode]);
+  }, [providerLoginStates, updateProviderLoginState]);
 
-  const handleOpenCopilotVerification = useCallback(() => {
-    if (!copilotDeviceCode) return;
-    window.open(copilotDeviceCode.verificationUri, '_blank');
-  }, [copilotDeviceCode]);
+  const handleOpenCopilotVerification = useCallback((providerId: ProviderId) => {
+    const state = providerLoginStates[providerId];
+    if (!state?.deviceCode) return;
+    openUrl(state.deviceCode.verificationUri);
+  }, [providerLoginStates]);
 
-  const handleCopilotContinue = useCallback(async () => {
-    if (!copilotDeviceCode) return;
+  const handleCopilotContinue = useCallback(async (providerId: ProviderId) => {
+    const state = providerLoginStates[providerId];
+    if (!state?.deviceCode) return;
     
-    setCopilotPolling(true);
-    setLoginMessage('Waiting for authorization…');
+    updateProviderLoginState(providerId, { isPolling: true, message: 'Waiting for authorization…' });
     
     try {
       const result = await invoke<LoginResult>('copilot_poll_for_token', {
-        deviceCode: copilotDeviceCode.deviceCode,
+        deviceCode: state.deviceCode.deviceCode,
       });
       
       if (result.success) {
-        setLoginMessage(result.message);
-        setCopilotDeviceCode(null);
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: false,
+          deviceCode: null,
+          isPolling: false,
+        });
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
         syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
@@ -722,20 +805,26 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
         void settingsStore.syncProviderEnabled('copilot', true);
         useUsageStore.getState().setProviderEnabled('copilot', true);
         useUsageStore.getState().refreshProvider('copilot');
+        setTimeout(() => clearProviderLoginState(providerId), 2000);
       } else {
-        setLoginMessage(result.message);
+        updateProviderLoginState(providerId, { 
+          message: result.message,
+          isError: true,
+          isPolling: false,
+        });
       }
     } catch (e) {
-      setLoginMessage(`Copilot login failed: ${e}`);
-    } finally {
-      setCopilotPolling(false);
+      updateProviderLoginState(providerId, { 
+        message: `Copilot login failed: ${e}`,
+        isError: true,
+        isPolling: false,
+      });
     }
-  }, [copilotDeviceCode]);
+  }, [providerLoginStates, updateProviderLoginState, clearProviderLoginState, syncAuthStatus]);
 
-  const handleCopilotCancel = useCallback(() => {
-    setCopilotDeviceCode(null);
-    setLoginMessage(null);
-  }, []);
+  const handleCancelLogin = useCallback((providerId: ProviderId) => {
+    clearProviderLoginState(providerId);
+  }, [clearProviderLoginState]);
 
   const handleExportSupportBundle = useCallback(async () => {
     if (supportExporting) return;
@@ -812,10 +901,10 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
       const path = await invoke<string>('export_support_bundle', { payload });
       setSupportExportPath(path);
-      setLoginMessage('Support bundle exported. Share it with support.');
+      setSupportMessage('Support bundle exported. Share it with support.');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setLoginMessage(`Support bundle export failed: ${message}`);
+      setSupportMessage(`Support bundle export failed: ${message}`);
     } finally {
       setSupportExporting(false);
     }
@@ -829,18 +918,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
     { label: '15m', value: 900 },
   ];
 
-  const selectedProvider = PROVIDERS[selectedProviderId];
-  const selectedStatus = authStatus[selectedProviderId];
-  const selectedIsAuthenticated = selectedStatus?.authenticated === true;
-  const selectedIsEnabled = enabledProviders.includes(selectedProviderId);
-  const selectedUsesCookies = selectedProvider.authMethod === 'cookies' || selectedProviderId === 'codex';
-  const selectedCookieSource = selectedUsesCookies
-    ? cookieSources[selectedProviderId] ?? useSettingsStore.getState().getCookieSource(selectedProviderId)
-    : null;
   const keychainPromptSources: CookieSource[] = ['chrome', 'arc', 'edge', 'brave', 'opera'];
-  const showKeychainGuidance = selectedCookieSource
-    ? keychainPromptSources.includes(selectedCookieSource)
-    : false;
 
   const getAuthMethodLabel = (method: string) => {
     switch (method) {
@@ -854,9 +932,9 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
   };
 
   return (
-    <div className="popup-container">
+    <div className="popup-container settings-window">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-[var(--border-subtle)]">
+      <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <button
           onClick={onBack}
           className="btn btn-icon focus-ring"
@@ -869,75 +947,36 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
-        {/* Status Message */}
-        {loginMessage && (
-          <div className="mx-4 mt-4 p-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]" role="status" aria-live="polite">
-            <p className="text-[13px] text-[var(--text-secondary)]">{loginMessage}</p>
-          </div>
+        {showTabs && (
+          <nav className="sticky top-0 z-10 bg-[var(--bg-base)]/95 backdrop-blur border-b border-[var(--border-subtle)]">
+            <div className="flex gap-2 px-4 py-2 overflow-x-auto">
+              {settingsTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`px-3 py-1.5 text-[12px] font-medium rounded-md transition-colors focus-ring ${
+                    activeTab === tab.id
+                      ? 'bg-[var(--bg-subtle)] text-[var(--text-primary)]'
+                      : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-surface)] hover:text-[var(--text-secondary)]'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </nav>
         )}
-
-        {/* Copilot Device Code Dialog */}
-        {copilotDeviceCode && (
-          <div className="mx-4 mt-4 p-4 rounded-lg bg-[var(--accent-success)]/5 border border-[var(--accent-success)]/20">
-            <h3 className="text-[14px] font-semibold text-[var(--accent-success)] mb-2">
-              GitHub Copilot
-            </h3>
-            <p className="text-[13px] text-[var(--text-tertiary)] mb-4">
-              Enter this code on GitHub to authorize:
-            </p>
-            
-            <div className="flex items-center gap-3 mb-4">
-              <div className="flex-1 bg-[var(--bg-base)] rounded-lg p-4 text-center">
-                <span className="text-2xl font-mono font-bold text-[var(--text-primary)] tracking-[0.2em]">
-                  {copilotDeviceCode.userCode}
-                </span>
-              </div>
-              <button
-                onClick={handleCopyCopilotCode}
-                className="btn btn-ghost focus-ring"
-                aria-label="Copy code"
-              >
-                {copilotCodeCopied ? (
-                  <Check className="w-4 h-4 text-[var(--accent-success)]" aria-hidden="true" />
-                ) : (
-                  <Copy className="w-4 h-4" aria-hidden="true" />
-                )}
-              </button>
-            </div>
-            
-            <div className="flex gap-2">
-              <button
-                onClick={handleOpenCopilotVerification}
-                className="btn btn-primary focus-ring flex-1"
-              >
-                <ExternalLink className="w-4 h-4" aria-hidden="true" />
-                <span>Open GitHub</span>
-              </button>
-              <button
-                onClick={handleCopilotContinue}
-                disabled={copilotPolling}
-                className="btn btn-ghost focus-ring flex-1"
-              >
-                {copilotPolling ? (
-                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Check className="w-4 h-4" aria-hidden="true" />
-                )}
-                <span>{copilotPolling ? 'Waiting…' : "I've Authorized"}</span>
-              </button>
-            </div>
-            
-            <button
-              onClick={handleCopilotCancel}
-              className="w-full mt-3 btn btn-ghost focus-ring text-[13px]"
-            >
-              Cancel
-            </button>
+        {/* Support Export Message */}
+        {supportMessage && (
+          <div className={`${messageMarginClass} mt-4 p-3 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]`} role="status" aria-live="polite">
+            <p className="text-[13px] text-[var(--text-secondary)]">{supportMessage}</p>
           </div>
         )}
 
         {/* Providers Section */}
-        <section className="p-4">
+        {(activeTab === 'providers' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Providers
           </h2>
@@ -946,306 +985,320 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
               const provider = PROVIDERS[id];
               const status = authStatus[id];
               const isAuthenticated = status?.authenticated === true;
-              const isSelected = selectedProviderId === id;
               const isEnabled = enabledProviders.includes(id);
+              const loginState = providerLoginStates[id];
+              const isExpanded = expandedProvider === id || loginState?.isLoggingIn || loginState?.message || loginState?.deviceCode;
+              const usesCookies = provider.authMethod === 'cookies' || id === 'codex';
+              const cookieSource = usesCookies
+                ? cookieSources[id] ?? useSettingsStore.getState().getCookieSource(id)
+                : null;
+              const showKeychainGuidance = cookieSource && keychainPromptSources.includes(cookieSource);
 
               return (
-                <div
-                  key={id}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
-                    isSelected
-                      ? 'bg-[var(--bg-subtle)] border-[var(--border-strong)]'
-                      : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-overlay)]'
-                  } ${dragOverProviderId === id ? 'ring-1 ring-[var(--accent-primary)]' : ''} ${draggingProviderId === id ? 'opacity-70' : ''}`}
-                  onDragOver={(event) => handleDragOver(event, id)}
-                  onDrop={(event) => handleDrop(event, id)}
-                  onDragLeave={() => setDragOverProviderId(null)}
-                  data-testid={`provider-order-item-${id}`}
-                >
-                  <button
-                    type="button"
-                    onDragStart={(event) => handleDragStart(event, id)}
-                    onDragEnd={handleDragEnd}
-                    draggable
-                    className="btn btn-icon focus-ring"
-                    aria-label={`Reorder ${provider.name}`}
-                    data-testid={`provider-order-handle-${id}`}
+                <div key={id} className="space-y-0" data-testid="provider-detail-pane">
+                  {/* Compact Provider Row */}
+                  <div
+                    className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border transition-colors ${
+                      isExpanded
+                        ? 'bg-[var(--bg-subtle)] border-[var(--border-strong)] rounded-b-none'
+                        : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] hover:bg-[var(--bg-overlay)]'
+                    } ${dragOverProviderId === id ? 'ring-1 ring-[var(--accent-primary)]' : ''} ${draggingProviderId === id ? 'opacity-70' : ''}`}
+                    onDragOver={(event) => handleDragOver(event, id)}
+                    onDrop={(event) => handleDrop(event, id)}
+                    onDragLeave={() => setDragOverProviderId(null)}
+                    data-testid={`provider-order-item-${id}`}
                   >
-                    <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedProviderId(id)}
-                    className="flex items-center gap-3 flex-1 min-w-0 text-left focus-ring"
-                    aria-pressed={isSelected}
-                  >
-                    <ProviderIcon 
-                      providerId={id} 
-                      className={`w-5 h-5 flex-shrink-0 ${isAuthenticated ? 'opacity-100' : 'opacity-50'}`}
-                      aria-hidden="true"
-                    />
-                    <div className="min-w-0">
-                      <span className="text-[13px] font-medium text-[var(--text-primary)]">
-                        {provider.name}
-                      </span>
-                      {isAuthenticated ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-success)]" />
-                          <span className="text-[11px] text-[var(--text-tertiary)]">
-                            Connected{status.method ? ` · ${status.method}` : ''}
-                          </span>
-                        </div>
-                      ) : status?.error ? (
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <AlertCircle className="w-3 h-3 text-[var(--accent-warning)]" aria-hidden="true" />
-                          <span className="text-[11px] text-[var(--accent-warning)] truncate">
-                            {status.error}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-[var(--text-quaternary)] block mt-0.5">
-                          Not connected
+                    {/* Drag handle */}
+                    <button
+                      type="button"
+                      onDragStart={(event) => handleDragStart(event, id)}
+                      onDragEnd={handleDragEnd}
+                      draggable
+                      className="btn btn-icon focus-ring"
+                      aria-label={`Reorder ${provider.name}`}
+                      data-testid={`provider-order-handle-${id}`}
+                    >
+                      <GripVertical className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+
+                    {/* Provider info */}
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <ProviderIcon 
+                        providerId={id} 
+                        className={`w-5 h-5 flex-shrink-0 ${isAuthenticated ? 'opacity-100' : 'opacity-50'}`}
+                        aria-hidden="true"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <span className="text-[13px] font-medium text-[var(--text-primary)]">
+                          {provider.name}
                         </span>
-                      )}
-                    </div>
-                  </button>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleProvider(id)}
-                      className="toggle focus-ring"
-                      data-state={isEnabled ? 'checked' : 'unchecked'}
-                      role="switch"
-                      aria-checked={isEnabled}
-                      aria-label={isEnabled ? `Hide ${provider.name}` : `Show ${provider.name}`}
-                      data-testid={`provider-enable-toggle-${id}`}
-                    >
-                      <span className="toggle-thumb" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveProvider(id, 'up')}
-                      className="btn btn-icon focus-ring"
-                      aria-label={`Move ${provider.name} up`}
-                      disabled={implementedProviders[0] === id}
-                      data-testid={`provider-order-up-${id}`}
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveProvider(id, 'down')}
-                      className="btn btn-icon focus-ring"
-                      aria-label={`Move ${provider.name} down`}
-                      disabled={implementedProviders[implementedProviders.length - 1] === id}
-                      data-testid={`provider-order-down-${id}`}
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
-                    </button>
-                  </div>
-                </div>
-              );
-          })}
-          </div>
-
-          {selectedProvider && (
-            <div
-              className="mt-4 p-4 rounded-lg bg-[var(--bg-surface)] border border-[var(--border-subtle)]"
-              data-testid="provider-detail-pane"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3">
-                  <ProviderIcon
-                    providerId={selectedProviderId}
-                    className={`w-6 h-6 ${selectedIsAuthenticated ? 'opacity-100' : 'opacity-60'}`}
-                    aria-hidden="true"
-                  />
-                  <div>
-                    <h3 className="text-[14px] font-semibold text-[var(--text-primary)]">
-                      {selectedProvider.name} Settings
-                    </h3>
-                    <p className="text-[12px] text-[var(--text-tertiary)] mt-1">
-                      {selectedIsAuthenticated
-                        ? `Connected · ${getAuthMethodLabel(selectedStatus?.method ?? selectedProvider.authMethod)}`
-                        : `Not connected · ${getAuthMethodLabel(selectedProvider.authMethod)}`}
-                    </p>
-                    {selectedStatus?.email && !hidePersonalInfo && (
-                      <p className="text-[12px] text-[var(--text-quaternary)] mt-1 truncate">
-                        {selectedStatus.email}
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => handleToggleProvider(selectedProviderId)}
-                  className="toggle focus-ring"
-                  data-state={selectedIsEnabled ? 'checked' : 'unchecked'}
-                  role="switch"
-                  aria-checked={selectedIsEnabled}
-                  aria-label={selectedIsEnabled ? `Hide ${selectedProvider.name}` : `Show ${selectedProvider.name}`}
-                >
-                  <span className="toggle-thumb" />
-                </button>
-              </div>
-
-              {selectedStatus?.error && (
-                <div
-                  className="flex items-start gap-2.5 p-3 mt-3 rounded-lg bg-[var(--accent-warning)]/10 border border-[var(--accent-warning)]/20"
-                  role="alert"
-                >
-                  <AlertCircle className="w-4 h-4 text-[var(--accent-warning)] flex-shrink-0 mt-0.5" aria-hidden="true" />
-                  <p className="text-[12px] text-[var(--accent-warning)]/90">
-                    {selectedStatus.error}
-                  </p>
-                </div>
-              )}
-
-              <div className="mt-4 space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    onClick={() => handleLogin(selectedProviderId)}
-                    disabled={loggingIn === selectedProviderId}
-                    className="btn btn-primary focus-ring"
-                  >
-                    {loggingIn === selectedProviderId ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
-                    )}
-                    <span>{selectedIsAuthenticated ? 'Reconnect' : 'Connect'}</span>
-                  </button>
-                  <span className="text-[11px] text-[var(--text-quaternary)]">
-                    Visible in popup tabs once connected
-                  </span>
-                </div>
-
-                {selectedUsesCookies && selectedCookieSource && (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label
-                      htmlFor={`cookie-source-${selectedProviderId}`}
-                      className="text-[11px] text-[var(--text-quaternary)]"
-                    >
-                      Cookies
-                    </label>
-                    <select
-                      id={`cookie-source-${selectedProviderId}`}
-                      value={selectedCookieSource}
-                      onChange={(event) => handleCookieSourceChange(selectedProviderId, event.target.value as CookieSource)}
-                      disabled={debugDisableKeychainAccess}
-                      className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
-                    >
-                      {COOKIE_SOURCES.map((source) => (
-                        <option key={source} value={source}>
-                          {COOKIE_SOURCE_LABELS[source]}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleImportBrowserCookies(selectedProviderId)}
-                      disabled={
-                        debugDisableKeychainAccess
-                        || selectedCookieSource === 'manual'
-                        || loggingIn === selectedProviderId
-                      }
-                      className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50 disabled:hover:text-[var(--text-secondary)]"
-                    >
-                      Import now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setManualCookiePanels((state) => ({
-                        ...state,
-                        [selectedProviderId]: !state[selectedProviderId],
-                      }))}
-                      className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                    >
-                      {manualCookiePanels[selectedProviderId] ? 'Hide manual' : 'Paste cookies'}
-                    </button>
-                    {(debugDisableKeychainAccess || showKeychainGuidance) && (
-                      <div className="w-full space-y-1">
-                        {debugDisableKeychainAccess && (
-                          <p className="text-[11px] text-[var(--text-quaternary)]">
-                            Keychain access is disabled. Paste cookies manually.
-                          </p>
-                        )}
-                        {showKeychainGuidance && (
-                          <p className="text-[11px] text-[var(--text-quaternary)]">
-                            On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.
-                          </p>
+                        {isAuthenticated ? (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent-success)]" />
+                            <span className="text-[11px] text-[var(--text-tertiary)]">
+                              Connected{status.method ? ` · ${status.method}` : ''}
+                            </span>
+                          </div>
+                        ) : status?.error ? (
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <AlertCircle className="w-3 h-3 text-[var(--accent-warning)]" aria-hidden="true" />
+                            <span className="text-[11px] text-[var(--accent-warning)] truncate">
+                              {status.error}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-[var(--text-quaternary)] block mt-0.5">
+                            Not connected
+                          </span>
                         )}
                       </div>
-                    )}
-                  </div>
-                )}
-              </div>
+                    </div>
 
-              {selectedUsesCookies && manualCookiePanels[selectedProviderId] && (
-                <div className="mt-3 p-3 rounded-lg bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
-                  <p className="text-[12px] text-[var(--text-tertiary)] mb-2">
-                    Manual fallback: Copy Cookie header from DevTools Network tab
-                  </p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={manualCookieInputs[selectedProviderId] ?? ''}
-                      onChange={(event) => setManualCookieInputs((state) => ({
-                        ...state,
-                        [selectedProviderId]: event.target.value,
-                      }))}
-                      placeholder="Paste Cookie header…"
-                      aria-label={`Cookie header value for ${selectedProvider.name}`}
-                      className="flex-1 px-3 py-2 text-[13px] bg-[var(--bg-base)] rounded-md border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)] transition-colors"
-                      autoComplete="off"
-                      spellCheck={false}
-                    />
-                    <button
-                      onClick={() => handleSubmitCookies(selectedProviderId)}
-                      disabled={loggingIn === selectedProviderId}
-                      className="btn btn-primary focus-ring"
-                      aria-label={`Submit cookies for ${selectedProvider.name}`}
-                    >
-                      {loggingIn === selectedProviderId ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <ClipboardPaste className="w-3.5 h-3.5" aria-hidden="true" />
-                      )}
-                    </button>
+                    {/* Actions: Connect button, toggle, reorder */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isExpanded && !loginState?.isLoggingIn) {
+                            setExpandedProvider(null);
+                          } else {
+                            handleLogin(id);
+                          }
+                        }}
+                        disabled={loginState?.isLoggingIn}
+                        className="btn btn-sm btn-ghost focus-ring text-[11px]"
+                        data-testid={`provider-connect-${id}`}
+                      >
+                        {loginState?.isLoggingIn ? (
+                          <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <LogIn className="w-3 h-3" aria-hidden="true" />
+                        )}
+                        <span>{isAuthenticated ? 'Reconnect' : 'Connect'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleProvider(id)}
+                        className="toggle focus-ring"
+                        data-state={isEnabled ? 'checked' : 'unchecked'}
+                        role="switch"
+                        aria-checked={isEnabled}
+                        aria-label={isEnabled ? `Hide ${provider.name}` : `Show ${provider.name}`}
+                        data-testid={`provider-enable-toggle-${id}`}
+                      >
+                        <span className="toggle-thumb" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveProvider(id, 'up')}
+                        className="btn btn-icon focus-ring"
+                        aria-label={`Move ${provider.name} up`}
+                        disabled={implementedProviders[0] === id}
+                        data-testid={`provider-order-up-${id}`}
+                      >
+                        <ChevronUp className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleMoveProvider(id, 'down')}
+                        className="btn btn-icon focus-ring"
+                        aria-label={`Move ${provider.name} down`}
+                        disabled={implementedProviders[implementedProviders.length - 1] === id}
+                        data-testid={`provider-order-down-${id}`}
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {selectedProviderId === 'cursor' && cursorLoginOpen && (
-                <div className="mt-3 p-3 rounded-lg bg-[var(--accent-primary)]/5 border border-[var(--accent-primary)]/20">
-                  <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
-                    Login window open. Complete login in browser.
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleImportBrowserCookies('cursor')}
-                      disabled={loggingIn === 'cursor' || debugDisableKeychainAccess}
-                      className="btn btn-primary focus-ring flex-1 text-[12px]"
+                  {/* Inline Expander - shows below the row */}
+                  {isExpanded && (
+                    <div 
+                      className="px-3 py-3 bg-[var(--bg-subtle)] border border-t-0 border-[var(--border-strong)] rounded-b-lg space-y-3"
+                      data-testid={`provider-expander-${id}`}
                     >
-                      {loggingIn === 'cursor' ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <Cookie className="w-3.5 h-3.5" aria-hidden="true" />
+                      {/* Status message */}
+                      {loginState?.message && (
+                        <div 
+                          className={`flex items-start gap-2 p-2 rounded text-[12px] ${
+                            loginState.isError 
+                              ? 'bg-[var(--accent-warning)]/10 text-[var(--accent-warning)]' 
+                              : 'bg-[var(--bg-surface)] text-[var(--text-secondary)]'
+                          }`}
+                          role={loginState.isError ? 'alert' : 'status'}
+                        >
+                          {loginState.isError && <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" aria-hidden="true" />}
+                          <span>{loginState.message}</span>
+                        </div>
                       )}
-                      <span>Import from Browser</span>
-                    </button>
-                    <button
-                      onClick={handleExtractCookies}
-                      disabled={loggingIn === 'cursor'}
-                      className="btn btn-ghost focus-ring flex-1 text-[12px]"
-                    >
-                      <span>Extract from Window</span>
-                    </button>
-                  </div>
+
+                      {/* Copilot device code flow */}
+                      {id === 'copilot' && loginState?.deviceCode && (
+                        <div className="p-3 rounded-lg bg-[var(--accent-success)]/5 border border-[var(--accent-success)]/20">
+                          <p className="text-[12px] text-[var(--text-tertiary)] mb-3">
+                            Enter this code on GitHub to authorize:
+                          </p>
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="flex-1 bg-[var(--bg-base)] rounded-lg p-3 text-center">
+                              <span className="text-xl font-mono font-bold text-[var(--text-primary)] tracking-[0.2em]">
+                                {loginState.deviceCode.userCode}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => handleCopyCopilotCode(id)}
+                              className="btn btn-ghost focus-ring"
+                              aria-label="Copy code"
+                            >
+                              {loginState.deviceCodeCopied ? (
+                                <Check className="w-4 h-4 text-[var(--accent-success)]" aria-hidden="true" />
+                              ) : (
+                                <Copy className="w-4 h-4" aria-hidden="true" />
+                              )}
+                            </button>
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => handleOpenCopilotVerification(id)}
+                              className="btn btn-primary focus-ring flex-1 text-[12px]"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+                              <span>Open GitHub</span>
+                            </button>
+                            <button
+                              onClick={() => handleCopilotContinue(id)}
+                              disabled={loginState.isPolling}
+                              className="btn btn-ghost focus-ring flex-1 text-[12px]"
+                            >
+                              {loginState.isPolling ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                              )}
+                              <span>{loginState.isPolling ? 'Waiting…' : "I've Authorized"}</span>
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => handleCancelLogin(id)}
+                            className="w-full mt-2 btn btn-ghost focus-ring text-[11px]"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Cookie-based providers: source selector and manual input */}
+                      {usesCookies && cookieSource && !loginState?.deviceCode && (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <label
+                              htmlFor={`cookie-source-${id}`}
+                              className="text-[11px] text-[var(--text-quaternary)]"
+                            >
+                              Cookies
+                            </label>
+                            <select
+                              id={`cookie-source-${id}`}
+                              value={cookieSource}
+                              onChange={(event) => handleCookieSourceChange(id, event.target.value as CookieSource)}
+                              disabled={debugDisableKeychainAccess}
+                              className="bg-[var(--bg-base)] text-[11px] text-[var(--text-secondary)] border border-[var(--border-default)] rounded-md px-2 py-1 focus:outline-none focus:border-[var(--accent-primary)]"
+                            >
+                              {COOKIE_SOURCES.map((source) => (
+                                <option key={source} value={source}>
+                                  {COOKIE_SOURCE_LABELS[source]}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleImportBrowserCookies(id)}
+                              disabled={debugDisableKeychainAccess || cookieSource === 'manual' || loginState?.isLoggingIn}
+                              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-50"
+                            >
+                              Import now
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => updateProviderLoginState(id, { showCookieInput: !loginState?.showCookieInput })}
+                              className="text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                            >
+                              {loginState?.showCookieInput ? 'Hide manual' : 'Paste cookies'}
+                            </button>
+                          </div>
+                          {(debugDisableKeychainAccess || showKeychainGuidance) && (
+                            <div className="space-y-1">
+                              {debugDisableKeychainAccess && (
+                                <p className="text-[11px] text-[var(--text-quaternary)]">
+                                  Keychain access is disabled. Paste cookies manually.
+                                </p>
+                              )}
+                              {showKeychainGuidance && (
+                                <p className="text-[11px] text-[var(--text-quaternary)]">
+                                  On macOS, Chromium browsers prompt for keychain access. Choose "Always Allow" to add Incubar to the allow-list.
+                                </p>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Manual cookie input */}
+                          {loginState?.showCookieInput && (
+                            <div className="p-2 rounded bg-[var(--accent-warning)]/5 border border-[var(--accent-warning)]/20">
+                              <p className="text-[11px] text-[var(--text-tertiary)] mb-2">
+                                Manual fallback: Copy Cookie header from DevTools Network tab
+                              </p>
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  value={manualCookieInputs[id] ?? ''}
+                                  onChange={(event) => setManualCookieInputs((state) => ({
+                                    ...state,
+                                    [id]: event.target.value,
+                                  }))}
+                                  placeholder="Paste Cookie header…"
+                                  aria-label={`Cookie header value for ${provider.name}`}
+                                  className="flex-1 px-2 py-1.5 text-[12px] bg-[var(--bg-base)] rounded border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                                  autoComplete="off"
+                                  spellCheck={false}
+                                />
+                                <button
+                                  onClick={() => handleSubmitCookies(id)}
+                                  disabled={loginState?.isLoggingIn}
+                                  className="btn btn-sm btn-primary focus-ring"
+                                  aria-label={`Submit cookies for ${provider.name}`}
+                                >
+                                  {loginState?.isLoggingIn ? (
+                                    <Loader2 className="w-3 h-3 animate-spin" aria-hidden="true" />
+                                  ) : (
+                                    <ClipboardPaste className="w-3 h-3" aria-hidden="true" />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Cancel/Close button for non-device-code flows */}
+                      {!loginState?.deviceCode && (
+                        <button
+                          onClick={() => {
+                            if (loginState?.isLoggingIn) {
+                              handleCancelLogin(id);
+                            } else {
+                              clearProviderLoginState(id);
+                            }
+                          }}
+                          className="text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                        >
+                          {loginState?.isLoggingIn ? 'Cancel' : 'Close'}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              );
+            })}
+          </div>
           
           {/* Upcoming Providers */}
           {upcomingProviders.length > 0 && (
@@ -1276,11 +1329,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
           )}
           
           </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'providers' || !showTabs) && <div className={dividerClass} />}
 
         {/* Refresh Interval */}
-        <section className="p-4">
+        {(activeTab === 'preferences' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Refresh Interval
           </h2>
@@ -1300,11 +1355,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             ))}
           </div>
         </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'preferences' || !showTabs) && <div className={dividerClass} />}
 
         {/* Display Options */}
-        <section className="p-4">
+        {(activeTab === 'preferences' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Display
           </h2>
@@ -1633,11 +1690,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
           </div>
         </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'updates' || !showTabs) && <div className={dividerClass} />}
 
         {/* Updates */}
-        <section className="p-4">
+        {(activeTab === 'updates' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Updates
           </h2>
@@ -1667,11 +1726,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
           </div>
         </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'debug' || !showTabs) && <div className={dividerClass} />}
 
         {/* Debug */}
-        <section className="p-4" data-testid="debug-settings">
+        {(activeTab === 'debug' || !showTabs) && (
+        <section className={sectionPaddingClass} data-testid="debug-settings">
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Debug
           </h2>
@@ -1726,10 +1787,12 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             )}
           </div>
         </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'advanced' || !showTabs) && <div className={dividerClass} />}
 
-        <section className="p-4">
+        {(activeTab === 'advanced' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <h2 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
             Advanced
           </h2>
@@ -1762,11 +1825,13 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </p>
           </div>
         </section>
+        )}
 
-        <div className="divider mx-4" />
+        {(activeTab === 'preferences' || !showTabs) && <div className={dividerClass} />}
 
         {/* Reset */}
-        <section className="p-4">
+        {(activeTab === 'preferences' || !showTabs) && (
+        <section className={sectionPaddingClass}>
           <button
             onClick={handleResetToDefaults}
             className="w-full btn btn-ghost focus-ring justify-center"
@@ -1775,9 +1840,11 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             <span>Reset to Defaults</span>
           </button>
         </section>
+        )}
 
         {/* About */}
-        <footer className="px-4 pb-4 pt-2 text-center">
+        {(activeTab === 'about' || !showTabs) && (
+        <footer className={`${footerPaddingClass} text-center`}>
           <div className="text-[11px] text-[var(--text-quaternary)]">
             IncuBar v{import.meta.env.PACKAGE_VERSION}
           </div>
@@ -1787,6 +1854,7 @@ export function SettingsPanel({ onBack }: SettingsPanelProps) {
             </div>
           )}
         </footer>
+        )}
       </div>
     </div>
   );

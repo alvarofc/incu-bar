@@ -79,6 +79,19 @@ pub struct AppSettings {
     pub redact_personal_info: bool,
 }
 
+/// Open (or focus) the settings window
+#[command]
+pub async fn open_settings_window(app: AppHandle) -> Result<(), String> {
+    tracing::info!("open_settings_window invoked");
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        if let Err(e) = tray::create_settings_window(&app_clone) {
+            tracing::error!("Failed to create settings window: {}", e);
+        }
+    });
+    Ok(())
+}
+
 const SETTINGS_STORE_PATH: &str = "settings.json";
 const SETTINGS_STORE_KEY: &str = "app_settings";
 
@@ -640,6 +653,20 @@ pub async fn start_login(provider_id: String, app: AppHandle) -> Result<LoginRes
                 success: true,
                 message: "OpenCode uses browser cookies. Use Import from Browser or paste cookies manually.".to_string(),
                 provider_id: "opencode".to_string(),
+            });
+        }
+        "antigravity" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "Launch Antigravity to connect automatically. Usage is detected when the app is running.".to_string(),
+                provider_id: "antigravity".to_string(),
+            });
+        }
+        "jetbrains" => {
+            return Ok(LoginResult {
+                success: true,
+                message: "Open a JetBrains IDE with AI Assistant enabled to connect automatically.".to_string(),
+                provider_id: "jetbrains".to_string(),
             });
         }
         "copilot" => login::run_copilot_login()

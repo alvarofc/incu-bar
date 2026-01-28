@@ -81,6 +81,11 @@ html, body, #root {
   flex-direction: column;
 }
 
+/* Settings window: allow more breathing room */
+.settings-window {
+  border-radius: var(--radius-lg);
+}
+
 /* Typography utilities */
 .text-balance {
   text-wrap: balance;
@@ -147,6 +152,12 @@ html, body, #root {
 .btn-ghost:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
 }
 
 .btn-icon {

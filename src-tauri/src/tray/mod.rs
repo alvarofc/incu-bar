@@ -10,6 +10,7 @@ use std::f64::consts::PI;
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
+    menu::{Menu, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Theme, WebviewUrl, WebviewWindowBuilder, WindowEvent,
 };
@@ -22,6 +23,7 @@ use crate::debug_settings;
 use crate::providers::{ProviderId, UsageSnapshot};
 
 const TRAY_ICON_ID: &str = "main";
+const TRAY_REFRESH_MENU_ID: &str = "tray-refresh";
 const TRAY_TOOLTIP_BASE: &str = "IncuBar - AI Usage Tracker";
 const ICON_SIZE: u32 = 32;
 const RING_THICKNESS: f64 = 3.0;
@@ -1062,10 +1064,21 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         initial_icon.width(),
         initial_icon.height()
     );
+    let refresh_item = MenuItemBuilder::new("Refresh")
+        .id(TRAY_REFRESH_MENU_ID)
+        .build(app)?;
+    let tray_menu = Menu::with_items(app, &[&refresh_item])?;
+
     let tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
         .icon(initial_icon)
         .icon_as_template(true)
+        .menu(&tray_menu)
+        .on_menu_event(|app, event| {
+            if event.id().as_ref() == TRAY_REFRESH_MENU_ID {
+                let _ = app.emit("refresh-requested", ());
+            }
+        })
         .on_tray_icon_event(|tray, event| {
             // Forward tray events to the positioner plugin
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
@@ -1191,6 +1204,53 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
     window.open_devtools();
 
     tracing::info!("Popup window created");
+    Ok(())
+}
+
+/// Create or focus the settings window
+pub fn create_settings_window(app: &AppHandle) -> Result<()> {
+    if let Some(existing) = app.get_webview_window("settings") {
+        existing.show()?;
+        existing.set_focus()?;
+        return Ok(());
+    }
+
+    #[cfg(debug_assertions)]
+    let url = WebviewUrl::External("http://localhost:1420?view=settings".parse().unwrap());
+    #[cfg(not(debug_assertions))]
+    let url = WebviewUrl::App("index.html?view=settings".into());
+
+    let window = WebviewWindowBuilder::new(app, "settings", url)
+        .title("IncuBar Settings")
+        .inner_size(920.0, 720.0)
+        .min_inner_size(760.0, 600.0)
+        .resizable(true)
+        .visible(true)
+        .decorations(true)
+        .always_on_top(false)
+        .skip_taskbar(false)
+        .focused(true)
+        .center()
+        .build()?;
+
+    window.show()?;
+    window.set_focus()?;
+    tracing::info!("Settings window created");
+
+    if let Ok(theme) = window.theme() {
+        let _ = set_tray_theme(app, theme);
+    }
+
+    let app_handle = app.clone();
+    window.on_window_event(move |event| {
+        if let WindowEvent::ThemeChanged(theme) = event {
+            let _ = set_tray_theme(&app_handle, *theme);
+        }
+    });
+
+    #[cfg(debug_assertions)]
+    window.open_devtools();
+
     Ok(())
 }
 
