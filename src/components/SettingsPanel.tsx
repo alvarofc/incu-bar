@@ -286,7 +286,8 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       reorderedProviders[currentIndex],
     ];
 
-    setProviderOrder([...reorderedProviders, ...upcomingProviders]);
+    const nextOrder = [...reorderedProviders, ...upcomingProviders];
+    setProviderOrder(nextOrder);
   }, [implementedProviders, upcomingProviders, setProviderOrder]);
 
   const handleDragStart = useCallback((event: DragEvent, id: ProviderId) => {
@@ -320,7 +321,8 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
     reorderedProviders.splice(sourceIndex, 1);
     reorderedProviders.splice(targetIndex, 0, sourceId);
-    setProviderOrder([...reorderedProviders, ...upcomingProviders]);
+    const nextOrder = [...reorderedProviders, ...upcomingProviders];
+    setProviderOrder(nextOrder);
     setDragOverProviderId(null);
     setDraggingProviderId(null);
   }, [draggingProviderId, implementedProviders, upcomingProviders, setProviderOrder]);

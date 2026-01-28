@@ -225,6 +225,8 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
               </button>
             </div>
           </div>
+        ) : selectedProvider?.usage ? (
+          <MenuCard provider={selectedProvider} />
         ) : activeProvider ? (
           <MenuCard provider={activeProvider} />
         ) : !hasEnabledProvidersInSettings ? (

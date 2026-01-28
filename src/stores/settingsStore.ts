@@ -467,6 +467,55 @@ if (useSettingsStore.persist.hasHydrated()) {
 }
 // Note: We don't unsubscribe because we only need this to fire once on app start
 
+// Cross-window sync: emit settings-updated event when enabledProviders or providerOrder changes
+// This is done via subscription so it works regardless of which action modified the state
+let lastEnabledProviders: string | null = null;
+let lastProviderOrder: string | null = null;
+
+const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder: ProviderId[]) => {
+  // Dynamic import to avoid circular dependencies and ensure Tauri is ready
+  const { emit } = await import('@tauri-apps/api/event');
+  void emit('settings-updated', { enabledProviders, providerOrder });
+};
+
+useSettingsStore.subscribe((state, prevState) => {
+  // Only emit after hydration is complete to avoid sending default values
+  if (!state.hasHydrated) {
+    return;
+  }
+  
+  const currentEnabled = state.enabledProviders.join('|');
+  const currentOrder = state.providerOrder.join('|');
+  const prevEnabled = prevState.enabledProviders.join('|');
+  const prevOrder = prevState.providerOrder.join('|');
+  
+  // Skip if nothing changed (also handles initial subscription call)
+  if (currentEnabled === prevEnabled && currentOrder === prevOrder) {
+    return;
+  }
+  
+  // Skip if this is just the initial hydration setting the values
+  if (lastEnabledProviders === null) {
+    lastEnabledProviders = currentEnabled;
+    lastProviderOrder = currentOrder;
+    return;
+  }
+  
+  // Check if values actually changed from our tracked state
+  if (currentEnabled === lastEnabledProviders && currentOrder === lastProviderOrder) {
+    return;
+  }
+  
+  lastEnabledProviders = currentEnabled;
+  lastProviderOrder = currentOrder;
+  
+  console.log('[settingsStore] Emitting settings-updated:', { 
+    enabledProviders: state.enabledProviders, 
+    providerOrder: state.providerOrder 
+  });
+  void emitSettingsUpdated(state.enabledProviders, state.providerOrder);
+});
+
 // Selectors
 export const useEnabledProviderIds = () =>
   useSettingsStore((state) => state.enabledProviders);

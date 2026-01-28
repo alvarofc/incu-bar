@@ -62,6 +62,7 @@ function App() {
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const setInstallOrigin = useSettingsStore((s) => s.setInstallOrigin);
   const initializedRef = useRef(false);
+  const enabledProvidersRef = useRef<ProviderId[]>([]);
   const notificationStateRef = useRef(new Map<ProviderId, SessionNotificationState>());
   const creditsNotificationStateRef = useRef(new Map<ProviderId, CreditsNotificationState>());
   const refreshFailureNotificationRef = useRef(
@@ -78,6 +79,7 @@ function App() {
       restoreSafeStateAfterCrash();
       console.log('[App] Calling initializeProviders with:', enabledProviders);
       initializeProviders(enabledProviders);
+      enabledProvidersRef.current = enabledProviders;
       // Sync autostart status from system
       initAutostart();
       void invoke<string>('get_install_origin')
@@ -180,8 +182,46 @@ function App() {
   useEffect(() => {
     if (initializedRef.current) {
       initializeProviders(enabledProviders);
+      enabledProvidersRef.current = enabledProviders;
     }
   }, [enabledProviders, initializeProviders]);
+
+  useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+    const syncFromSettings = (payload?: { enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }) => {
+      if (payload?.enabledProviders || payload?.providerOrder) {
+        useSettingsStore.setState({
+          enabledProviders: payload?.enabledProviders ?? useSettingsStore.getState().enabledProviders,
+          providerOrder: payload?.providerOrder ?? useSettingsStore.getState().providerOrder,
+        });
+      }
+
+      const nextEnabled = payload?.enabledProviders ?? useSettingsStore.getState().enabledProviders;
+      if (nextEnabled.join('|') === enabledProvidersRef.current.join('|')) {
+        return;
+      }
+      enabledProvidersRef.current = nextEnabled;
+      useUsageStore.getState().initializeProviders(nextEnabled);
+
+      const usageState = useUsageStore.getState();
+      if (!nextEnabled.includes(usageState.activeProvider)) {
+        useUsageStore.getState().setActiveProvider(nextEnabled[0] ?? 'claude');
+      }
+    };
+
+    const unlistenSettings = listen<{ enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }>(
+      'settings-updated',
+      (event) => {
+        syncFromSettings(event.payload);
+      }
+    );
+
+    return () => {
+      void unlistenSettings.then((fn) => fn()).catch(console.error);
+    };
+  }, [isSettingsWindow]);
 
   // Listen for usage updates from Rust backend
   useEffect(() => {
