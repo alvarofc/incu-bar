@@ -361,13 +361,8 @@ function App() {
     }
   }, [isSettingsWindow]);
 
-  const handleCloseSettings = useCallback(() => {
-    const win = getCurrentWindow();
-    void win.close();
-  }, []);
-
   if (isSettingsWindow) {
-    return <SettingsPanel onBack={handleCloseSettings} showTabs />;
+    return <SettingsPanel showTabs />;
   }
 
   return <PopupWindow onOpenSettings={handleOpenSettings} />;

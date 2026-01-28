@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
-import { ArrowLeft, Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
+import { Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
   MenuBarDisplayTextMode,
@@ -52,11 +52,10 @@ interface ProviderLoginState {
 type SettingsTab = 'providers' | 'preferences' | 'updates' | 'debug' | 'advanced' | 'about';
 
 interface SettingsPanelProps {
-  onBack: () => void;
   showTabs?: boolean;
 }
 
-export function SettingsPanel({ onBack, showTabs = true }: SettingsPanelProps) {
+export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
   const providerOrder = useSettingsStore((s) => s.providerOrder);
   const setProviderOrder = useSettingsStore((s) => s.setProviderOrder);
@@ -935,13 +934,6 @@ export function SettingsPanel({ onBack, showTabs = true }: SettingsPanelProps) {
     <div className="popup-container settings-window">
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
-        <button
-          onClick={onBack}
-          className="btn btn-icon focus-ring"
-          aria-label="Go back"
-        >
-          <ArrowLeft className="w-4 h-4" aria-hidden="true" />
-        </button>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
       </header>
 
