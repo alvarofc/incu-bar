@@ -1,7 +1,6 @@
 // Provider brand icons as React components
 // Icons sourced from Simple Icons (https://simpleicons.org)
 
-import antigravityLogo from '../assets/antigravity.svg';
 import type { ProviderId } from '../lib/types';
 
 interface IconProps {
@@ -157,25 +156,12 @@ export function KimiIcon({ className, 'aria-hidden': ariaHidden = true }: IconPr
   );
 }
 
-// Antigravity - Rocket icon
+// Antigravity - Rocket icon (upward arrow with thrust flames)
 export function AntigravityIcon({ className, 'aria-hidden': ariaHidden = true }: IconProps) {
   return (
-    <span
-      className={className}
-      aria-hidden={ariaHidden}
-      role="presentation"
-      style={{
-        backgroundColor: 'currentColor',
-        maskImage: `url(${antigravityLogo})`,
-        maskRepeat: 'no-repeat',
-        maskPosition: 'center',
-        maskSize: 'contain',
-        WebkitMaskImage: `url(${antigravityLogo})`,
-        WebkitMaskRepeat: 'no-repeat',
-        WebkitMaskPosition: 'center',
-        WebkitMaskSize: 'contain',
-      }}
-    />
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden={ariaHidden}>
+      <path d="M12 2.5c1.5 0 2.75 1.08 3 2.5h-6c.25-1.42 1.5-2.5 3-2.5Zm3.5 3.5v7l2.5 4h-2v4.5h-8V17H6l2.5-4V6h7ZM9.5 17v2h1v-2h-1Zm2 0v2h1v-2h-1Zm2 0v2h1v-2h-1Z"/>
+    </svg>
   );
 }
 
