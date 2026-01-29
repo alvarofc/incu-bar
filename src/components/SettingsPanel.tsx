@@ -180,7 +180,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   }, [providerOrder]);
 
   const implementedProviders = useMemo(
-    () => orderedProviderIds.filter((id) => PROVIDERS[id].implemented),
+    () => orderedProviderIds.filter((id) => PROVIDERS[id].implemented && PROVIDERS[id].available),
+    [orderedProviderIds]
+  );
+
+  const comingSoonProviders = useMemo(
+    () => orderedProviderIds.filter((id) => PROVIDERS[id].implemented && !PROVIDERS[id].available),
     [orderedProviderIds]
   );
 
@@ -286,9 +291,9 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       reorderedProviders[currentIndex],
     ];
 
-    const nextOrder = [...reorderedProviders, ...upcomingProviders];
+    const nextOrder = [...reorderedProviders, ...comingSoonProviders, ...upcomingProviders];
     setProviderOrder(nextOrder);
-  }, [implementedProviders, upcomingProviders, setProviderOrder]);
+  }, [implementedProviders, comingSoonProviders, upcomingProviders, setProviderOrder]);
 
   const handleDragStart = useCallback((event: DragEvent, id: ProviderId) => {
     event.dataTransfer.effectAllowed = 'move';
@@ -321,11 +326,11 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
     reorderedProviders.splice(sourceIndex, 1);
     reorderedProviders.splice(targetIndex, 0, sourceId);
-    const nextOrder = [...reorderedProviders, ...upcomingProviders];
+    const nextOrder = [...reorderedProviders, ...comingSoonProviders, ...upcomingProviders];
     setProviderOrder(nextOrder);
     setDragOverProviderId(null);
     setDraggingProviderId(null);
-  }, [draggingProviderId, implementedProviders, upcomingProviders, setProviderOrder]);
+  }, [draggingProviderId, implementedProviders, comingSoonProviders, upcomingProviders, setProviderOrder]);
 
   const handleDragEnd = useCallback(() => {
     setDraggingProviderId(null);
@@ -1294,14 +1299,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
             })}
           </div>
           
-          {/* Upcoming Providers */}
-          {upcomingProviders.length > 0 && (
+          {/* Coming Soon Providers (not yet available) */}
+          {(comingSoonProviders.length > 0 || upcomingProviders.length > 0) && (
             <div className="mt-5">
               <h3 className="text-[11px] font-semibold text-[var(--text-quaternary)] uppercase tracking-wider mb-3">
                 Coming Soon
               </h3>
               <div className="space-y-1">
-                {upcomingProviders.map((id) => {
+                {[...comingSoonProviders, ...upcomingProviders].map((id) => {
                   const provider = PROVIDERS[id];
                   return (
                     <div

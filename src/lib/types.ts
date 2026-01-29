@@ -100,6 +100,7 @@ export interface ProviderMetadata {
   supportsOpus: boolean;
   supportsCredits: boolean;
   implemented: boolean;
+  available: boolean;         // false = grayed out "coming soon"
   statusPageUrl?: string;
 }
 

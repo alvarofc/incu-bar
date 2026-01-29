@@ -13,6 +13,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: true,
     supportsCredits: false,
     implemented: true,
+    available: true,
     statusPageUrl: 'https://status.anthropic.com',
   },
   codex: {
@@ -27,6 +28,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: true,
     implemented: true,
+    available: true,
     statusPageUrl: 'https://status.openai.com',
   },
   cursor: {
@@ -41,6 +43,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: true,
     implemented: true,
+    available: true,
     statusPageUrl: 'https://status.cursor.sh',
   },
   copilot: {
@@ -55,6 +58,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: true,
     statusPageUrl: 'https://www.githubstatus.com',
   },
   gemini: {
@@ -69,6 +73,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   antigravity: {
     id: 'antigravity',
@@ -82,6 +87,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: true,
     supportsCredits: false,
     implemented: true,
+    available: true,
     statusPageUrl: 'https://www.google.com/appsstatus/dashboard/products/npdyhgECDJ6tB66MxXyo',
   },
   factory: {
@@ -96,6 +102,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   zai: {
     id: 'zai',
@@ -109,6 +116,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   minimax: {
     id: 'minimax',
@@ -122,6 +130,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: true,
     implemented: true,
+    available: false,
   },
   kimi: {
     id: 'kimi',
@@ -135,6 +144,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   kimi_k2: {
     id: 'kimi_k2',
@@ -148,6 +158,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   kiro: {
     id: 'kiro',
@@ -161,6 +172,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
     statusPageUrl: 'https://status.aws.amazon.com/rss/all.rss',
   },
   vertexai: {
@@ -175,6 +187,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: false,
+    available: false,
   },
   augment: {
     id: 'augment',
@@ -188,6 +201,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: true,
     implemented: true,
+    available: false,
   },
   amp: {
     id: 'amp',
@@ -201,6 +215,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   jetbrains: {
     id: 'jetbrains',
@@ -214,6 +229,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: true,
     implemented: true,
+    available: false,
   },
   opencode: {
     id: 'opencode',
@@ -227,6 +243,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
   synthetic: {
     id: 'synthetic',
@@ -240,6 +257,7 @@ export const PROVIDERS: Record<ProviderId, ProviderMetadata> = {
     supportsOpus: false,
     supportsCredits: false,
     implemented: true,
+    available: false,
   },
 };
 
