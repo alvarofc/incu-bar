@@ -19,11 +19,8 @@ const TOKEN_REFRESH_ENDPOINT: &str = "https://oauth2.googleapis.com/token";
 const CREDENTIALS_PATH: &str = ".gemini/oauth_creds.json";
 const SETTINGS_PATH: &str = ".gemini/settings.json";
 
-// Gemini CLI OAuth credentials (extracted from gemini-cli-core)
-// These are public OAuth client credentials used by the Gemini CLI
-const OAUTH_CLIENT_ID: &str =
-    "REDACTED_GEMINI_OAUTH_CLIENT_ID";
-const OAUTH_CLIENT_SECRET: &str = "REDACTED_GEMINI_OAUTH_CLIENT_SECRET";
+// Gemini OAuth client credentials should be provided at runtime via env vars:
+// GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET.
 
 pub struct GeminiProvider {
     client: reqwest::Client,
@@ -175,9 +172,29 @@ impl GeminiProvider {
         current_expiry: Option<f64>,
         refresh_token: &str,
     ) -> Result<GeminiCredentials, anyhow::Error> {
+        let client_id = std::env::var("GEMINI_OAUTH_CLIENT_ID").ok();
+        let client_secret = std::env::var("GEMINI_OAUTH_CLIENT_SECRET").ok();
+
+        if client_id.is_none() || client_secret.is_none() {
+            tracing::debug!(
+                "Gemini OAuth client credentials not set; trying CLI refresh"
+            );
+            if let Some(creds) = self
+                .try_refresh_via_cli(current_access_token, current_expiry)
+                .await?
+            {
+                return Ok(creds);
+            }
+            return Err(anyhow::anyhow!(
+                "Missing Gemini OAuth client credentials. Set GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET or run 'gemini' to re-authenticate."
+            ));
+        }
+
         let body = format!(
             "client_id={}&client_secret={}&refresh_token={}&grant_type=refresh_token",
-            OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, refresh_token
+            client_id.as_deref().unwrap_or_default(),
+            client_secret.as_deref().unwrap_or_default(),
+            refresh_token
         );
 
         let response = self
