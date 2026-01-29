@@ -487,12 +487,12 @@ let lastEnabledProviders: string | null = null;
 let lastProviderOrder: string | null = null;
 
 const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder: ProviderId[]) => {
-  // Dynamic import to avoid circular dependencies and ensure Tauri is ready
-  const { emit } = await import('@tauri-apps/api/event');
-  void emit('settings-updated', { enabledProviders, providerOrder });
-  // Also sync enabled providers with backend registry to avoid drift
   const { invoke } = await import('@tauri-apps/api/core');
-  void invoke('set_enabled_providers', { providerIds: enabledProviders });
+  try {
+    await invoke('broadcast_settings_updated', { enabledProviders, providerOrder });
+  } catch (error) {
+    console.warn('[settingsStore] Failed to broadcast settings update', error);
+  }
 };
 
 useSettingsStore.subscribe((state, prevState) => {
@@ -511,25 +511,19 @@ useSettingsStore.subscribe((state, prevState) => {
     return;
   }
   
-  // Skip if this is just the initial hydration setting the values
   if (lastEnabledProviders === null) {
-    lastEnabledProviders = currentEnabled;
-    lastProviderOrder = currentOrder;
-    return;
+    lastEnabledProviders = prevEnabled;
+    lastProviderOrder = prevOrder;
   }
-  
+
   // Check if values actually changed from our tracked state
   if (currentEnabled === lastEnabledProviders && currentOrder === lastProviderOrder) {
     return;
   }
-  
+
   lastEnabledProviders = currentEnabled;
   lastProviderOrder = currentOrder;
-  
-  console.log('[settingsStore] Emitting settings-updated:', { 
-    enabledProviders: state.enabledProviders, 
-    providerOrder: state.providerOrder 
-  });
+
   void emitSettingsUpdated(state.enabledProviders, state.providerOrder);
 });
 

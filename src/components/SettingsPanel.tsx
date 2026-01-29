@@ -274,9 +274,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const handleToggleProvider = useCallback((id: ProviderId) => {
     const store = useSettingsStore.getState();
     const currentlyEnabled = store.enabledProviders.includes(id);
+    const newEnabled = !currentlyEnabled;
     store.toggleProvider(id);
-    void store.syncProviderEnabled(id, !currentlyEnabled);
-    useUsageStore.getState().setProviderEnabled(id, !currentlyEnabled);
+    void store.syncProviderEnabled(id, newEnabled);
+    useUsageStore.getState().setProviderEnabled(id, newEnabled);
+    // Refresh usage data when enabling a provider
+    if (newEnabled) {
+      useUsageStore.getState().refreshProvider(id);
+    }
   }, []);
 
   const handleMoveProvider = useCallback((id: ProviderId, direction: 'up' | 'down') => {

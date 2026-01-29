@@ -405,6 +405,35 @@ pub async fn set_enabled_providers(
     Ok(())
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct SettingsUpdatedPayload {
+    enabled_providers: Vec<ProviderId>,
+    provider_order: Vec<ProviderId>,
+}
+
+/// Broadcast settings updates to all windows and sync registry
+#[command]
+pub async fn broadcast_settings_updated(
+    enabled_providers: Vec<ProviderId>,
+    provider_order: Vec<ProviderId>,
+    registry: State<'_, ProviderRegistry>,
+    app: AppHandle,
+) -> Result<(), String> {
+    registry.set_enabled_providers(&enabled_providers).await;
+    for provider_id in ProviderId::all() {
+        let enabled = enabled_providers.contains(&provider_id);
+        tray::set_provider_disabled(&app, provider_id, !enabled).map_err(|e| e.to_string())?;
+    }
+    let payload = SettingsUpdatedPayload {
+        enabled_providers,
+        provider_order,
+    };
+    app.emit("settings-updated", payload)
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Get current settings
 #[command]
 pub async fn get_settings(app: AppHandle) -> Result<AppSettings, String> {

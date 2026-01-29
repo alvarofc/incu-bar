@@ -57,19 +57,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   // But cap it at 5 seconds to avoid infinite loading
   const isInitialLoading = hasHydrated && !hasAnyResult && hasEnabledProvidersInSettings && !loadingTimedOut;
 
-  // DEBUG: Log state for troubleshooting
-  console.log('[PopupWindow] State:', {
-    hasHydrated,
-    settingsEnabledProviders,
-    hasEnabledProvidersInSettings,
-    enabledProvidersCount: enabledProviders.length,
-    lastGlobalRefresh,
-    isInitialLoading,
-    isRefreshing,
-    isProvidersSynced,
-    loadingTimedOut,
-    hasAnyResult,
-  });
 
   const handleRefreshAll = useCallback(() => {
     useUsageStore.getState().refreshAllProviders();
@@ -80,24 +67,34 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   }, []);
 
   const enabledProviderIdsKey = useMemo(
-    () => settingsEnabledProviders.join('|'),
+    () => [...settingsEnabledProviders].sort().join('|'),
     [settingsEnabledProviders]
   );
 
   // Refresh providers when enabled set changes (including initial hydration)
   // Wait for usage store to be synced with settings before triggering refresh
   useEffect(() => {
-    console.log('[PopupWindow] Refresh effect check:', { hasHydrated, enabledProviderIdsKey, isRefreshing, isProvidersSynced, lastRefreshKey: lastRefreshKeyRef.current });
     if (!hasHydrated || !enabledProviderIdsKey || isRefreshing || !isProvidersSynced) {
       return;
     }
-    if (lastRefreshKeyRef.current === enabledProviderIdsKey) {
+    const previousKey = lastRefreshKeyRef.current;
+    if (!previousKey) {
+      lastRefreshKeyRef.current = enabledProviderIdsKey;
+      handleRefreshAll();
       return;
     }
-    console.log('[PopupWindow] Triggering refreshAllProviders');
+    if (previousKey === enabledProviderIdsKey) {
+      return;
+    }
+    const prevEnabled = previousKey.split('|').filter(Boolean) as ProviderId[];
+    const nextEnabled = enabledProviderIdsKey.split('|').filter(Boolean) as ProviderId[];
+    const newlyEnabled = nextEnabled.filter((id) => !prevEnabled.includes(id));
     lastRefreshKeyRef.current = enabledProviderIdsKey;
-    handleRefreshAll();
-  }, [hasHydrated, enabledProviderIdsKey, handleRefreshAll, isRefreshing, isProvidersSynced]);
+    if (newlyEnabled.length === 0) {
+      return;
+    }
+    newlyEnabled.forEach((id) => handleRefreshProvider(id));
+  }, [hasHydrated, enabledProviderIdsKey, handleRefreshAll, handleRefreshProvider, isRefreshing, isProvidersSynced]);
 
   // Handle click outside to close the popup
   useEffect(() => {
@@ -108,6 +105,30 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
 
     window.addEventListener('blur', handleBlur);
     return () => window.removeEventListener('blur', handleBlur);
+  }, []);
+
+  // Rehydrate settings when the popup becomes visible/focused
+  useEffect(() => {
+    const rehydrateSettings = () => {
+      void useSettingsStore.persist.rehydrate();
+    };
+
+    const handleFocus = () => {
+      rehydrateSettings();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        rehydrateSettings();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Handle escape key to close

@@ -268,18 +268,20 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
       const newActiveProvider = enabledIds.includes(state.activeProvider)
         ? state.activeProvider
         : enabledIds[0] || state.activeProvider;
-      
+
+      const newProviders = Object.fromEntries(
+        (Object.keys(state.providers) as ProviderId[]).map((id) => [
+          id,
+          {
+            ...state.providers[id],
+            enabled: enabledIds.includes(id),
+          },
+        ])
+      ) as Record<ProviderId, ProviderState>;
+
       return {
         activeProvider: newActiveProvider,
-        providers: Object.fromEntries(
-          (Object.keys(state.providers) as ProviderId[]).map((id) => [
-            id,
-            {
-              ...state.providers[id],
-              enabled: enabledIds.includes(id),
-            },
-          ])
-        ) as Record<ProviderId, ProviderState>,
+        providers: newProviders,
       };
     }),
 

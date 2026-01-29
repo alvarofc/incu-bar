@@ -94,6 +94,7 @@ pub fn run() {
             commands::poll_provider_statuses,
             commands::set_provider_enabled,
             commands::set_enabled_providers,
+            commands::broadcast_settings_updated,
             commands::get_settings,
             commands::save_settings,
             commands::save_menu_bar_display_settings,

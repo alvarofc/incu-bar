@@ -204,15 +204,26 @@ function App() {
       }
 
       const nextEnabled = payload?.enabledProviders ?? useSettingsStore.getState().enabledProviders;
-      if (nextEnabled.join('|') === enabledProvidersRef.current.join('|')) {
+      const prevEnabled = enabledProvidersRef.current;
+      
+      // Find newly enabled providers (were not in previous list but are in new list)
+      const newlyEnabled = nextEnabled.filter((id) => !prevEnabled.includes(id));
+
+      if (nextEnabled.join('|') === prevEnabled.join('|')) {
         return;
       }
+
       enabledProvidersRef.current = nextEnabled;
       useUsageStore.getState().initializeProviders(nextEnabled);
 
       const usageState = useUsageStore.getState();
       if (!nextEnabled.includes(usageState.activeProvider)) {
         useUsageStore.getState().setActiveProvider(nextEnabled[0] ?? 'claude');
+      }
+      
+      // Refresh newly enabled providers to fetch their usage data
+      for (const providerId of newlyEnabled) {
+        useUsageStore.getState().refreshProvider(providerId);
       }
     };
 
