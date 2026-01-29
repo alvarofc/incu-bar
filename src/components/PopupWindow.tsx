@@ -20,7 +20,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const lastGlobalRefresh = useUsageStore((s) => s.lastGlobalRefresh);
   const hasHydrated = useSettingsStore((s) => s.hasHydrated);
   const displayMode = useSettingsStore((s) => s.displayMode);
-  const selectedProviderId = useUsageStore((s) => s.activeProvider);
   const selectedProvider = useUsageStore((s) => s.providers[s.activeProvider]);
   const lastRefreshKeyRef = useRef<string | null>(null);
   const hasEnabledProvidersInSettings = settingsEnabledProviders.length > 0;
