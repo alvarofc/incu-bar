@@ -1086,6 +1086,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .icon(initial_icon)
         .icon_as_template(true)
         .menu(&tray_menu)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
             if event.id().as_ref() == TRAY_REFRESH_MENU_ID {
                 let _ = app.emit("refresh-requested", ());
@@ -1096,6 +1097,18 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
             tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
 
             match event {
+                TrayIconEvent::DoubleClick {
+                    button: MouseButton::Left,
+                    ..
+                } => {
+                    tracing::info!("Tray icon double-clicked - opening settings");
+                    let app = tray.app_handle().clone();
+                    std::thread::spawn(move || {
+                        if let Err(e) = create_settings_window(&app) {
+                            tracing::error!("Failed to open settings window: {}", e);
+                        }
+                    });
+                }
                 TrayIconEvent::Click {
                     button: MouseButton::Left,
                     button_state: MouseButtonState::Up,
