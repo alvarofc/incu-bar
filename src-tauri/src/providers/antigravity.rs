@@ -7,6 +7,7 @@ use super::{
 };
 use async_trait::async_trait;
 use regex::Regex;
+use std::time::Instant;
 
 const PROCESS_NAME: &str = "language_server_macos";
 const GET_USER_STATUS_PATH: &str = "/exa.language_server_pb.LanguageServerService/GetUserStatus";
@@ -14,7 +15,8 @@ const COMMAND_MODEL_CONFIG_PATH: &str =
     "/exa.language_server_pb.LanguageServerService/GetCommandModelConfigs";
 const UNLEASH_PATH: &str = "/exa.language_server_pb.LanguageServerService/GetUnleashData";
 
-const DEFAULT_TIMEOUT_SECS: u64 = 8;
+const DEFAULT_TIMEOUT_SECS: u64 = 30;
+const PORT_TEST_TIMEOUT_SECS: u64 = 2;
 
 pub struct AntigravityProvider {
     client: reqwest::Client,
@@ -104,6 +106,7 @@ impl AntigravityProvider {
     }
 
     async fn detect_process_info(&self) -> Result<ProcessInfoResult, AntigravityError> {
+        tracing::debug!("antigravity: detect_process_info starting");
         let output = tokio::process::Command::new("/bin/ps")
             .args(["-ax", "-o", "pid=,command="])
             .output()
@@ -130,16 +133,32 @@ impl AntigravityProvider {
                 continue;
             }
             if !is_antigravity_command_line(&lower) {
+                tracing::debug!(
+                    "antigravity: pid {} matched process name but not command line heuristic",
+                    pid
+                );
                 continue;
             }
             saw_antigravity_process = true;
 
             let csrf_token = match extract_flag("--csrf_token", command) {
                 Some(token) => token,
-                None => continue, // Keep searching for a process with csrf_token
+                None => {
+                    tracing::debug!(
+                        "antigravity: pid {} matched but missing csrf token flag",
+                        pid
+                    );
+                    continue; // Keep searching for a process with csrf_token
+                }
             };
             let extension_port = extract_flag("--extension_server_port", command)
                 .and_then(|raw| raw.parse::<i32>().ok());
+
+            tracing::debug!(
+                "antigravity: detected pid {}, extension_port_present={}",
+                pid,
+                extension_port.is_some()
+            );
 
             return Ok(ProcessInfoResult {
                 pid,
@@ -149,13 +168,16 @@ impl AntigravityProvider {
         }
 
         if saw_antigravity_process {
+            tracing::debug!("antigravity: process seen but csrf token missing");
             Err(AntigravityError::MissingCsrfToken)
         } else {
+            tracing::debug!("antigravity: no matching process found");
             Err(AntigravityError::NotRunning)
         }
     }
 
     async fn listening_ports(&self, pid: i32) -> Result<Vec<i32>, AntigravityError> {
+        tracing::debug!("antigravity: listing ports for pid {}", pid);
         let lsof = if std::path::Path::new("/usr/sbin/lsof").exists() {
             "/usr/sbin/lsof"
         } else if std::path::Path::new("/usr/bin/lsof").exists() {
@@ -179,6 +201,7 @@ impl AntigravityProvider {
                 "no listening ports found".to_string(),
             ));
         }
+        tracing::debug!("antigravity: found {} listening ports", ports.len());
         Ok(ports)
     }
 
@@ -187,27 +210,73 @@ impl AntigravityProvider {
         ports: &[i32],
         csrf_token: &str,
     ) -> Result<i32, AntigravityError> {
-        for port in ports {
-            if self.test_port(*port, csrf_token).await {
-                return Ok(*port);
+        tracing::debug!("antigravity: testing {} ports", ports.len());
+        let start = Instant::now();
+        // Test all ports concurrently to avoid sequential timeout accumulation
+        let mut handles = Vec::new();
+        let port_test_timeout = std::time::Duration::from_secs(PORT_TEST_TIMEOUT_SECS);
+
+        for &port in ports {
+            let csrf = csrf_token.to_string();
+            let client = self.client.clone();
+            
+            let handle = tokio::spawn(async move {
+                let context = RequestContext {
+                    https_port: port,
+                    http_port: None,
+                    csrf_token: csrf,
+                };
+                let payload_body = unleash_request_body();
+                let url = format!("https://127.0.0.1:{}{}", port, UNLEASH_PATH);
+                let body = match serde_json::to_vec(&payload_body) {
+                    Ok(b) => b,
+                    Err(_) => return (port, false),
+                };
+
+                let result = client
+                    .post(&url)
+                    .header("Content-Type", "application/json")
+                    .header("Content-Length", body.len())
+                    .header("Connect-Protocol-Version", "1")
+                    .header("X-Codeium-Csrf-Token", &context.csrf_token)
+                    .timeout(port_test_timeout)
+                    .body(body)
+                    .send()
+                    .await;
+
+                (port, result.is_ok())
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all port tests to complete
+        let mut working_ports = Vec::new();
+        for handle in handles {
+            if let Ok((port, success)) = handle.await {
+                if success {
+                    working_ports.push(port);
+                }
             }
         }
+
+        // Return the first working port (prefer lower ports as they're usually the main one)
+        working_ports.sort();
+        if let Some(&port) = working_ports.first() {
+            tracing::debug!(
+                "antigravity: working port {} found in {:?}",
+                port,
+                start.elapsed()
+            );
+            return Ok(port);
+        }
+
+        tracing::debug!(
+            "antigravity: no working port found after {:?}",
+            start.elapsed()
+        );
         Err(AntigravityError::PortDetection(
             "no working API port found".to_string(),
         ))
-    }
-
-    async fn test_port(&self, port: i32, csrf_token: &str) -> bool {
-        let context = RequestContext {
-            https_port: port,
-            http_port: None,
-            csrf_token: csrf_token.to_string(),
-        };
-        let payload = RequestPayload {
-            path: UNLEASH_PATH,
-            body: unleash_request_body(),
-        };
-        self.make_request(payload, &context).await.is_ok()
     }
 
     async fn make_request(
@@ -241,6 +310,18 @@ impl AntigravityProvider {
         payload: &RequestPayload<'_>,
         context: &RequestContext,
     ) -> Result<Vec<u8>, AntigravityError> {
+        self.send_request_with_timeout(scheme, port, payload, context, self.timeout)
+            .await
+    }
+
+    async fn send_request_with_timeout(
+        &self,
+        scheme: &str,
+        port: i32,
+        payload: &RequestPayload<'_>,
+        context: &RequestContext,
+        timeout: std::time::Duration,
+    ) -> Result<Vec<u8>, AntigravityError> {
         let url = format!("{}://127.0.0.1:{}{}", scheme, port, payload.path);
         let body = serde_json::to_vec(&payload.body)
             .map_err(|err| AntigravityError::Api(format!("Serialize failed: {}", err)))?;
@@ -252,7 +333,7 @@ impl AntigravityProvider {
             .header("Content-Length", body.len())
             .header("Connect-Protocol-Version", "1")
             .header("X-Codeium-Csrf-Token", &context.csrf_token)
-            .timeout(self.timeout)
+            .timeout(timeout)
             .body(body)
             .send()
             .await

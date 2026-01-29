@@ -534,30 +534,38 @@ pub fn handle_usage_update(
     provider_id: ProviderId,
     usage: UsageSnapshot,
 ) -> Result<()> {
-    let mut state = write_tray_usage_state();
-    state.provider_usage.insert(provider_id, usage);
+    {
+        let mut state = write_tray_usage_state();
+        state.provider_usage.insert(provider_id, usage);
+    }
     update_tray_icon(app)
 }
 
 pub fn set_loading_state(app: &AppHandle, is_loading: bool) -> Result<()> {
-    let mut state = write_tray_usage_state();
-    if is_loading {
-        state.loading_count = state.loading_count.saturating_add(1);
-    } else if state.loading_count > 0 {
-        state.loading_count -= 1;
+    {
+        let mut state = write_tray_usage_state();
+        if is_loading {
+            state.loading_count = state.loading_count.saturating_add(1);
+        } else if state.loading_count > 0 {
+            state.loading_count -= 1;
+        }
     }
     update_tray_icon(app)
 }
 
 pub fn set_blinking_state(app: &AppHandle, enabled: bool) -> Result<()> {
-    let mut state = write_tray_usage_state();
-    state.blinking = enabled;
+    {
+        let mut state = write_tray_usage_state();
+        state.blinking = enabled;
+    }
     update_tray_icon(app)
 }
 
 pub fn set_tray_theme(app: &AppHandle, theme: Theme) -> Result<()> {
-    let mut state = write_tray_usage_state();
-    state.theme = theme;
+    {
+        let mut state = write_tray_usage_state();
+        state.theme = theme;
+    }
     update_tray_icon(app)
 }
 
@@ -568,11 +576,13 @@ pub fn set_display_text(
     percent_window_mode: TrayPercentWindowMode,
     show_used: bool,
 ) -> Result<()> {
-    let mut state = write_tray_display_text_state();
-    state.enabled = enabled;
-    state.mode = mode;
-    state.percent_window_mode = percent_window_mode;
-    state.show_used = show_used;
+    {
+        let mut state = write_tray_display_text_state();
+        state.enabled = enabled;
+        state.mode = mode;
+        state.percent_window_mode = percent_window_mode;
+        state.show_used = show_used;
+    }
     update_tray_icon(app)
 }
 
@@ -602,11 +612,13 @@ pub fn set_provider_disabled(
     provider_id: ProviderId,
     disabled: bool,
 ) -> Result<()> {
-    let mut state = write_tray_usage_state();
-    if disabled {
-        state.disabled_providers.insert(provider_id);
-    } else {
-        state.disabled_providers.remove(&provider_id);
+    {
+        let mut state = write_tray_usage_state();
+        if disabled {
+            state.disabled_providers.insert(provider_id);
+        } else {
+            state.disabled_providers.remove(&provider_id);
+        }
     }
     update_tray_icon(app)
 }

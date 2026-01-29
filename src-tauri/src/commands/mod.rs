@@ -161,7 +161,9 @@ pub async fn refresh_provider(
         return Err(format!("Not authenticated: {}", error_msg));
     }
 
+    tracing::info!("refresh_provider: preparing loading guard for {:?}", provider_id);
     let mut loading_guard = LoadingGuard::new(&app);
+    tracing::info!("refresh_provider: loading guard acquired for {:?}", provider_id);
     emit_refreshing(&app, provider_id, true);
 
     tracing::info!("refresh_provider: fetching status for {:?}", provider_id);
@@ -385,6 +387,21 @@ pub async fn set_provider_enabled(
     registry.set_enabled(&provider_id, enabled).await;
     tray::set_provider_disabled(&app, provider_id, !enabled).map_err(|e| e.to_string())?;
     tray::set_blinking_state(&app, !enabled).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Sync enabled providers list with registry
+#[command]
+pub async fn set_enabled_providers(
+    provider_ids: Vec<ProviderId>,
+    registry: State<'_, ProviderRegistry>,
+    app: AppHandle,
+) -> Result<(), String> {
+    registry.set_enabled_providers(&provider_ids).await;
+    for provider_id in ProviderId::all() {
+        let enabled = provider_ids.contains(&provider_id);
+        tray::set_provider_disabled(&app, provider_id, !enabled).map_err(|e| e.to_string())?;
+    }
     Ok(())
 }
 

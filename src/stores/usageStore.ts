@@ -263,17 +263,25 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
   },
 
   initializeProviders: (enabledIds) =>
-    set((state) => ({
-      providers: Object.fromEntries(
-        (Object.keys(state.providers) as ProviderId[]).map((id) => [
-          id,
-          {
-            ...state.providers[id],
-            enabled: enabledIds.includes(id),
-          },
-        ])
-      ) as Record<ProviderId, ProviderState>,
-    })),
+    set((state) => {
+      // Set activeProvider to first enabled provider if current one is not in the list
+      const newActiveProvider = enabledIds.includes(state.activeProvider)
+        ? state.activeProvider
+        : enabledIds[0] || state.activeProvider;
+      
+      return {
+        activeProvider: newActiveProvider,
+        providers: Object.fromEntries(
+          (Object.keys(state.providers) as ProviderId[]).map((id) => [
+            id,
+            {
+              ...state.providers[id],
+              enabled: enabledIds.includes(id),
+            },
+          ])
+        ) as Record<ProviderId, ProviderState>,
+      };
+    }),
 
   clearUsageHistory: () =>
     set((state) => {

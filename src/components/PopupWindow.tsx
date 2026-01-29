@@ -3,7 +3,7 @@ import { Settings, RefreshCw, Plug, AlertCircle } from 'lucide-react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { MenuCard } from './MenuCard';
 import { ProviderTabs, ProviderSwitcherButtons } from './ProviderTabs';
-import { useUsageStore, useActiveProvider, useEnabledProviders } from '../stores/usageStore';
+import { useUsageStore, useEnabledProviders } from '../stores/usageStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { ProviderIcon } from './ProviderIcons';
 import { PROVIDERS } from '../lib/providers';
@@ -14,7 +14,6 @@ interface PopupWindowProps {
 }
 
 export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
-  const activeProvider = useActiveProvider();
   const enabledProviders = useEnabledProviders();
   const settingsEnabledProviders = useSettingsStore((s) => s.enabledProviders);
   const isRefreshing = useUsageStore((s) => s.isRefreshing);
@@ -22,11 +21,11 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
   const hasHydrated = useSettingsStore((s) => s.hasHydrated);
   const displayMode = useSettingsStore((s) => s.displayMode);
   const selectedProviderId = useUsageStore((s) => s.activeProvider);
+  const selectedProvider = useUsageStore((s) => s.providers[s.activeProvider]);
   const lastRefreshKeyRef = useRef<string | null>(null);
   const hasEnabledProvidersInSettings = settingsEnabledProviders.length > 0;
   
   // Get the currently selected provider (might be an error provider)
-  const selectedProvider = enabledProviders.find((p) => p.id === selectedProviderId);
   const selectedHasError = selectedProvider?.lastError && !selectedProvider?.usage;
   const selectedIsLoading = selectedProvider?.isLoading;
   const selectedHasNoData = selectedProvider && !selectedProvider.usage && !selectedProvider.lastError && !selectedProvider.isLoading;
@@ -64,7 +63,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
     hasHydrated,
     settingsEnabledProviders,
     hasEnabledProvidersInSettings,
-    activeProvider: activeProvider?.id ?? null,
     enabledProvidersCount: enabledProviders.length,
     lastGlobalRefresh,
     isInitialLoading,
@@ -227,8 +225,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
           </div>
         ) : selectedProvider?.usage ? (
           <MenuCard provider={selectedProvider} />
-        ) : activeProvider ? (
-          <MenuCard provider={activeProvider} />
         ) : !hasEnabledProvidersInSettings ? (
           <div
             className="flex flex-col items-center justify-center py-10 px-6 text-center animate-slide-up"

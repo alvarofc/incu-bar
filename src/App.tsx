@@ -44,6 +44,7 @@ function App() {
   const setProviderStatus = useUsageStore((s) => s.setProviderStatus);
   const initializeProviders = useUsageStore((s) => s.initializeProviders);
   const enabledProviders = useSettingsStore((s) => s.enabledProviders);
+  const hasHydrated = useSettingsStore((s) => s.hasHydrated);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
   const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
@@ -71,9 +72,13 @@ function App() {
   const staleUsageNotificationRef = useRef(new Map<ProviderId, StaleUsageNotificationState>());
   const lastUpdateCheckChannelRef = useRef<UpdateChannel | null>(null);
 
-  // Initialize enabled providers from settings (only once on mount)
+  // Initialize enabled providers from settings (only once after hydration)
   useEffect(() => {
-    console.log('[App] Init effect, initializedRef:', initializedRef.current, 'enabledProviders:', enabledProviders);
+    console.log('[App] Init effect, initializedRef:', initializedRef.current, 'hasHydrated:', hasHydrated, 'enabledProviders:', enabledProviders);
+    // Wait for settings to hydrate from localStorage before initializing
+    if (!hasHydrated) {
+      return;
+    }
     if (!initializedRef.current) {
       initializedRef.current = true;
       restoreSafeStateAfterCrash();
@@ -91,7 +96,7 @@ function App() {
           setInstallOrigin(null);
         });
     }
-  }, [enabledProviders, initializeProviders, initAutostart, setInstallOrigin]);
+  }, [hasHydrated, enabledProviders, initializeProviders, initAutostart, setInstallOrigin]);
 
   useEffect(() => {
     let active = true;
@@ -178,13 +183,13 @@ function App() {
     void invoke('set_redact_personal_info', { enabled: redactPersonalInfo });
   }, [redactPersonalInfo]);
 
-  // Sync enabled providers when settings change
+  // Sync enabled providers when settings change (only after hydration)
   useEffect(() => {
-    if (initializedRef.current) {
+    if (initializedRef.current && hasHydrated) {
       initializeProviders(enabledProviders);
       enabledProvidersRef.current = enabledProviders;
     }
-  }, [enabledProviders, initializeProviders]);
+  }, [hasHydrated, enabledProviders, initializeProviders]);
 
   useEffect(() => {
     if (isSettingsWindow) {

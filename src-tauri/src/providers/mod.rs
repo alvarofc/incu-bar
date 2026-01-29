@@ -502,25 +502,23 @@ struct ProviderState {
 /// Registry managing all providers
 pub struct ProviderRegistry {
     providers: RwLock<HashMap<ProviderId, ProviderState>>,
+    /// Flag indicating whether the frontend has synced enabled providers
+    /// The refresh loop waits for this before starting to avoid using stale defaults
+    frontend_synced: RwLock<bool>,
 }
 
 impl ProviderRegistry {
     pub fn new() -> Self {
         let mut providers = HashMap::new();
 
-        // Initialize with default enabled providers
-        let default_enabled = vec![
-            ProviderId::Claude,
-            ProviderId::Codex,
-            ProviderId::Cursor,
-            ProviderId::Copilot,
-        ];
+        // Start with all providers disabled - frontend will sync the correct list
+        // This prevents the race condition where refresh loop starts before frontend sync
 
         // Claude
         providers.insert(
             ProviderId::Claude,
             ProviderState {
-                enabled: default_enabled.contains(&ProviderId::Claude),
+                enabled: false,
                 cached_usage: None,
                 fetcher: Arc::new(claude::ClaudeProvider::new()),
             },
@@ -530,7 +528,7 @@ impl ProviderRegistry {
         providers.insert(
             ProviderId::Codex,
             ProviderState {
-                enabled: default_enabled.contains(&ProviderId::Codex),
+                enabled: false,
                 cached_usage: None,
                 fetcher: Arc::new(codex::CodexProvider::new()),
             },
@@ -540,7 +538,7 @@ impl ProviderRegistry {
         providers.insert(
             ProviderId::Cursor,
             ProviderState {
-                enabled: default_enabled.contains(&ProviderId::Cursor),
+                enabled: false,
                 cached_usage: None,
                 fetcher: Arc::new(cursor::CursorProvider::new()),
             },
@@ -550,7 +548,7 @@ impl ProviderRegistry {
         providers.insert(
             ProviderId::Copilot,
             ProviderState {
-                enabled: default_enabled.contains(&ProviderId::Copilot),
+                enabled: false,
                 cached_usage: None,
                 fetcher: Arc::new(copilot::CopilotProvider::new()),
             },
@@ -694,6 +692,7 @@ impl ProviderRegistry {
 
         Self {
             providers: RwLock::new(providers),
+            frontend_synced: RwLock::new(false),
         }
     }
 
@@ -802,6 +801,28 @@ impl ProviderRegistry {
             state.enabled = enabled;
         }
     }
+
+    pub async fn set_enabled_providers(&self, enabled: &[ProviderId]) {
+        let enabled_set: std::collections::HashSet<ProviderId> = enabled.iter().copied().collect();
+        let mut providers = self.providers.write().await;
+        for (id, state) in providers.iter_mut() {
+            state.enabled = enabled_set.contains(id);
+        }
+        drop(providers);
+        // Mark frontend as synced - this allows the refresh loop to start
+        *self.frontend_synced.write().await = true;
+        tracing::info!("set_enabled_providers: synced {} providers from frontend, refresh loop can now start", enabled.len());
+    }
+
+    /// Check if the frontend has synced enabled providers
+    pub async fn is_frontend_synced(&self) -> bool {
+        *self.frontend_synced.read().await
+    }
+
+    /// Mark frontend as synced (fallback in case set_enabled_providers wasn't called)
+    pub async fn mark_frontend_synced(&self) {
+        *self.frontend_synced.write().await = true;
+    }
 }
 
 #[cfg(test)]
@@ -809,19 +830,20 @@ mod registry_tests {
     use super::{ProviderId, ProviderRegistry, UsageSnapshot};
 
     #[tokio::test]
-    async fn registry_uses_async_locking_for_cached_usage() {
+    async fn registry_starts_with_all_providers_disabled() {
         let registry = ProviderRegistry::new();
 
+        // All providers start disabled - frontend will sync the correct list
         let enabled_providers = registry.get_enabled_providers().await;
-        assert!(!enabled_providers.is_empty());
-        assert!(enabled_providers.contains(&ProviderId::Claude));
+        assert!(enabled_providers.is_empty());
 
         let cached_usage = registry.get_all_cached_usage().await;
         assert!(cached_usage.is_empty());
 
-        registry.set_enabled(&ProviderId::Claude, false).await;
+        // Enabling a provider works
+        registry.set_enabled(&ProviderId::Claude, true).await;
         let enabled_after = registry.get_enabled_providers().await;
-        assert!(!enabled_after.contains(&ProviderId::Claude));
+        assert!(enabled_after.contains(&ProviderId::Claude));
 
         let usage = UsageSnapshot::error("unit test".to_string());
         {
@@ -837,6 +859,22 @@ mod registry_tests {
             Some("unit test".to_string())
         );
     }
+
+    #[tokio::test]
+    async fn set_enabled_providers_marks_frontend_synced() {
+        let registry = ProviderRegistry::new();
+
+        assert!(!registry.is_frontend_synced().await);
+
+        registry.set_enabled_providers(&[ProviderId::Cursor, ProviderId::Copilot]).await;
+
+        assert!(registry.is_frontend_synced().await);
+        let enabled = registry.get_enabled_providers().await;
+        assert!(enabled.contains(&ProviderId::Cursor));
+        assert!(enabled.contains(&ProviderId::Copilot));
+        assert!(!enabled.contains(&ProviderId::Claude));
+        assert!(!enabled.contains(&ProviderId::Codex));
+    }
 }
 
 /// Start the background refresh loop
@@ -844,6 +882,25 @@ pub async fn start_refresh_loop(app: AppHandle) {
     let interval = std::time::Duration::from_secs(300); // 5 minutes
     let tick_interval = std::time::Duration::from_secs(5);
     let mut provider_states: HashMap<ProviderId, ProviderRefreshState> = HashMap::new();
+
+    // Wait for frontend to sync enabled providers before starting refresh
+    // This prevents the refresh loop from using hardcoded defaults
+    tracing::info!("start_refresh_loop: waiting for frontend to sync enabled providers...");
+    let max_wait = std::time::Duration::from_secs(30);
+    let wait_start = std::time::Instant::now();
+    loop {
+        if let Some(registry) = app.try_state::<ProviderRegistry>() {
+            if registry.is_frontend_synced().await {
+                tracing::info!("start_refresh_loop: frontend synced, starting refresh loop");
+                break;
+            }
+        }
+        if wait_start.elapsed() > max_wait {
+            tracing::warn!("start_refresh_loop: timed out waiting for frontend sync after {:?}, starting anyway", max_wait);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
 
     loop {
         tokio::time::sleep(tick_interval).await;

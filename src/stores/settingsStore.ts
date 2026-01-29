@@ -458,12 +458,26 @@ export const useSettingsStore = create<SettingsStore>()(
 useSettingsStore.persist.onFinishHydration(() => {
   console.log('[settingsStore] onFinishHydration callback - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
+  // Ensure backend registry matches current settings on startup
+  const enabledProviders = useSettingsStore.getState().enabledProviders;
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
+    .catch((error) => {
+      console.warn('[settingsStore] Failed to sync enabled providers on hydration', error);
+    });
 });
 
 // Check if hydration already completed synchronously before onFinishHydration was registered
 if (useSettingsStore.persist.hasHydrated()) {
   console.log('[settingsStore] Already hydrated on module load - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
+  // Also sync providers since we missed the onFinishHydration callback
+  const enabledProviders = useSettingsStore.getState().enabledProviders;
+  import('@tauri-apps/api/core')
+    .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
+    .catch((error) => {
+      console.warn('[settingsStore] Failed to sync enabled providers on module load hydration', error);
+    });
 }
 // Note: We don't unsubscribe because we only need this to fire once on app start
 
@@ -476,6 +490,9 @@ const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder
   // Dynamic import to avoid circular dependencies and ensure Tauri is ready
   const { emit } = await import('@tauri-apps/api/event');
   void emit('settings-updated', { enabledProviders, providerOrder });
+  // Also sync enabled providers with backend registry to avoid drift
+  const { invoke } = await import('@tauri-apps/api/core');
+  void invoke('set_enabled_providers', { providerIds: enabledProviders });
 };
 
 useSettingsStore.subscribe((state, prevState) => {
