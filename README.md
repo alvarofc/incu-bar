@@ -1,6 +1,14 @@
 # IncuBar
 
 AI usage tracker for Claude, Codex, Cursor, and other assistants. Built with Tauri, React, and TypeScript.
+Based on https://github.com/steipete/CodexBar.
+
+## Features
+
+- Track usage across multiple AI assistants (Claude, Codex, Cursor, and more).
+- Cross-platform desktop app for macOS, Windows, and Linux.
+- Lightweight native shell with a React + TypeScript UI.
+- Prebuilt releases for quick install.
 
 ## Downloads
 
