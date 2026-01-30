@@ -11,7 +11,9 @@ pub mod providers;
 pub mod storage;
 pub mod tray;
 
-use tauri::{ActivationPolicy, Emitter, Manager};
+use tauri::{Emitter, Manager};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_process;
@@ -53,7 +55,10 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             eprintln!("Running setup...");
-            app.set_activation_policy(ActivationPolicy::Regular);
+            #[cfg(target_os = "macos")]
+            {
+                app.set_activation_policy(ActivationPolicy::Regular);
+            }
             // Create the popup window (hidden by default)
             tray::create_popup_window(app.handle())?;
             eprintln!("Popup window created");
