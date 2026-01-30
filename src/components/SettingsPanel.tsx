@@ -1817,7 +1817,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
                   Bundled CLI supports status + cost commands.
                 </div>
               </div>
-              <span className="text-[11px] text-[var(--text-quaternary)]">codexbar</span>
+              <span className="text-[11px] text-[var(--text-quaternary)]">incubar</span>
             </div>
             <ToggleOption
               label="Disable Keychain Access"

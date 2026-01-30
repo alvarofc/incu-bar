@@ -16,11 +16,11 @@ if (!workflowFile.includes('Release Linux CLI')) {
   throw new Error('Linux CLI workflow name missing.');
 }
 
-if (!workflowFile.includes('cargo build --release --bin codexbar')) {
-  throw new Error('Linux CLI workflow missing codexbar build step.');
+if (!workflowFile.includes('cargo build --release --bin incubar')) {
+  throw new Error('Linux CLI workflow missing incubar build step.');
 }
 
-if (!workflowFile.includes('CodexBarCLI-${TAG}-linux-${ARCH}.tar.gz')) {
+if (!workflowFile.includes('IncuBarCLI-${TAG}-linux-${ARCH}.tar.gz')) {
   throw new Error('Linux CLI workflow missing asset name.');
 }
 

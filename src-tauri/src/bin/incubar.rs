@@ -57,7 +57,7 @@ async fn main() {
         return;
     }
     if args.command == "--version" || args.command == "-V" {
-        println!("codexbar {}", env!("CARGO_PKG_VERSION"));
+        println!("incubar {}", env!("CARGO_PKG_VERSION"));
         return;
     }
 
@@ -409,7 +409,7 @@ fn status_page_url(provider: ProviderId) -> Option<String> {
 
 fn print_help() {
     println!(
-        "codexbar {}\n\nUsage:\n  codexbar status [--format text|json] [--provider <id|all>] [--pretty]\n  codexbar cost [--format text|json] [--provider <id|all>] [--pretty]\n\nCommands:\n  status  Print provider status indicators\n  cost    Print local cost usage for Claude/Codex\n\nFlags:\n  --format <text|json>  Output format\n  --json               Shortcut for --format json\n  --pretty             Pretty-print JSON output\n  --provider <id|all>  Provider to query\n  --json-output        Use JSON output\n  -h, --help           Show help\n  -V, --version        Show version",
+        "incubar {}\n\nUsage:\n  incubar status [--format text|json] [--provider <id|all>] [--pretty]\n  incubar cost [--format text|json] [--provider <id|all>] [--pretty]\n\nCommands:\n  status  Print provider status indicators\n  cost    Print local cost usage for Claude/Codex\n\nFlags:\n  --format <text|json>  Output format\n  --json               Shortcut for --format json\n  --pretty             Pretty-print JSON output\n  --provider <id|all>  Provider to query\n  --json-output        Use JSON output\n  -h, --help           Show help\n  -V, --version        Show version",
         env!("CARGO_PKG_VERSION")
     );
 }
