@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type DragEvent } from 'react';
 import { Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
@@ -499,12 +499,6 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const updateInFlightRef = useRef(false);
   // updateStatus state already declared above (line 110)
-  // updateStatus state already declared above (line 110)
-  // const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
-  //   'idle'
-  // );
-    'idle'
-  );
 
   const handleCheckForUpdates = useCallback(async () => {
     if (updateInFlightRef.current) return;
