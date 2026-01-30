@@ -225,7 +225,7 @@ Create a GitHub Release with a `vX.Y.Z` tag to trigger the release workflow.
 - `FEATURE_PARITY.md` - Complete feature parity tracking with CodexBar
 - `README.md` - User-facing documentation
 - `package.json` - Build scripts and dependencies
-- `tauri.conf.json` - Tauri configuration
+- `src-tauri/tauri.conf.json` - Tauri configuration
 - `vite.config.ts` - Vite build configuration
 
 ### Key Directories
