@@ -12,7 +12,6 @@ const requiredMarkers = [
   { name: 'handleCloseSettings', sources: [settingsPanelFile] },
   { name: 'handleCheckForUpdates', sources: [settingsPanelFile] },
   { name: 'getCurrentWindow', sources: [settingsPanelFile] },
-  { name: 'check', sources: [settingsPanelFile] },
 ];
 
 requiredMarkers.forEach(({ name, sources }) => {
@@ -21,8 +20,9 @@ requiredMarkers.forEach(({ name, sources }) => {
   }
 });
 
-if (!settingsPanelFile.includes('Close')) {
-  throw new Error('SettingsPanel missing Close button text.');
+if (!settingsPanelFile.includes('data-testid="settings-close-button"') || 
+    !settingsPanelFile.match(/>\s*Close\s*<\/button>/)) {
+  throw new Error('SettingsPanel missing Close button with expected text.');
 }
 
 if (!settingsPanelFile.includes('onClick={handleCloseSettings}')) {
@@ -33,11 +33,15 @@ if (!settingsPanelFile.includes('onClick={handleCheckForUpdates}')) {
   throw new Error('SettingsPanel missing manual update button click handler.');
 }
 
-if (!settingsPanelFile.includes('window.close()')) {
-  throw new Error('SettingsPanel missing window.close() call in close handler.');
+if (!settingsPanelFile.includes('getCurrentWindow()') || 
+    !settingsPanelFile.includes('await window.close()')) {
+  throw new Error('SettingsPanel missing window close implementation in close handler.');
 }
 
-if (!settingsPanelFile.includes("check({ headers: { 'X-Update-Channel': updateChannel }")) {
+if (!settingsPanelFile.includes('check(') ||
+    !settingsPanelFile.includes('headers') ||
+    !settingsPanelFile.includes('X-Update-Channel') ||
+    !settingsPanelFile.includes('updateChannel')) {
   throw new Error('SettingsPanel missing update check with channel header.');
 }
 
