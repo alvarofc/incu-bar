@@ -61,6 +61,32 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-cache-${{ runner.os }}-${{ hashFiles('bun.lockb') }}
+          restore-keys: |
+            bun-cache-${{ runner.os }}-
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo target
+        uses: actions/cache@v4
+        with:
+          path: src-tauri/target
+          key: cargo-target-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-target-${{ runner.os }}-${{ matrix.arch }}-
+
       - name: Install dependencies
         run: bun install
 
