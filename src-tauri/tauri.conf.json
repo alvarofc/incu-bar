@@ -16,7 +16,7 @@
         "default-src": "'self'",
         "script-src": "'self'",
         "style-src": "'self' 'unsafe-inline'",
-        "connect-src": "'self' https://*.anthropic.com https://*.openai.com https://*.cursor.sh https://api.github.com",
+        "connect-src": "'self' http://ipc.localhost https://*.anthropic.com https://*.openai.com https://*.cursor.sh https://api.github.com",
         "img-src": "'self' data: https:",
         "font-src": "'self' data:"
       },

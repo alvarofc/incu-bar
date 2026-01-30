@@ -602,6 +602,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
           message: null,
           isLoggingIn: false,
         });
+        try {
+          await openUrl(deviceCode.verificationUri);
+        } catch (error) {
+          updateProviderLoginState(providerId, {
+            message: `Could not open browser. Use the "Open GitHub" button or visit ${deviceCode.verificationUri}`,
+            isError: true,
+          });
+        }
         return;
       }
       
@@ -785,11 +793,18 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     }
   }, [providerLoginStates, updateProviderLoginState]);
 
-  const handleOpenCopilotVerification = useCallback((providerId: ProviderId) => {
+  const handleOpenCopilotVerification = useCallback(async (providerId: ProviderId) => {
     const state = providerLoginStates[providerId];
     if (!state?.deviceCode) return;
-    openUrl(state.deviceCode.verificationUri);
-  }, [providerLoginStates]);
+    try {
+      await openUrl(state.deviceCode.verificationUri);
+    } catch (error) {
+      updateProviderLoginState(providerId, {
+        message: `Could not open browser. Please visit ${state.deviceCode.verificationUri}`,
+        isError: true,
+      });
+    }
+  }, [providerLoginStates, updateProviderLoginState]);
 
   const handleCopilotContinue = useCallback(async (providerId: ProviderId) => {
     const state = providerLoginStates[providerId];
