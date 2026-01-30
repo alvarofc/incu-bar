@@ -497,20 +497,6 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     }
   }, []);
 
-  const handleCheckForUpdates = useCallback(async () => {
-    if (updateStatus === 'checking' || updateStatus === 'installing') {
-      return;
-    }
-
-    setUpdateStatus('checking');
-    setUpdateMessage('Checking for updates...');
-    try {
-      const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
-      if (!update) {
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
-
-// ... other code ...
-
   const updateInFlightRef = useRef(false);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
     'idle'
