@@ -507,6 +507,24 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     try {
       const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
       if (!update) {
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
+
+// ... other code ...
+
+  const updateInFlightRef = useRef(false);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
+    'idle'
+  );
+
+  const handleCheckForUpdates = useCallback(async () => {
+    if (updateInFlightRef.current) return;
+    updateInFlightRef.current = true;
+
+    setUpdateStatus('checking');
+    setUpdateMessage('Checking for updates...');
+    try {
+      const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
+      if (!update) {
         setUpdateStatus('upToDate');
         setUpdateMessage('No updates available.');
         return;
@@ -515,23 +533,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       setUpdateMessage('Update found. Downloading and installing...');
       await update.downloadAndInstall();
       setUpdateMessage('Update installed. Relaunching...');
-      try {
-        await relaunch();
-      } catch (relaunchError) {
-        console.error('Failed to relaunch after update', relaunchError);
-        const relaunchMessage =
-          relaunchError instanceof Error ? relaunchError.message : String(relaunchError);
-        setUpdateStatus('error');
-        setUpdateMessage(
-          `Update installed, but failed to relaunch automatically: ${relaunchMessage}. Please restart the application manually.`,
-        );
-      }
+      await relaunch();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUpdateStatus('error');
       setUpdateMessage(`Update failed: ${message}`);
+    } finally {
+      updateInFlightRef.current = false;
     }
-  }, [updateChannel, updateStatus]);
+  }, [updateChannel]);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
     useSettingsStore.getState().setLaunchAtLogin(launch);
