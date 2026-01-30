@@ -4,6 +4,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vX.Y.Z) to upload assets to"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -68,15 +78,18 @@ jobs:
         run: bun run tauri build ${{ matrix.args }}
 
       - name: Upload release assets
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          if [[ "${{ github.event_name }}" != "release" ]]; then
+            TAG="${{ inputs.tag }}"
+          fi
           if [[ -z "$TAG" ]]; then
-            echo "Missing tag (GITHUB_REF_NAME)." >&2
+            echo "Missing tag for release upload." >&2
             exit 1
           fi
 
@@ -102,7 +115,7 @@ jobs:
           done
 
       - name: Upload workflow artifact (manual runs)
-        if: github.event_name != 'release'
+        if: github.event_name == 'workflow_dispatch' && inputs.tag == ''
         uses: actions/upload-artifact@v4
         with:
           name: incubar-${{ matrix.platform }}-${{ matrix.arch }}

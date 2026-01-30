@@ -4,6 +4,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vX.Y.Z) to upload assets to"
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -42,8 +52,11 @@ jobs:
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
+          if [[ "${{ github.event_name }}" != "release" ]]; then
+            TAG="${{ inputs.tag }}"
+          fi
           if [[ -z "$TAG" ]]; then
-            echo "Missing tag (GITHUB_REF_NAME)." >&2
+            echo "Missing tag for release packaging." >&2
             exit 1
           fi
 
@@ -66,19 +79,22 @@ jobs:
           echo "asset=$ASSET" >> "$GITHUB_OUTPUT"
 
       - name: Upload release assets
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.tag != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           TAG="${GITHUB_REF_NAME}"
+          if [[ "${{ github.event_name }}" != "release" ]]; then
+            TAG="${{ inputs.tag }}"
+          fi
           OUT_DIR="${{ steps.pkg.outputs.out_dir }}"
           ASSET="${{ steps.pkg.outputs.asset }}"
           gh release upload "$TAG" "$OUT_DIR/$ASSET" "$OUT_DIR/$ASSET.sha256" --clobber
 
       - name: Upload workflow artifact (manual runs)
-        if: github.event_name != 'release'
+        if: github.event_name == 'workflow_dispatch' && inputs.tag == ''
         uses: actions/upload-artifact@v4
         with:
           name: codexbar-linux-cli-${{ matrix.name }}

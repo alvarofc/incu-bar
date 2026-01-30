@@ -12,6 +12,9 @@ jobs:
   release:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.commit.outputs.created }}
+      tag: v${{ steps.version.outputs.next_version }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -124,3 +127,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release create "v${{ steps.version.outputs.next_version }}" --generate-notes
+
+  release-app:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
+
+  release-cli:
+    needs: release
+    if: needs.release.outputs.created == 'true'
+    uses: ./.github/workflows/release-cli.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    secrets: inherit
