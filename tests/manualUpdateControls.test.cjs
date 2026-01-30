@@ -15,7 +15,9 @@ if (!settingsPanelFile.includes('data-testid="manual-update-button"')) {
   throw new Error('SettingsPanel missing manual update button testid.');
 }
 
-if (!settingsPanelFile.includes('Check for updates')) {
+// Check for the button label logic that includes "Check for updates"
+if (!settingsPanelFile.includes("? 'Check for updates'") && 
+    !settingsPanelFile.includes("'Check for updates'")) {
   throw new Error('SettingsPanel missing "Check for updates" button text.');
 }
 
@@ -68,8 +70,10 @@ if (!settingsPanelFile.includes('data-testid="settings-close-button"')) {
   throw new Error('SettingsPanel missing close button testid.');
 }
 
-if (!settingsPanelFile.includes('Close')) {
-  throw new Error('SettingsPanel missing "Close" button text.');
+// Check for close button with testid context to ensure it's the correct button
+const closeButtonPattern = /data-testid="settings-close-button"[\s\S]{0,200}Close[\s\S]{0,100}<\/button>/;
+if (!closeButtonPattern.test(settingsPanelFile)) {
+  throw new Error('SettingsPanel missing "Close" button text near settings-close-button testid.');
 }
 
 if (!settingsPanelFile.includes("import { getCurrentWindow } from '@tauri-apps/api/window'")) {
