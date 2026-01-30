@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef, type DragEvent } from 'react';
 import { Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
