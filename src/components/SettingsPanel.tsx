@@ -1020,16 +1020,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
-        {showTabs && (
-          <button
-            type="button"
-            onClick={handleCloseSettings}
-            className="ml-auto btn btn-ghost focus-ring text-[11px]"
-            data-testid="settings-close-button"
-          >
-            Close
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCloseSettings}
+          className="ml-auto btn btn-ghost focus-ring text-[11px]"
+          data-testid="settings-close-button"
+        >
+          Close
+        </button>
       </header>
 
       {/* Content */}
