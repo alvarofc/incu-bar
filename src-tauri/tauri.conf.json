@@ -42,7 +42,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM5Qzc4NUFCMzNCRkFDM0EKUldRNnJMOHpxNFhIT1ZwQVAzU1EvRlI5eFhFU2pLNE9qNGNGTWZOWGRza1JyeU53YVVIWVpoVk0K",
       "endpoints": [
-        "https://updates.incubar.app/{{target}}/{{current_version}}"
+        "https://github.com/alvarofc/incu-bar/releases/latest/download/latest-{{target}}.json"
       ]
     },
     "process": {}

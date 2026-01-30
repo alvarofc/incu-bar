@@ -28,18 +28,22 @@ jobs:
             arch: aarch64
             runs-on: macos-14
             args: "--target aarch64-apple-darwin"
+            updater_target: darwin-aarch64
           - platform: macos
             arch: x86_64
             runs-on: macos-12
             args: "--target x86_64-apple-darwin"
+            updater_target: darwin-x86_64
           - platform: windows
             arch: x86_64
             runs-on: windows-2022
             args: ""
+            updater_target: windows-x86_64
           - platform: linux
             arch: x86_64
             runs-on: ubuntu-24.04
             args: ""
+            updater_target: linux-x86_64
     runs-on: ${{ matrix.runs-on }}
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -100,15 +104,32 @@ jobs:
             DMG_PATH="src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}/release/bundle/dmg"
             APP_PATH="src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}/release/bundle/macos"
             ASSET_PATHS=("$DMG_PATH"/*.dmg "$APP_PATH"/*.app.tar.gz)
+            BUNDLE_ROOT="src-tauri/target/${{ matrix.arch == 'aarch64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}/release/bundle"
           elif [[ "${{ matrix.platform }}" == "windows" ]]; then
             MSI_PATH="src-tauri/target/release/bundle/msi"
             NSIS_PATH="src-tauri/target/release/bundle/nsis"
             ASSET_PATHS=("$MSI_PATH"/*.msi "$NSIS_PATH"/*.exe)
+            BUNDLE_ROOT="src-tauri/target/release/bundle"
           else
             DEB_PATH="src-tauri/target/release/bundle/deb"
             RPM_PATH="src-tauri/target/release/bundle/rpm"
             APPIMAGE_PATH="src-tauri/target/release/bundle/appimage"
             ASSET_PATHS=("$DEB_PATH"/*.deb "$RPM_PATH"/*.rpm "$APPIMAGE_PATH"/*.AppImage)
+            BUNDLE_ROOT="src-tauri/target/release/bundle"
+          fi
+
+          UPDATER_TARGET="${{ matrix.updater_target }}"
+          UPDATER_JSON_PATH=$(find "$BUNDLE_ROOT" -maxdepth 3 -name "latest.json" -print -quit)
+          UPDATER_SIG_PATH=$(find "$BUNDLE_ROOT" -maxdepth 3 -name "latest.json.sig" -print -quit)
+          if [[ -n "$UPDATER_JSON_PATH" && -f "$UPDATER_JSON_PATH" ]]; then
+            RENAMED_JSON_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json"
+            mv "$UPDATER_JSON_PATH" "$RENAMED_JSON_PATH"
+            ASSET_PATHS+=("$RENAMED_JSON_PATH")
+          fi
+          if [[ -n "$UPDATER_SIG_PATH" && -f "$UPDATER_SIG_PATH" ]]; then
+            RENAMED_SIG_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json.sig"
+            mv "$UPDATER_SIG_PATH" "$RENAMED_SIG_PATH"
+            ASSET_PATHS+=("$RENAMED_SIG_PATH")
           fi
 
           for asset in "${ASSET_PATHS[@]}"; do
