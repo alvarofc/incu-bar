@@ -175,16 +175,16 @@ jobs:
           VERSION="${TAG#v}"
           UPDATE_JSON_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json"
           cat > "$UPDATE_JSON_PATH" <<EOF
-{
-  "version": "${VERSION}",
-  "platforms": {
-    "${UPDATER_TARGET}": {
-      "url": "${UPDATE_URL}",
-      "signature": "${UPDATE_SIGNATURE}"
-    }
-  }
-}
-EOF
+          {
+            "version": "${VERSION}",
+            "platforms": {
+              "${UPDATER_TARGET}": {
+                "url": "${UPDATE_URL}",
+                "signature": "${UPDATE_SIGNATURE}"
+              }
+            }
+          }
+          EOF
           ASSET_PATHS+=("$UPDATE_JSON_PATH")
 
           for asset in "${ASSET_PATHS[@]}"; do
