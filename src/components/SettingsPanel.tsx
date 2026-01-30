@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Check, RotateCcw, LogIn, Loader2, AlertCircle, ClipboardPaste, Copy, ExternalLink, ChevronUp, ChevronDown, GripVertical, Download } from 'lucide-react';
 import type {
   MenuBarDisplayMode,
@@ -516,7 +516,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       setUpdateMessage('Update found. Downloading and installing...');
       await update.downloadAndInstall();
       setUpdateMessage('Update installed. Relaunching...');
-      await relaunch();
+      try {
+        await relaunch();
+      } catch (relaunchError) {
+        // Update was installed successfully, but relaunch failed
+        setUpdateStatus('upToDate');
+        setUpdateMessage('Update installed successfully. Please restart the application to complete the update.');
+        return;
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUpdateStatus('error');
