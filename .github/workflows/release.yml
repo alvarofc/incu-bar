@@ -117,6 +117,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
           TAG="${GITHUB_REF_NAME}"
           if [[ "${{ github.event_name }}" != "release" ]]; then
             TAG="${{ inputs.tag }}"
@@ -145,18 +146,46 @@ jobs:
           fi
 
           UPDATER_TARGET="${{ matrix.updater_target }}"
-          UPDATER_JSON_PATH=$(find "$BUNDLE_ROOT" -maxdepth 3 -name "latest.json" -print -quit)
-          UPDATER_SIG_PATH=$(find "$BUNDLE_ROOT" -maxdepth 3 -name "latest.json.sig" -print -quit)
-          if [[ -n "$UPDATER_JSON_PATH" && -f "$UPDATER_JSON_PATH" ]]; then
-            RENAMED_JSON_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json"
-            mv "$UPDATER_JSON_PATH" "$RENAMED_JSON_PATH"
-            ASSET_PATHS+=("$RENAMED_JSON_PATH")
+          UPDATE_BUNDLE_PATH=""
+          if [[ "${{ matrix.platform }}" == "macos" ]]; then
+            UPDATE_BUNDLES=("$APP_PATH"/*.app.tar.gz)
+          elif [[ "${{ matrix.platform }}" == "windows" ]]; then
+            UPDATE_BUNDLES=("$NSIS_PATH"/*-setup.exe)
+          else
+            UPDATE_BUNDLES=("$APPIMAGE_PATH"/*.AppImage)
           fi
-          if [[ -n "$UPDATER_SIG_PATH" && -f "$UPDATER_SIG_PATH" ]]; then
-            RENAMED_SIG_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json.sig"
-            mv "$UPDATER_SIG_PATH" "$RENAMED_SIG_PATH"
-            ASSET_PATHS+=("$RENAMED_SIG_PATH")
+
+          if [[ ${#UPDATE_BUNDLES[@]} -gt 0 ]]; then
+            UPDATE_BUNDLE_PATH="${UPDATE_BUNDLES[0]}"
           fi
+
+          if [[ -z "$UPDATE_BUNDLE_PATH" ]]; then
+            echo "Missing updater bundle for ${UPDATER_TARGET}." >&2
+            exit 1
+          fi
+
+          UPDATE_SIG_PATH="${UPDATE_BUNDLE_PATH}.sig"
+          if [[ ! -f "$UPDATE_SIG_PATH" ]]; then
+            echo "Missing updater signature at ${UPDATE_SIG_PATH}." >&2
+            exit 1
+          fi
+
+          UPDATE_SIGNATURE=$(tr -d '\n' < "$UPDATE_SIG_PATH")
+          UPDATE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/$(basename "$UPDATE_BUNDLE_PATH")"
+          VERSION="${TAG#v}"
+          UPDATE_JSON_PATH="$BUNDLE_ROOT/latest-${UPDATER_TARGET}.json"
+          cat > "$UPDATE_JSON_PATH" <<EOF
+{
+  "version": "${VERSION}",
+  "platforms": {
+    "${UPDATER_TARGET}": {
+      "url": "${UPDATE_URL}",
+      "signature": "${UPDATE_SIGNATURE}"
+    }
+  }
+}
+EOF
+          ASSET_PATHS+=("$UPDATE_JSON_PATH")
 
           for asset in "${ASSET_PATHS[@]}"; do
             if [[ -e "$asset" ]]; then
