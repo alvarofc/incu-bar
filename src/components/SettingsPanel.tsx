@@ -515,7 +515,17 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       setUpdateMessage('Update found. Downloading and installing...');
       await update.downloadAndInstall();
       setUpdateMessage('Update installed. Relaunching...');
-      await relaunch();
+      try {
+        await relaunch();
+      } catch (relaunchError) {
+        console.error('Failed to relaunch after update', relaunchError);
+        const relaunchMessage =
+          relaunchError instanceof Error ? relaunchError.message : String(relaunchError);
+        setUpdateStatus('error');
+        setUpdateMessage(
+          `Update installed, but failed to relaunch automatically: ${relaunchMessage}. Please restart the application manually.`,
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUpdateStatus('error');
