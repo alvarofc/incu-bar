@@ -9,7 +9,10 @@ import type {
 } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { relaunch } from '@tauri-apps/plugin-process';
+import { check } from '@tauri-apps/plugin-updater';
 import type { ProviderId, CookieSource } from '../lib/types';
 import { PROVIDERS } from '../lib/providers';
 import { COOKIE_SOURCES, COOKIE_SOURCE_LABELS } from '../lib/cookieSources';
@@ -104,6 +107,10 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const [supportExportPath, setSupportExportPath] = useState<string | null>(null);
   const [supportExporting, setSupportExporting] = useState(false);
   const [supportMessage, setSupportMessage] = useState<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
+    'idle'
+  );
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const cookieSources = useSettingsStore((s) => s.cookieSources);
   const [draggingProviderId, setDraggingProviderId] = useState<ProviderId | null>(null);
   const [dragOverProviderId, setDragOverProviderId] = useState<ProviderId | null>(null);
@@ -113,6 +120,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const dividerClass = showTabs ? 'divider mx-6' : 'divider mx-4';
   const messageMarginClass = showTabs ? 'mx-6' : 'mx-4';
   const footerPaddingClass = showTabs ? 'px-6 pb-6 pt-3' : 'px-4 pb-4 pt-2';
+  const updateIsBusy = updateStatus === 'checking' || updateStatus === 'installing';
+  const updateButtonLabel = updateStatus === 'checking'
+    ? 'Checking...'
+    : updateStatus === 'installing'
+      ? 'Updating...'
+      : 'Check for updates';
+  const updateMessageTone = updateStatus === 'error'
+    ? 'bg-[var(--accent-warning)]/10 border-[var(--accent-warning)]/30 text-[var(--accent-warning)]'
+    : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-secondary)]';
 
   const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
     { id: 'providers', label: 'Providers' },
@@ -471,6 +487,41 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const handleSetUpdateChannel = useCallback((channel: UpdateChannel) => {
     useSettingsStore.getState().setUpdateChannel(channel);
   }, []);
+
+  const handleCloseSettings = useCallback(async () => {
+    try {
+      const window = getCurrentWindow();
+      await window.close();
+    } catch (error) {
+      console.error('Failed to close settings window', error);
+    }
+  }, []);
+
+  const handleCheckForUpdates = useCallback(async () => {
+    if (updateStatus === 'checking' || updateStatus === 'installing') {
+      return;
+    }
+
+    setUpdateStatus('checking');
+    setUpdateMessage('Checking for updates...');
+    try {
+      const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
+      if (!update) {
+        setUpdateStatus('upToDate');
+        setUpdateMessage('No updates available.');
+        return;
+      }
+      setUpdateStatus('installing');
+      setUpdateMessage('Update found. Downloading and installing...');
+      await update.downloadAndInstall();
+      setUpdateMessage('Update installed. Relaunching...');
+      await relaunch();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setUpdateStatus('error');
+      setUpdateMessage(`Update failed: ${message}`);
+    }
+  }, [updateChannel, updateStatus]);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
     useSettingsStore.getState().setLaunchAtLogin(launch);
@@ -962,6 +1013,16 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
+        {showTabs && (
+          <button
+            type="button"
+            onClick={handleCloseSettings}
+            className="ml-auto btn btn-ghost focus-ring text-[11px]"
+            data-testid="settings-close-button"
+          >
+            Close
+          </button>
+        )}
       </header>
 
       {/* Content */}
@@ -1743,6 +1804,38 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
                 <option value="beta">Beta</option>
               </select>
             </div>
+            <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
+              <div>
+                <div className="text-[13px] text-[var(--text-secondary)]">Manual update</div>
+                <div className="text-[11px] text-[var(--text-quaternary)]">
+                  Current version v{import.meta.env.PACKAGE_VERSION}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCheckForUpdates}
+                disabled={updateIsBusy}
+                className="btn btn-ghost focus-ring text-[11px]"
+                data-testid="manual-update-button"
+              >
+                {updateIsBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="w-3.5 h-3.5" aria-hidden="true" />
+                )}
+                <span>{updateButtonLabel}</span>
+              </button>
+            </div>
+            {updateMessage && (
+              <div
+                className={`px-3 py-2 rounded-md border text-[11px] ${updateMessageTone}`}
+                role="status"
+                aria-live="polite"
+                data-testid="update-status-message"
+              >
+                {updateMessage}
+              </div>
+            )}
           </div>
         </section>
         )}
