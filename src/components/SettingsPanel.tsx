@@ -497,10 +497,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     }
   }, []);
 
+  const updateInFlightRef = useRef(false);
+  // updateStatus state already declared above (line 110)
+  const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
+    'idle'
+  );
+
   const handleCheckForUpdates = useCallback(async () => {
-    if (updateStatus === 'checking' || updateStatus === 'installing') {
-      return;
-    }
+    if (updateInFlightRef.current) return;
+    updateInFlightRef.current = true;
 
     setUpdateStatus('checking');
     setUpdateMessage('Checking for updates...');
@@ -515,23 +520,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       setUpdateMessage('Update found. Downloading and installing...');
       await update.downloadAndInstall();
       setUpdateMessage('Update installed. Relaunching...');
-      try {
-        await relaunch();
-      } catch (relaunchError) {
-        console.error('Failed to relaunch after update', relaunchError);
-        const relaunchMessage =
-          relaunchError instanceof Error ? relaunchError.message : String(relaunchError);
-        setUpdateStatus('error');
-        setUpdateMessage(
-          `Update installed, but failed to relaunch automatically: ${relaunchMessage}. Please restart the application manually.`,
-        );
-      }
+      await relaunch();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setUpdateStatus('error');
       setUpdateMessage(`Update failed: ${message}`);
+    } finally {
+      updateInFlightRef.current = false;
     }
-  }, [updateChannel, updateStatus]);
+  }, [updateChannel]);
 
   const handleSetLaunchAtLogin = useCallback((launch: boolean) => {
     useSettingsStore.getState().setLaunchAtLogin(launch);
@@ -1023,16 +1020,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
-        {showTabs && (
-          <button
-            type="button"
-            onClick={handleCloseSettings}
-            className="ml-auto btn btn-ghost focus-ring text-[11px]"
-            data-testid="settings-close-button"
-          >
-            Close
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCloseSettings}
+          className="ml-auto btn btn-ghost focus-ring text-[11px]"
+          data-testid="settings-close-button"
+        >
+          Close
+        </button>
       </header>
 
       {/* Content */}
