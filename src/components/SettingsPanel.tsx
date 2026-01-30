@@ -518,7 +518,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       }
       setUpdateStatus('installing');
       setUpdateMessage('Update found. Downloading and installing...');
-      await update.downloadAndInstall();
+      try {
+        await update.downloadAndInstall();
+      } catch (installError) {
+        // Re-throw to be caught by outer catch block
+        throw new Error(
+          `Installation failed: ${installError instanceof Error ? installError.message : String(installError)}`
+        );
+      }
       setUpdateMessage('Update installed. Relaunching...');
       await relaunch();
     } catch (error) {
