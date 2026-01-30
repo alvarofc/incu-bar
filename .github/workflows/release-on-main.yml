@@ -1,0 +1,118 @@
+name: Release on Main
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Determine next version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --tags
+          latest_tag=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [[ -z "$latest_tag" ]]; then
+            latest_tag="v0.0.0"
+          fi
+          tag_exists=false
+          if git rev-parse -q --verify "refs/tags/${latest_tag}" >/dev/null; then
+            tag_exists=true
+          fi
+          if [[ "$tag_exists" == "true" ]]; then
+            range="${latest_tag}..HEAD"
+          else
+            range="HEAD"
+          fi
+
+          commit_log=$(git log "$range" --pretty=format:%s%n%b)
+          if [[ -z "$commit_log" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          bump="patch"
+          if echo "$commit_log" | grep -q "BREAKING CHANGE"; then
+            bump="major"
+          elif echo "$commit_log" | grep -Eq '^[a-zA-Z]+(\(.+\))?!:'; then
+            bump="major"
+          elif echo "$commit_log" | grep -Eq '^feat(\(.+\))?:'; then
+            bump="minor"
+          fi
+
+          version="${latest_tag#v}"
+          IFS='.' read -r major minor patch <<< "$version"
+          case "$bump" in
+            major)
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            minor)
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            patch)
+              patch=$((patch + 1))
+              ;;
+          esac
+          next_version="${major}.${minor}.${patch}"
+          echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp version
+        if: steps.version.outputs.should_release == 'true'
+        run: bun run release:stamp -- ${{ steps.version.outputs.next_version }}
+
+      - name: Update Cargo.lock
+        if: steps.version.outputs.should_release == 'true'
+        working-directory: src-tauri
+        run: cargo generate-lockfile
+
+      - name: Commit and tag
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.version.outputs.should_release }}" != "true" ]]; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${{ steps.version.outputs.next_version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/tauri.conf.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "created=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore(release): v${version}"
+          git tag "v${version}"
+          git push origin HEAD:main --tags
+          echo "created=true" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.commit.outputs.created == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v${{ steps.version.outputs.next_version }}" --generate-notes
