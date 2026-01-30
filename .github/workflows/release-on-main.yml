@@ -51,17 +51,25 @@ jobs:
             exit 0
           fi
 
-          bump="patch"
+          bump=""
           if echo "$commit_log" | grep -q "BREAKING CHANGE"; then
             bump="major"
           elif echo "$commit_log" | grep -Eq '^[a-zA-Z]+(\(.+\))?!:'; then
             bump="major"
           elif echo "$commit_log" | grep -Eq '^feat(\(.+\))?:'; then
             bump="minor"
+          else
+            if echo "$commit_log" | awk 'BEGIN{found=0} /^[[:space:]]*$/ {next} {line=$0; if (line ~ /^[a-zA-Z]+\([^)]*\)?:/ || line ~ /^[a-zA-Z]+:/) {type=line; sub(/:.*/, "", type); sub(/\(.*/, "", type); if (type !~ /^(docs|chore|test)$/) found=1;} else {found=1;} } END{exit(found?0:1)}'; then
+              bump="patch"
+            fi
           fi
 
           version="${latest_tag#v}"
           IFS='.' read -r major minor patch <<< "$version"
+          if [[ -z "$bump" ]]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           case "$bump" in
             major)
               major=$((major + 1))
