@@ -498,7 +498,6 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   }, []);
 
   const updateInFlightRef = useRef(false);
-  // updateStatus state already declared above (line 110)
 
   const handleCheckForUpdates = useCallback(async () => {
     if (updateInFlightRef.current) return;
