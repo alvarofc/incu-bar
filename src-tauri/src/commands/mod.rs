@@ -181,9 +181,6 @@ pub async fn refresh_provider(
     
     tracing::info!("refresh_provider: total time for {:?}: {:?}", provider_id, start.elapsed());
 
-    loading_guard.finish();
-    emit_refreshing(&app, provider_id, false);
-
     match usage_result {
         Ok(usage) => {
             let _ = app.emit(
@@ -267,6 +264,33 @@ pub async fn refresh_all_providers(
     }
 
     for provider_id in providers {
+        // Check if provider is authenticated before attempting refresh
+        let provider_id_str = serde_json::to_string(&provider_id)
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let auth_status = login::check_auth_status(&provider_id_str).await;
+        
+        if !auth_status.authenticated {
+            tracing::debug!(
+                "refresh_all_providers: skipping {:?} - not authenticated",
+                provider_id
+            );
+            let error_msg = auth_status
+                .error
+                .unwrap_or_else(|| "Not authenticated".to_string());
+            let usage = UsageSnapshot::error(format!("Not authenticated: {}", error_msg));
+            let _ = app.emit(
+                "usage-updated",
+                serde_json::json!({
+                    "providerId": provider_id,
+                    "usage": usage.clone(),
+                }),
+            );
+            emit_refreshing(&app, provider_id, false);
+            continue;
+        }
+
         let status = registry.fetch_status(&provider_id).await.ok();
         match registry.fetch_usage(&provider_id).await {
             Ok(usage) => {
@@ -2069,7 +2093,9 @@ pub async fn copilot_poll_for_token(
                     "saved_at": chrono::Utc::now().to_rfc3339(),
                 });
 
-                tokio::fs::write(&token_path, serde_json::to_string_pretty(&content).unwrap())
+                let content_str = serde_json::to_string_pretty(&content)
+                    .map_err(|e| format!("Failed to serialize token: {}", e))?;
+                tokio::fs::write(&token_path, content_str)
                     .await
                     .map_err(|e| format!("Failed to save token: {}", e))?;
 

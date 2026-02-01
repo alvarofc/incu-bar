@@ -262,6 +262,7 @@ pub async fn request_device_code() -> Result<DeviceCodeResponse, anyhow::Error> 
 }
 
 /// Poll for access token after user authorizes
+/// Times out after 10 minutes to prevent infinite loops
 pub async fn poll_for_token(device_code: &str, interval: i32) -> Result<String, anyhow::Error> {
     let client = reqwest::Client::new();
 
@@ -272,8 +273,17 @@ pub async fn poll_for_token(device_code: &str, interval: i32) -> Result<String, 
     ];
 
     let mut current_interval = interval as u64;
+    let start_time = std::time::Instant::now();
+    let max_duration = std::time::Duration::from_secs(600); // 10 minute timeout
 
     loop {
+        // Check for overall timeout
+        if start_time.elapsed() > max_duration {
+            return Err(anyhow::anyhow!(
+                "Authorization timed out after 10 minutes. Please try again."
+            ));
+        }
+
         tokio::time::sleep(std::time::Duration::from_secs(current_interval)).await;
 
         let response = client

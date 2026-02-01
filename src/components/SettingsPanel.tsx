@@ -211,15 +211,21 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   );
 
   useEffect(() => {
+    let active = true;
     const checkAuth = async () => {
       try {
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
-        syncAuthStatus(status);
+        if (active) {
+          syncAuthStatus(status);
+        }
       } catch (e) {
         console.error('Failed to check auth status:', e);
       }
     };
     checkAuth();
+    return () => {
+      active = false;
+    };
   }, [syncAuthStatus]);
 
   useEffect(() => {
@@ -229,10 +235,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   }, [orderedProviderIds, providerOrder, setProviderOrder]);
 
   useEffect(() => {
+    let active = true;
+    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
+
     const unlistenLogin = listen('cursor-login-detected', async () => {
+      if (!active) return;
       updateProviderLoginState('cursor', { message: 'Login detected! Extracting cookies…' });
       try {
         const result = await invoke<LoginResult>('extract_cursor_cookies');
+        if (!active) return;
         if (result.success) {
           updateProviderLoginState('cursor', { 
             message: result.message, 
@@ -241,6 +252,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
             isLoggingIn: false,
           });
           const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+          if (!active) return;
           syncAuthStatus(status);
           const settingsStore = useSettingsStore.getState();
           settingsStore.enableProvider('cursor');
@@ -248,9 +260,13 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
           useUsageStore.getState().setProviderEnabled('cursor', true);
           useUsageStore.getState().refreshProvider('cursor');
           // Auto-collapse after success
-          setTimeout(() => clearProviderLoginState('cursor'), 2000);
+          const timeoutId = setTimeout(() => {
+            if (active) clearProviderLoginState('cursor');
+          }, 2000);
+          timeoutIds.push(timeoutId);
         }
       } catch (e) {
+        if (!active) return;
         updateProviderLoginState('cursor', { 
           message: `Cookie extraction error: ${e}`,
           isError: true,
@@ -261,6 +277,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     });
 
     const unlistenCompleted = listen('login-completed', async (event: { payload: { providerId: ProviderId; success: boolean; message: string } }) => {
+      if (!active) return;
       const { providerId, success, message } = event.payload;
       if (success) {
         updateProviderLoginState(providerId, { 
@@ -270,6 +287,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
           isLoggingIn: false,
         });
         const status = await invoke<Record<string, AuthStatus>>('check_all_auth');
+        if (!active) return;
         syncAuthStatus(status);
         const settingsStore = useSettingsStore.getState();
         settingsStore.enableProvider(providerId);
@@ -277,11 +295,16 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
         useUsageStore.getState().setProviderEnabled(providerId, true);
         useUsageStore.getState().refreshProvider(providerId);
         // Auto-collapse after success
-        setTimeout(() => clearProviderLoginState(providerId), 2000);
+        const timeoutId = setTimeout(() => {
+          if (active) clearProviderLoginState(providerId);
+        }, 2000);
+        timeoutIds.push(timeoutId);
       }
     });
 
     return () => {
+      active = false;
+      timeoutIds.forEach(clearTimeout);
       unlistenLogin.then(fn => fn());
       unlistenCompleted.then(fn => fn());
     };
@@ -412,12 +435,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const handleSetMenuBarDisplayMode = useCallback((mode: MenuBarDisplayMode) => {
     useSettingsStore.getState().setMenuBarDisplayMode(mode);
-    void invoke('save_menu_bar_display_settings', {
+    invoke('save_menu_bar_display_settings', {
       menuBarDisplayMode: mode,
       menuBarDisplayTextEnabled,
       menuBarDisplayTextMode,
       usageBarDisplayMode,
-    });
+    }).catch(console.error);
   }, [
     menuBarDisplayTextEnabled,
     menuBarDisplayTextMode,
@@ -426,12 +449,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const handleSetMenuBarDisplayTextEnabled = useCallback((enabled: boolean) => {
     setMenuBarDisplayTextEnabled(enabled);
-    void invoke('save_menu_bar_display_settings', {
+    invoke('save_menu_bar_display_settings', {
       menuBarDisplayMode,
       menuBarDisplayTextEnabled: enabled,
       menuBarDisplayTextMode,
       usageBarDisplayMode,
-    });
+    }).catch(console.error);
   }, [
     setMenuBarDisplayTextEnabled,
     menuBarDisplayMode,
@@ -441,12 +464,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const handleSetMenuBarDisplayTextMode = useCallback((mode: MenuBarDisplayTextMode) => {
     setMenuBarDisplayTextMode(mode);
-    void invoke('save_menu_bar_display_settings', {
+    invoke('save_menu_bar_display_settings', {
       menuBarDisplayMode,
       menuBarDisplayTextEnabled,
       menuBarDisplayTextMode: mode,
       usageBarDisplayMode,
-    });
+    }).catch(console.error);
   }, [
     setMenuBarDisplayTextMode,
     menuBarDisplayMode,
@@ -456,12 +479,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const handleSetUsageBarDisplayMode = useCallback((mode: UsageBarDisplayMode) => {
     useSettingsStore.getState().setUsageBarDisplayMode(mode);
-    void invoke('save_menu_bar_display_settings', {
+    invoke('save_menu_bar_display_settings', {
       menuBarDisplayMode,
       menuBarDisplayTextEnabled,
       menuBarDisplayTextMode,
       usageBarDisplayMode: mode,
-    });
+    }).catch(console.error);
   }, [
     menuBarDisplayMode,
     menuBarDisplayTextEnabled,
@@ -517,6 +540,12 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       await update.downloadAndInstall();
       setUpdateMessage('Update installed. Relaunching...');
       try {
+        // relaunch() fails in dev mode (no binary exists), skip it during development
+        if (import.meta.env.DEV) {
+          setUpdateStatus('upToDate');
+          setUpdateMessage('Update installed successfully. Restart the dev server to apply changes.');
+          return;
+        }
         await relaunch();
       } catch (relaunchError) {
         // Update was installed successfully, but relaunch failed
@@ -1766,7 +1795,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
                   />
                   <button
                     type="button"
-                    onClick={() => void invoke('send_test_notification')}
+                    onClick={() => invoke('send_test_notification').catch(console.error)}
                     className="mt-1 w-full text-left text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                     data-testid="notification-test-button"
                   >

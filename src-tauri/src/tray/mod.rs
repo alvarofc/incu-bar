@@ -7,6 +7,7 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
@@ -65,6 +66,14 @@ static TRAY_ICON_TEMPLATE: Lazy<Image<'static>> = Lazy::new(|| {
 
 enum AnimationCommand {
     Wake(AppHandle),
+}
+
+/// Shutdown signal for the random blinking thread
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Request shutdown of background threads (call on app exit)
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, AtomicOrdering::SeqCst);
 }
 
 fn write_tray_usage_state() -> RwLockWriteGuard<'static, TrayUsageState> {
@@ -1127,9 +1136,6 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            // Forward tray events to the positioner plugin
-            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-
             match event {
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
@@ -1148,6 +1154,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
+                    // Forward click events to the positioner plugin for tray rect tracking
+                    // Only forward on actual clicks to avoid panics during initialization
+                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                    
                     tracing::info!("Tray icon clicked");
                     let app = tray.app_handle();
                     if let Err(e) = toggle_popup(app) {
@@ -1173,11 +1183,23 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
 fn start_random_blinking_loop(app: &AppHandle) {
     let app_handle = app.clone();
     std::thread::spawn(move || loop {
+        // Check shutdown signal
+        if SHUTDOWN_REQUESTED.load(AtomicOrdering::SeqCst) {
+            tracing::debug!("Random blinking thread shutting down");
+            break;
+        }
+
         let mut rng = rand::thread_rng();
         let jitter = rng.gen_range(0..=RANDOM_BLINK_VARIANCE_MS);
         std::thread::sleep(std::time::Duration::from_millis(
             RANDOM_BLINK_INTERVAL_MS + jitter,
         ));
+
+        // Check shutdown signal after sleep
+        if SHUTDOWN_REQUESTED.load(AtomicOrdering::SeqCst) {
+            tracing::debug!("Random blinking thread shutting down");
+            break;
+        }
 
         if !debug_settings::random_blink_enabled() {
             continue;

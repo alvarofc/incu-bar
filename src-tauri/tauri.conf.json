@@ -18,9 +18,12 @@
         "style-src": "'self' 'unsafe-inline'",
         "connect-src": "'self' http://ipc.localhost https://*.anthropic.com https://*.openai.com https://*.cursor.sh https://api.github.com",
         "img-src": "'self' data: https:",
-        "font-src": "'self' data:"
+        "font-src": "'self' data:",
+        "object-src": "'none'",
+        "frame-ancestors": "'none'",
+        "base-uri": "'self'"
       },
-      "freezePrototype": false
+      "freezePrototype": true
     }
   },
   "bundle": {

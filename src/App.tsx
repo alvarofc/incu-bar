@@ -156,7 +156,10 @@ function App() {
           return;
         }
         await update.downloadAndInstall();
-        await relaunch();
+        // relaunch() fails in dev mode (no binary exists), skip it during development
+        if (!import.meta.env.DEV) {
+          await relaunch();
+        }
       } catch (error) {
         console.warn('Auto-update check failed', error);
       }
@@ -166,21 +169,21 @@ function App() {
   }, [autoUpdateEnabled, updateChannel]);
 
   useEffect(() => {
-    void invoke('set_debug_file_logging', { enabled: debugFileLogging });
+    invoke('set_debug_file_logging', { enabled: debugFileLogging }).catch(console.error);
   }, [debugFileLogging]);
 
   useEffect(() => {
-    void invoke('set_debug_keep_cli_sessions_alive', {
+    invoke('set_debug_keep_cli_sessions_alive', {
       enabled: debugKeepCliSessionsAlive,
-    });
+    }).catch(console.error);
   }, [debugKeepCliSessionsAlive]);
 
   useEffect(() => {
-    void invoke('set_debug_random_blink', { enabled: debugRandomBlink });
+    invoke('set_debug_random_blink', { enabled: debugRandomBlink }).catch(console.error);
   }, [debugRandomBlink]);
 
   useEffect(() => {
-    void invoke('set_redact_personal_info', { enabled: redactPersonalInfo });
+    invoke('set_redact_personal_info', { enabled: redactPersonalInfo }).catch(console.error);
   }, [redactPersonalInfo]);
 
   // Sync enabled providers when settings change (only after hydration)

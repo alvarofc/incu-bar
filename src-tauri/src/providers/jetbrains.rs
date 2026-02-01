@@ -25,7 +25,10 @@ impl JetbrainsProvider {
     }
 
     async fn fetch_from_logs(&self) -> Result<CreditsUsage, anyhow::Error> {
-        let log_paths = self.collect_log_paths()?;
+        // Run blocking file system operations on a separate thread pool
+        let log_paths = tokio::task::spawn_blocking(|| {
+            JetbrainsProvider.collect_log_paths()
+        }).await??;
 
         if log_paths.is_empty() {
             return Err(anyhow::anyhow!(
