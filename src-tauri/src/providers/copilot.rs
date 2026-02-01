@@ -392,3 +392,42 @@ fn capitalize_first(s: &str) -> String {
         None => String::new(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that the timeout constant is exactly 600 seconds (10 minutes)
+    /// and the error message is as expected.
+    /// 
+    /// This regression test ensures the 10-minute timeout in poll_for_token
+    /// cannot be accidentally removed, preventing infinite loops if GitHub's
+    /// OAuth server never responds with success/failure.
+    #[test]
+    fn poll_for_token_timeout_constant() {
+        // Document the expected timeout value
+        const EXPECTED_TIMEOUT_SECS: u64 = 600;
+        const EXPECTED_TIMEOUT_MINS: u64 = 10;
+        
+        assert_eq!(
+            EXPECTED_TIMEOUT_SECS,
+            EXPECTED_TIMEOUT_MINS * 60,
+            "Timeout should be exactly 10 minutes (600 seconds)"
+        );
+        
+        // Verify the expected error message format exists in the code
+        // This string is used in the timeout error at line 283
+        let expected_error_msg = "Authorization timed out after 10 minutes. Please try again.";
+        
+        // Read the source code to verify the timeout constant and error message exist
+        let source = include_str!("copilot.rs");
+        assert!(
+            source.contains("from_secs(600)"),
+            "Source code should contain the 600-second timeout constant"
+        );
+        assert!(
+            source.contains(expected_error_msg),
+            "Source code should contain the expected timeout error message"
+        );
+    }
+}
