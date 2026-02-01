@@ -40,7 +40,7 @@ pub fn run() {
     eprintln!("IncuBar starting...");
     init_logging();
 
-    let run_result = tauri::Builder::default()
+    let app_result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -143,7 +143,31 @@ pub fn run() {
             commands::get_autostart_enabled,
             commands::set_autostart_enabled,
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!());
+
+    let app = match app_result {
+        Ok(app) => app,
+        Err(error) => {
+            let message = format_run_error(&error);
+            tracing::error!(error = %error, "{message}");
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    };
+
+    let run_result = app.run(|_app_handle, event| {
+        match event {
+            tauri::RunEvent::ExitRequested { .. } => {
+                tracing::info!("App exit requested, shutting down background threads");
+                tray::request_shutdown();
+            }
+            tauri::RunEvent::Exit => {
+                tracing::info!("App exiting, shutting down background threads");
+                tray::request_shutdown();
+            }
+            _ => {}
+        }
+    });
 
     if let Err(error) = run_result {
         let message = format_run_error(&error);
