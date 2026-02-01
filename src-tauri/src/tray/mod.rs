@@ -643,12 +643,21 @@ fn update_tray_icon_with_animation(app: &AppHandle, from_animation_thread: bool)
     };
 
     let state = compute_render_state();
+    // In dev mode, always render dynamic icon to show purple dev colors
+    // In production, only render dynamic icon when loading (for animation)
+    #[cfg(debug_assertions)]
+    let icon = render_tray_icon(state.clone());
+    #[cfg(not(debug_assertions))]
     let icon = if matches!(state.status, TrayStatus::Loading) {
         render_tray_icon(state.clone())
     } else {
         TRAY_ICON_TEMPLATE.clone()
     };
     tray.set_icon(Some(icon))?;
+    // In dev mode, disable template mode to show colored icon
+    #[cfg(debug_assertions)]
+    tray.set_icon_as_template(false)?;
+    #[cfg(not(debug_assertions))]
     tray.set_icon_as_template(true)?;
     tray.set_tooltip(Some(build_tray_tooltip()))?;
     tray.set_title(build_tray_title(&state))?;
@@ -918,6 +927,13 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
         canvas.draw_filled_circle(ICON_SIZE as f64 - 6.0, 6.0, 3.0, color);
     }
 
+    // In dev mode, always draw a purple DEV indicator badge in the bottom-left
+    #[cfg(debug_assertions)]
+    {
+        let dev_badge_color: [u8; 4] = [180, 80, 220, 255]; // Bright purple
+        canvas.draw_filled_circle(6.0, ICON_SIZE as f64 - 6.0, 4.0, dev_badge_color);
+    }
+
     Image::new_owned(canvas.pixels, ICON_SIZE, ICON_SIZE)
 }
 
@@ -1070,7 +1086,19 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
     tracing::info!("Setting up tray icon...");
     tracing::info!("Building tray icon with initial state...");
     
+    // In dev mode, render initial icon with purple dev colors
+    #[cfg(debug_assertions)]
+    let initial_icon = render_tray_icon(TrayRenderState {
+        usage_rings: Vec::new(),
+        status: TrayStatus::Ok,
+        primary_provider: None,
+        animation_phase: 0,
+        blink_enabled: false,
+        theme: Theme::Dark,
+    });
+    #[cfg(not(debug_assertions))]
     let initial_icon = TRAY_ICON_TEMPLATE.clone();
+    
     tracing::info!(
         "Loaded tray icon: {}x{}",
         initial_icon.width(),
@@ -1081,10 +1109,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .build(app)?;
     let tray_menu = Menu::with_items(app, &[&refresh_item])?;
 
+    // In dev mode, disable template mode to show colored icon
+    #[cfg(debug_assertions)]
+    let use_template = false;
+    #[cfg(not(debug_assertions))]
+    let use_template = true;
+
     let tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
         .icon(initial_icon)
-        .icon_as_template(true)
+        .icon_as_template(use_template)
         .menu(&tray_menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
