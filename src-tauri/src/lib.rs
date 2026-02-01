@@ -156,9 +156,16 @@ pub fn run() {
     };
 
     let run_result = app.run(|_app_handle, event| {
-        if let tauri::RunEvent::ExitRequested { .. } = event {
-            tracing::info!("App exit requested, shutting down background threads");
-            tray::request_shutdown();
+        match event {
+            tauri::RunEvent::ExitRequested { .. } => {
+                tracing::info!("App exit requested, shutting down background threads");
+                tray::request_shutdown();
+            }
+            tauri::RunEvent::Exit => {
+                tracing::info!("App exiting, shutting down background threads");
+                tray::request_shutdown();
+            }
+            _ => {}
         }
     });
 
