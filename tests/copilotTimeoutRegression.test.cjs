@@ -47,7 +47,7 @@ if (!copilotSource.includes('start_time.elapsed()') ||
 }
 
 // Check for the poll_for_token function documentation mentioning timeout
-const pollForTokenMatch = copilotSource.match(/\/\/\/[^\n]*poll_for_token[^{]*{/s);
+const pollForTokenMatch = copilotSource.match(/\/\/\/.*?poll_for_token.*?\{/s);
 if (!pollForTokenMatch) {
   throw new Error('Could not find poll_for_token function documentation');
 }

@@ -416,7 +416,6 @@ mod tests {
         );
         
         // Verify the expected error message format exists in the code
-        // This string is used in the timeout error at line 283
         let expected_error_msg = "Authorization timed out after 10 minutes. Please try again.";
         
         // Read the source code to verify the timeout constant and error message exist
