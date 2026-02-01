@@ -263,12 +263,15 @@ pub async fn refresh_all_providers(
         emit_refreshing(&app, *provider_id, true);
     }
 
+    fn provider_id_to_string(provider_id: &ProviderId) -> Result<String, String> {
+        serde_json::to_string(provider_id)
+            .map_err(|e| format!("Failed to serialize provider id {:?}: {}", provider_id, e))
+            .map(|s| s.trim_matches('"').to_owned())
+    }
+
     for provider_id in providers {
         // Check if provider is authenticated before attempting refresh
-        let provider_id_str = serde_json::to_string(&provider_id)
-            .unwrap_or_default()
-            .trim_matches('"')
-            .to_string();
+        let provider_id_str = provider_id_to_string(&provider_id)?;
         let auth_status = login::check_auth_status(&provider_id_str).await;
         
         if !auth_status.authenticated {
