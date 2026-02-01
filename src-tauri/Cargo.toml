@@ -1,6 +1,6 @@
 [package]
 name = "incubar-tauri"
-version = "0.3.3"
+version = "0.3.4"
 description = "AI Usage Tracker - Cross-platform menu bar app"
 authors = ["you"]
 edition = "2021"
@@ -53,6 +53,7 @@ tauri-plugin-autostart = "2"
 
 [target."cfg(not(any(target_os = \"android\", target_os = \"ios\")))".dependencies]
 tauri-plugin-global-shortcut = "2"
+
 
 
 
