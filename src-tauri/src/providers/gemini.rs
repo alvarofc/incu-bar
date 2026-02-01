@@ -38,7 +38,7 @@ impl GeminiProvider {
 
     async fn fetch_usage(&self) -> Result<UsageSnapshot, anyhow::Error> {
         // Check auth type first
-        let auth_type = self.get_auth_type()?;
+        let auth_type = self.get_auth_type().await?;
         match auth_type.as_deref() {
             Some("api-key") => {
                 return Err(anyhow::anyhow!(
@@ -110,13 +110,13 @@ impl GeminiProvider {
         Ok(self.build_usage_snapshot(model_quotas, email, plan))
     }
 
-    fn get_auth_type(&self) -> Result<Option<String>, anyhow::Error> {
+    async fn get_auth_type(&self) -> Result<Option<String>, anyhow::Error> {
         let settings_path = self.get_settings_path()?;
         if !settings_path.exists() {
             return Ok(None);
         }
 
-        let content = std::fs::read_to_string(&settings_path)?;
+        let content = tokio::fs::read_to_string(&settings_path).await?;
         let settings: serde_json::Value = serde_json::from_str(&content)?;
 
         Ok(settings

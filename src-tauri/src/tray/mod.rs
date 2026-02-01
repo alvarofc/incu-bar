@@ -7,6 +7,7 @@ use rand::Rng;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::f64::consts::PI;
+use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tauri::{
     image::Image,
@@ -65,6 +66,14 @@ static TRAY_ICON_TEMPLATE: Lazy<Image<'static>> = Lazy::new(|| {
 
 enum AnimationCommand {
     Wake(AppHandle),
+}
+
+/// Shutdown signal for the random blinking thread
+static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
+
+/// Request shutdown of background threads (call on app exit)
+pub fn request_shutdown() {
+    SHUTDOWN_REQUESTED.store(true, AtomicOrdering::SeqCst);
 }
 
 fn write_tray_usage_state() -> RwLockWriteGuard<'static, TrayUsageState> {
@@ -643,12 +652,21 @@ fn update_tray_icon_with_animation(app: &AppHandle, from_animation_thread: bool)
     };
 
     let state = compute_render_state();
+    // In dev mode, always render dynamic icon to show purple dev colors
+    // In production, only render dynamic icon when loading (for animation)
+    #[cfg(debug_assertions)]
+    let icon = render_tray_icon(state.clone());
+    #[cfg(not(debug_assertions))]
     let icon = if matches!(state.status, TrayStatus::Loading) {
         render_tray_icon(state.clone())
     } else {
         TRAY_ICON_TEMPLATE.clone()
     };
     tray.set_icon(Some(icon))?;
+    // In dev mode, disable template mode to show colored icon
+    #[cfg(debug_assertions)]
+    tray.set_icon_as_template(false)?;
+    #[cfg(not(debug_assertions))]
     tray.set_icon_as_template(true)?;
     tray.set_tooltip(Some(build_tray_tooltip()))?;
     tray.set_title(build_tray_title(&state))?;
@@ -918,6 +936,13 @@ fn render_tray_icon(state: TrayRenderState) -> Image<'static> {
         canvas.draw_filled_circle(ICON_SIZE as f64 - 6.0, 6.0, 3.0, color);
     }
 
+    // In dev mode, always draw a purple DEV indicator badge in the bottom-left
+    #[cfg(debug_assertions)]
+    {
+        let dev_badge_color: [u8; 4] = [180, 80, 220, 255]; // Bright purple
+        canvas.draw_filled_circle(6.0, ICON_SIZE as f64 - 6.0, 4.0, dev_badge_color);
+    }
+
     Image::new_owned(canvas.pixels, ICON_SIZE, ICON_SIZE)
 }
 
@@ -1070,7 +1095,19 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
     tracing::info!("Setting up tray icon...");
     tracing::info!("Building tray icon with initial state...");
     
+    // In dev mode, render initial icon with purple dev colors
+    #[cfg(debug_assertions)]
+    let initial_icon = render_tray_icon(TrayRenderState {
+        usage_rings: Vec::new(),
+        status: TrayStatus::Ok,
+        primary_provider: None,
+        animation_phase: 0,
+        blink_enabled: false,
+        theme: Theme::Dark,
+    });
+    #[cfg(not(debug_assertions))]
     let initial_icon = TRAY_ICON_TEMPLATE.clone();
+    
     tracing::info!(
         "Loaded tray icon: {}x{}",
         initial_icon.width(),
@@ -1081,10 +1118,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
         .build(app)?;
     let tray_menu = Menu::with_items(app, &[&refresh_item])?;
 
+    // In dev mode, disable template mode to show colored icon
+    #[cfg(debug_assertions)]
+    let use_template = false;
+    #[cfg(not(debug_assertions))]
+    let use_template = true;
+
     let tray = TrayIconBuilder::with_id(TRAY_ICON_ID)
         .tooltip(TRAY_TOOLTIP_BASE)
         .icon(initial_icon)
-        .icon_as_template(true)
+        .icon_as_template(use_template)
         .menu(&tray_menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -1093,9 +1136,6 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
             }
         })
         .on_tray_icon_event(|tray, event| {
-            // Forward tray events to the positioner plugin
-            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-
             match event {
                 TrayIconEvent::DoubleClick {
                     button: MouseButton::Left,
@@ -1114,6 +1154,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
                     button_state: MouseButtonState::Up,
                     ..
                 } => {
+                    // Forward click events to the positioner plugin for tray rect tracking
+                    // Only forward on actual clicks to avoid panics during initialization
+                    tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                    
                     tracing::info!("Tray icon clicked");
                     let app = tray.app_handle();
                     if let Err(e) = toggle_popup(app) {
@@ -1139,11 +1183,23 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
 fn start_random_blinking_loop(app: &AppHandle) {
     let app_handle = app.clone();
     std::thread::spawn(move || loop {
+        // Check shutdown signal
+        if SHUTDOWN_REQUESTED.load(AtomicOrdering::SeqCst) {
+            tracing::debug!("Random blinking thread shutting down");
+            break;
+        }
+
         let mut rng = rand::thread_rng();
         let jitter = rng.gen_range(0..=RANDOM_BLINK_VARIANCE_MS);
         std::thread::sleep(std::time::Duration::from_millis(
             RANDOM_BLINK_INTERVAL_MS + jitter,
         ));
+
+        // Check shutdown signal after sleep
+        if SHUTDOWN_REQUESTED.load(AtomicOrdering::SeqCst) {
+            tracing::debug!("Random blinking thread shutting down");
+            break;
+        }
 
         if !debug_settings::random_blink_enabled() {
             continue;
