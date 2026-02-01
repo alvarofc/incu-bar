@@ -155,7 +155,7 @@ pub fn run() {
         }
     };
 
-    let run_result = app.run(|_app_handle, event| {
+    app.run(|_app_handle, event| {
         match event {
             tauri::RunEvent::ExitRequested { .. } => {
                 tracing::info!("App exit requested, shutting down background threads");
@@ -168,13 +168,6 @@ pub fn run() {
             _ => {}
         }
     });
-
-    if let Err(error) = run_result {
-        let message = format_run_error(&error);
-        tracing::error!(error = %error, "{message}");
-        eprintln!("{message}");
-        std::process::exit(1);
-    }
 }
 
 #[cfg(test)]
