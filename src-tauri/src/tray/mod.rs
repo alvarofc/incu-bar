@@ -47,6 +47,7 @@ static TRAY_ANIMATION_CONTROL: Lazy<Mutex<Option<mpsc::UnboundedSender<Animation
     Lazy::new(|| Mutex::new(None));
 
 static TRAY_HANDLE: Lazy<Mutex<Option<TrayIcon>>> = Lazy::new(|| Mutex::new(None));
+#[allow(dead_code)] // Used only in release builds
 static TRAY_ICON_TEMPLATE: Lazy<Image<'static>> = Lazy::new(|| {
     let bytes = include_bytes!("../../icons/32x32.png");
     Image::from_bytes(bytes)
@@ -1585,19 +1586,46 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
         } else {
             // Use the positioner plugin to position at tray center.
             // Guard against missing tray icon to avoid plugin panic.
+            // The positioner plugin can panic if the tray rect is not available yet,
+            // so we use catch_unwind to handle this gracefully.
             if app.tray_by_id(TRAY_ICON_ID).is_some() {
-                if let Err(e) = window.as_ref().window().move_window(Position::TrayCenter) {
-                    tracing::warn!(
-                        "Failed to position at TrayCenter: {}, trying TrayBottomCenter",
-                        e
-                    );
-                    // Fallback to TrayBottomCenter if TrayCenter fails
-                    if let Err(e2) = window
-                        .as_ref()
-                        .window()
-                        .move_window(Position::TrayBottomCenter)
-                    {
-                        tracing::error!("Failed to position popup: {}", e2);
+                let win_ref = window.as_ref().window().clone();
+                let position_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    win_ref.move_window(Position::TrayCenter)
+                }));
+                
+                match position_result {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        tracing::warn!(
+                            "Failed to position at TrayCenter: {}, trying TrayBottomCenter",
+                            e
+                        );
+                        // Fallback to TrayBottomCenter if TrayCenter fails
+                        let win_ref = window.as_ref().window().clone();
+                        let fallback_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            win_ref.move_window(Position::TrayBottomCenter)
+                        }));
+                        match fallback_result {
+                            Ok(Err(e2)) => {
+                                tracing::error!("Failed to position popup (fallback): {}", e2);
+                            }
+                            Err(payload) => {
+                                // Extract panic payload information
+                                let panic_msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = payload.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "unknown panic payload".to_string()
+                                };
+                                tracing::error!("Failed to position popup (fallback): panic: {}", panic_msg);
+                            }
+                            Ok(Ok(())) => {}
+                        }
+                    }
+                    Err(_) => {
+                        tracing::warn!("Positioner panicked (tray rect not available); showing popup at current position");
                     }
                 }
             } else {
