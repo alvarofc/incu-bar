@@ -1606,8 +1606,22 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
                         let fallback_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                             win_ref.move_window(Position::TrayBottomCenter)
                         }));
-                        if let Ok(Err(e2)) = fallback_result {
-                            tracing::error!("Failed to position popup: {}", e2);
+                        match fallback_result {
+                            Ok(Err(e2)) => {
+                                tracing::error!("Failed to position popup (fallback): {}", e2);
+                            }
+                            Err(payload) => {
+                                // Extract panic payload information
+                                let panic_msg = if let Some(s) = payload.downcast_ref::<&str>() {
+                                    s.to_string()
+                                } else if let Some(s) = payload.downcast_ref::<String>() {
+                                    s.clone()
+                                } else {
+                                    "unknown panic payload".to_string()
+                                };
+                                tracing::error!("Failed to position popup (fallback): panic: {}", panic_msg);
+                            }
+                            Ok(Ok(())) => {}
                         }
                     }
                     Err(_) => {
