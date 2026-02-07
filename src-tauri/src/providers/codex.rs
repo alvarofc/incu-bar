@@ -312,5 +312,54 @@ struct WindowSnapshot {
 struct CreditDetails {
     has_credits: Option<bool>,
     unlimited: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_balance")]
     balance: Option<f64>,
+}
+
+/// The OpenAI API may return `balance` as either a number or a string (e.g. `"0"`).
+fn deserialize_balance<'de, D>(deserializer: D) -> Result<Option<f64>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de;
+
+    struct BalanceVisitor;
+
+    impl<'de> de::Visitor<'de> for BalanceVisitor {
+        type Value = Option<f64>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a number or numeric string")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Self::Value, E> {
+            Ok(Some(v as f64))
+        }
+
+        fn visit_f64<E: de::Error>(self, v: f64) -> Result<Self::Value, E> {
+            Ok(Some(v))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            v.parse::<f64>().map(Some).map_err(de::Error::custom)
+        }
+
+        fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+            d.deserialize_any(Self)
+        }
+    }
+
+    deserializer.deserialize_any(BalanceVisitor)
 }

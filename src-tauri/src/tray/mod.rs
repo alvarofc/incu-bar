@@ -1158,7 +1158,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<()> {
                     // Forward click events to the positioner plugin for tray rect tracking
                     // Only forward on actual clicks to avoid panics during initialization
                     tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-                    
+
                     tracing::info!("Tray icon clicked");
                     let app = tray.app_handle();
                     if let Err(e) = toggle_popup(app) {
@@ -1324,9 +1324,18 @@ pub fn create_settings_window(app: &AppHandle) -> Result<()> {
     }
 
     let app_handle = app.clone();
+    let window_clone = window.clone();
     window.on_window_event(move |event| {
-        if let WindowEvent::ThemeChanged(theme) = event {
-            let _ = set_tray_theme(&app_handle, *theme);
+        match event {
+            WindowEvent::ThemeChanged(theme) => {
+                let _ = set_tray_theme(&app_handle, *theme);
+            }
+            WindowEvent::CloseRequested { api, .. } => {
+                // Hide instead of destroying so the window can be re-shown later
+                api.prevent_close();
+                let _ = window_clone.hide();
+            }
+            _ => {}
         }
     });
 
@@ -1573,72 +1582,91 @@ pub async fn extract_cursor_cookies(app: &AppHandle) -> Result<Option<String>> {
     }
 }
 
-/// Toggle the popup window visibility, positioning near the tray icon
+/// Check whether the window's display monitor is available.
+fn has_monitor(win: &tauri::Window) -> bool {
+    matches!(win.current_monitor(), Ok(Some(_)))
+}
+
+/// Try to move `win` to `pos` via the positioner plugin, catching any panic
+/// from missing tray rect state.  Returns `true` on success.
+fn try_move_window(win: &tauri::Window, pos: Position) -> bool {
+    let pos_label = format!("{:?}", pos);
+    let win_clone = win.clone();
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        win_clone.move_window(pos)
+    }));
+    match result {
+        Ok(Ok(())) => true,
+        Ok(Err(e)) => {
+            tracing::warn!("Positioner move_window({}) error: {}", pos_label, e);
+            false
+        }
+        Err(_) => {
+            tracing::warn!("Positioner move_window({}) panicked (tray rect not available)", pos_label);
+            false
+        }
+    }
+}
+
+/// Position the popup near the tray icon with fallback logic.
+/// Runs on the main thread — no blocking sleeps.
+fn position_popup_at_tray(app: &AppHandle, window: &tauri::webview::WebviewWindow) {
+    if app.tray_by_id(TRAY_ICON_ID).is_none() {
+        tracing::warn!("Tray icon not ready; skipping positioner move");
+        return;
+    }
+
+    let win = window.as_ref().window().clone();
+
+    if !has_monitor(&win) {
+        // Hidden windows may have no monitor; show briefly so the WM assigns one.
+        tracing::debug!("Popup has no monitor while hidden; showing to acquire monitor");
+        let _ = window.show();
+        if !has_monitor(&win) {
+            tracing::warn!("Popup monitor still not available; showing at current position");
+            return;
+        }
+    }
+
+    // Try TrayCenter first, then fall back to TrayBottomCenter.
+    if try_move_window(&win, Position::TrayCenter) {
+        return;
+    }
+
+    tracing::debug!("Falling back to TrayBottomCenter");
+    if !try_move_window(&win, Position::TrayBottomCenter) {
+        tracing::warn!("All positioning attempts failed; showing popup at current position");
+    }
+}
+
+/// Toggle the popup window visibility, positioning near the tray icon.
 fn toggle_popup(app: &AppHandle) -> Result<()> {
     tracing::debug!("toggle_popup called");
-    if let Some(window) = app.get_webview_window("popup") {
-        let is_visible = window.is_visible().unwrap_or(false);
-        tracing::debug!("Popup window found, is_visible: {}", is_visible);
 
-        if is_visible {
-            tracing::info!("Hiding popup");
-            window.hide()?;
-        } else {
-            // Use the positioner plugin to position at tray center.
-            // Guard against missing tray icon to avoid plugin panic.
-            // The positioner plugin can panic if the tray rect is not available yet,
-            // so we use catch_unwind to handle this gracefully.
-            if app.tray_by_id(TRAY_ICON_ID).is_some() {
-                let win_ref = window.as_ref().window().clone();
-                let position_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    win_ref.move_window(Position::TrayCenter)
-                }));
-                
-                match position_result {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => {
-                        tracing::warn!(
-                            "Failed to position at TrayCenter: {}, trying TrayBottomCenter",
-                            e
-                        );
-                        // Fallback to TrayBottomCenter if TrayCenter fails
-                        let win_ref = window.as_ref().window().clone();
-                        let fallback_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            win_ref.move_window(Position::TrayBottomCenter)
-                        }));
-                        match fallback_result {
-                            Ok(Err(e2)) => {
-                                tracing::error!("Failed to position popup (fallback): {}", e2);
-                            }
-                            Err(payload) => {
-                                // Extract panic payload information
-                                let panic_msg = if let Some(s) = payload.downcast_ref::<&str>() {
-                                    s.to_string()
-                                } else if let Some(s) = payload.downcast_ref::<String>() {
-                                    s.clone()
-                                } else {
-                                    "unknown panic payload".to_string()
-                                };
-                                tracing::error!("Failed to position popup (fallback): panic: {}", panic_msg);
-                            }
-                            Ok(Ok(())) => {}
-                        }
-                    }
-                    Err(_) => {
-                        tracing::warn!("Positioner panicked (tray rect not available); showing popup at current position");
-                    }
-                }
-            } else {
-                tracing::warn!("Tray icon not ready; skipping positioner move");
-            }
-
-            tracing::info!("Showing popup at TrayCenter");
-            window.show()?;
-            window.set_focus()?;
+    let window = match app.get_webview_window("popup") {
+        Some(w) => w,
+        None => {
+            tracing::warn!("Popup window not found!");
+            return Ok(());
         }
-    } else {
-        tracing::warn!("Popup window not found!");
+    };
+
+    let is_visible = window.is_visible().unwrap_or(false);
+    tracing::debug!("Popup window found, is_visible: {}", is_visible);
+
+    if is_visible {
+        tracing::info!("Hiding popup");
+        window.hide()?;
+        return Ok(());
     }
+
+    position_popup_at_tray(app, &window);
+
+    tracing::info!("Showing popup");
+    if !window.is_visible().unwrap_or(false) {
+        window.show()?;
+    }
+    window.set_focus()?;
 
     Ok(())
 }

@@ -9,7 +9,6 @@ import type {
 } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { relaunch } from '@tauri-apps/plugin-process';
 import { check } from '@tauri-apps/plugin-updater';
@@ -509,15 +508,6 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
 
   const handleSetUpdateChannel = useCallback((channel: UpdateChannel) => {
     useSettingsStore.getState().setUpdateChannel(channel);
-  }, []);
-
-  const handleCloseSettings = useCallback(async () => {
-    try {
-      const window = getCurrentWindow();
-      await window.close();
-    } catch (error) {
-      console.error('Failed to close settings window', error);
-    }
   }, []);
 
   const updateInFlightRef = useRef(false);
@@ -1052,14 +1042,6 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
-        <button
-          type="button"
-          onClick={handleCloseSettings}
-          className="ml-auto btn btn-ghost focus-ring text-[11px]"
-          data-testid="settings-close-button"
-        >
-          Close
-        </button>
       </header>
 
       {/* Content */}
