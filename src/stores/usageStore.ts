@@ -223,14 +223,17 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 
   refreshProvider: async (id) => {
     const { setProviderLoading, setProviderUsage, setProviderError } = get();
-    console.log('[usageStore] refreshProvider - starting:', id);
     setProviderLoading(id, true);
 
     // Frontend timeout to ensure we don't hang indefinitely waiting for backend
     const REFRESH_TIMEOUT_MS = 30_000; // 30 seconds (backend has 10s status + 15s usage timeouts)
-    
+
+    let timeoutId: number | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Refresh timed out')), REFRESH_TIMEOUT_MS);
+      timeoutId = window.setTimeout(
+        () => reject(new Error('Refresh timed out')),
+        REFRESH_TIMEOUT_MS
+      );
     });
 
     try {
@@ -238,28 +241,30 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         invoke<UsageSnapshot>('refresh_provider', { providerId: id }),
         timeoutPromise,
       ]);
-      console.log('[usageStore] refreshProvider - success:', id, usage);
       setProviderUsage(id, usage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.log('[usageStore] refreshProvider - error:', id, message);
       setProviderError(id, message);
+    } finally {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
     }
   },
 
   refreshAllProviders: async () => {
-    const { providers, refreshProvider } = get();
+    const { providers, refreshProvider, isRefreshing } = get();
+    if (isRefreshing) {
+      return;
+    }
     set({ isRefreshing: true });
 
     const enabledProviders = Object.values(providers).filter((p) => p.enabled);
-    console.log('[usageStore] refreshAllProviders - enabled providers:', enabledProviders.map(p => p.id));
-    
-    const results = await Promise.allSettled(
-      enabledProviders.map((p) => refreshProvider(p.id))
-    );
-    console.log('[usageStore] refreshAllProviders - completed, results:', results);
-
-    set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+    try {
+      await Promise.allSettled(enabledProviders.map((p) => refreshProvider(p.id)));
+    } finally {
+      set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+    }
   },
 
   initializeProviders: (enabledIds) =>

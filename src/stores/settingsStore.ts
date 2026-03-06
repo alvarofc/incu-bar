@@ -238,6 +238,11 @@ interface SettingsStore extends AppSettings {
   setStoreUsageHistory: (enabled: boolean) => void;
   setPollProviderStatus: (enabled: boolean) => void;
   setRedactPersonalInfo: (enabled: boolean) => void;
+  setEmployerReportingEnabled: (enabled: boolean) => void;
+  setEmployerReportingGatewayUrl: (url: string) => void;
+  setEmployerReportingEmployeeId: (employeeId: string) => void;
+  setEmployerReportingEmployeeEmail: (email: string) => void;
+  setEmployerReportingIncludeEmployeeEmail: (enabled: boolean) => void;
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
@@ -336,6 +341,19 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setRedactPersonalInfo: (enabled) => set({ redactPersonalInfo: enabled }),
 
+      setEmployerReportingEnabled: (enabled) => set({ employerReportingEnabled: enabled }),
+
+      setEmployerReportingGatewayUrl: (url) => set({ employerReportingGatewayUrl: url }),
+
+      setEmployerReportingEmployeeId: (employeeId) =>
+        set({ employerReportingEmployeeId: employeeId }),
+
+      setEmployerReportingEmployeeEmail: (email) =>
+        set({ employerReportingEmployeeEmail: email }),
+
+      setEmployerReportingIncludeEmployeeEmail: (enabled) =>
+        set({ employerReportingIncludeEmployeeEmail: enabled }),
+
       setDebugMenuEnabled: (enabled) => set({ debugMenuEnabled: enabled }),
 
       setDebugFileLogging: (enabled) => set({ debugFileLogging: enabled }),
@@ -352,12 +370,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setInstallOrigin: (origin) => set({ installOrigin: origin ?? undefined }),
 
-      setHasHydrated: (hydrated) => {
-        console.log('[settingsStore] setHasHydrated called with:', hydrated);
-        console.log('[settingsStore] Current hasHydrated before set:', get().hasHydrated);
-        set({ hasHydrated: hydrated });
-        console.log('[settingsStore] hasHydrated after set:', get().hasHydrated);
-      },
+      setHasHydrated: (hydrated) => set({ hasHydrated: hydrated }),
 
       setCookieSource: (providerId, source) =>
         set((state) => ({
@@ -417,17 +430,15 @@ export const useSettingsStore = create<SettingsStore>()(
         };
       },
       onRehydrateStorage: () => {
-        console.log('[settingsStore] onRehydrateStorage: outer function called');
-        return (state, error) => {
-          console.log('[settingsStore] onRehydrateStorage: inner callback fired, state:', state?.enabledProviders, 'error:', error);
+        return (_state, error) => {
           if (error) {
-            console.error('[settingsStore] Hydration error:', error);
+            console.error('Hydration error:', error);
           }
           try {
             if (typeof localStorage === 'undefined') {
               return;
             }
-            const legacySettingsRaw = localStorage.getItem('settings-store');
+            const legacySettingsRaw = localStorage.getItem(SETTINGS_STORAGE_KEY);
             if (!legacySettingsRaw) {
               return;
             }
@@ -443,7 +454,7 @@ export const useSettingsStore = create<SettingsStore>()(
               ...legacySettings,
               legacyDefaults: legacySettings,
             };
-            localStorage.setItem('settings-store', JSON.stringify(merged));
+            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
           } catch (migrationError) {
             console.warn('Failed to migrate legacy settings defaults', migrationError);
           }
@@ -456,27 +467,25 @@ export const useSettingsStore = create<SettingsStore>()(
 // Use Zustand persist's onFinishHydration API to reliably set hasHydrated
 // Also check if hydration already happened (synchronous localStorage read)
 useSettingsStore.persist.onFinishHydration(() => {
-  console.log('[settingsStore] onFinishHydration callback - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
   // Ensure backend registry matches current settings on startup
   const enabledProviders = useSettingsStore.getState().enabledProviders;
   import('@tauri-apps/api/core')
     .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
     .catch((error) => {
-      console.warn('[settingsStore] Failed to sync enabled providers on hydration', error);
+      console.warn('Failed to sync enabled providers on hydration', error);
     });
 });
 
 // Check if hydration already completed synchronously before onFinishHydration was registered
 if (useSettingsStore.persist.hasHydrated()) {
-  console.log('[settingsStore] Already hydrated on module load - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
   // Also sync providers since we missed the onFinishHydration callback
   const enabledProviders = useSettingsStore.getState().enabledProviders;
   import('@tauri-apps/api/core')
     .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
     .catch((error) => {
-      console.warn('[settingsStore] Failed to sync enabled providers on module load hydration', error);
+      console.warn('Failed to sync enabled providers on module load hydration', error);
     });
 }
 // Note: We don't unsubscribe because we only need this to fire once on app start
@@ -491,7 +500,7 @@ const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder
   try {
     await invoke('broadcast_settings_updated', { enabledProviders, providerOrder });
   } catch (error) {
-    console.warn('[settingsStore] Failed to broadcast settings update', error);
+    console.warn('Failed to broadcast settings update', error);
   }
 };
 

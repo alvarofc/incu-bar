@@ -36,6 +36,7 @@ const LOADING_ANIMATION_TICK_MS: u64 = 250;
 const BLINKING_ANIMATION_TICK_MS: u64 = 500;
 const RANDOM_BLINK_INTERVAL_MS: u64 = 4200;
 const RANDOM_BLINK_VARIANCE_MS: u64 = 1600;
+const POPUP_FOCUS_GRACE_MS: u64 = 750;
 
 static TRAY_USAGE_STATE: Lazy<RwLock<TrayUsageState>> =
     Lazy::new(|| RwLock::new(TrayUsageState::default()));
@@ -47,6 +48,8 @@ static TRAY_ANIMATION_CONTROL: Lazy<Mutex<Option<mpsc::UnboundedSender<Animation
     Lazy::new(|| Mutex::new(None));
 
 static TRAY_HANDLE: Lazy<Mutex<Option<TrayIcon>>> = Lazy::new(|| Mutex::new(None));
+static POPUP_FOCUS_GUARD_UNTIL_MS: Lazy<std::sync::atomic::AtomicU64> =
+    Lazy::new(|| std::sync::atomic::AtomicU64::new(0));
 #[allow(dead_code)] // Used only in release builds
 static TRAY_ICON_TEMPLATE: Lazy<Image<'static>> = Lazy::new(|| {
     let bytes = include_bytes!("../../icons/32x32.png");
@@ -115,6 +118,28 @@ fn animation_tick_ms(blink_enabled: bool) -> u64 {
     } else {
         LOADING_ANIMATION_TICK_MS
     }
+}
+
+fn popup_focus_guard_deadline_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn begin_popup_focus_guard() {
+    POPUP_FOCUS_GUARD_UNTIL_MS.store(
+        popup_focus_guard_deadline_ms().saturating_add(POPUP_FOCUS_GRACE_MS),
+        AtomicOrdering::SeqCst,
+    );
+}
+
+fn clear_popup_focus_guard() {
+    POPUP_FOCUS_GUARD_UNTIL_MS.store(0, AtomicOrdering::SeqCst);
+}
+
+fn popup_focus_guard_active() -> bool {
+    popup_focus_guard_deadline_ms() < POPUP_FOCUS_GUARD_UNTIL_MS.load(AtomicOrdering::SeqCst)
 }
 
 fn animation_tick_duration(blink_enabled: bool) -> std::time::Duration {
@@ -684,6 +709,7 @@ fn compute_render_state() -> TrayRenderState {
     let mut has_error = false;
     let mut has_stale = false;
     let state = read_tray_usage_state();
+    let display_state = *read_tray_display_text_state();
     let loading_count = state.loading_count;
     let animation_phase = state.animation_phase;
     let blinking = state.blinking;
@@ -696,10 +722,12 @@ fn compute_render_state() -> TrayRenderState {
         if is_snapshot_stale(usage) {
             has_stale = true;
         }
-        if let Some(percent) = usage_percent_from_snapshot(usage) {
+        if let Some(percent) = selected_usage_percent(usage, display_state.percent_window_mode)
+            .map(|percent| display_percent(percent, display_state.show_used))
+        {
             rings.push(UsageRing {
                 percent,
-                color: usage_color(percent, theme),
+                color: usage_color(percent, theme, display_state.show_used),
                 provider_id: *provider_id,
             });
         }
@@ -778,7 +806,23 @@ fn resolve_percent_window(
     display_state: TrayDisplayTextState,
     usage: &UsageSnapshot,
 ) -> Option<f64> {
-    match display_state.percent_window_mode {
+    selected_usage_percent(usage, display_state.percent_window_mode)
+}
+
+fn display_percent(percent: f64, show_used: bool) -> f64 {
+    let clamped = percent.clamp(0.0, 100.0);
+    if show_used {
+        clamped
+    } else {
+        (100.0 - clamped).clamp(0.0, 100.0)
+    }
+}
+
+fn selected_usage_percent(
+    usage: &UsageSnapshot,
+    percent_window_mode: TrayPercentWindowMode,
+) -> Option<f64> {
+    match percent_window_mode {
         TrayPercentWindowMode::Session => usage.primary.as_ref().map(|window| window.used_percent),
         TrayPercentWindowMode::Weekly => usage.secondary.as_ref().map(|window| window.used_percent),
         TrayPercentWindowMode::Highest => {
@@ -1016,11 +1060,16 @@ fn draw_generic_ring(canvas: &mut Canvas, center: (f64, f64), palette: TrayPalet
     canvas.draw_ring(center.0, center.1, 6.0, 2.0, ring_color, None, None);
 }
 
-fn usage_color(percent: f64, theme: Theme) -> [u8; 4] {
+fn usage_color(percent: f64, theme: Theme, show_used: bool) -> [u8; 4] {
     let palette = palette_for_theme(theme);
-    if percent < 50.0 {
+    let effective_used = if show_used {
+        percent
+    } else {
+        (100.0 - percent).clamp(0.0, 100.0)
+    };
+    if effective_used < 50.0 {
         palette.usage_good
-    } else if percent < 80.0 {
+    } else if effective_used < 80.0 {
         palette.usage_warn
     } else {
         palette.usage_critical
@@ -1056,6 +1105,7 @@ fn build_tray_tooltip() -> String {
 }
 
 fn format_tray_tooltip(state: &TrayUsageState) -> String {
+    let display_state = *read_tray_display_text_state();
     let mut entries: Vec<(f64, ProviderId)> = Vec::new();
     let mut error_entries: Vec<ProviderId> = Vec::new();
 
@@ -1064,7 +1114,9 @@ fn format_tray_tooltip(state: &TrayUsageState) -> String {
             error_entries.push(*provider_id);
             continue;
         }
-        if let Some(percent) = usage_percent_from_snapshot(usage) {
+        if let Some(percent) = selected_usage_percent(usage, display_state.percent_window_mode)
+            .map(|percent| display_percent(percent, display_state.show_used))
+        {
             entries.push((percent, *provider_id));
         }
     }
@@ -1072,11 +1124,17 @@ fn format_tray_tooltip(state: &TrayUsageState) -> String {
     entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
 
     let mut summary_parts: Vec<String> = Vec::new();
+    let tooltip_suffix = if display_state.show_used {
+        "used"
+    } else {
+        "remaining"
+    };
     for (percent, provider_id) in entries.iter().take(MAX_RINGS) {
         summary_parts.push(format!(
-            "{} {:.0}%",
+            "{} {:.0}% {}",
             provider_display_name(*provider_id),
-            percent
+            percent,
+            tooltip_suffix
         ));
     }
 
@@ -1244,7 +1302,7 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
-        .focused(true);
+        .focused(false);
     
     eprintln!("Builder created, now calling build()...");
     
@@ -1273,6 +1331,10 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
                 let _ = set_tray_theme(&app_handle, *theme);
             }
             WindowEvent::Focused(false) => {
+                if popup_focus_guard_active() {
+                    tracing::debug!("Ignoring popup blur during focus grace window");
+                    return;
+                }
                 // Hide popup when clicking outside (losing focus)
                 tracing::debug!("Popup lost focus, hiding");
                 let _ = window_clone.hide();
@@ -1280,10 +1342,6 @@ pub fn create_popup_window(app: &AppHandle) -> Result<()> {
             _ => {}
         }
     });
-
-    // Open devtools in debug mode
-    #[cfg(debug_assertions)]
-    window.open_devtools();
 
     tracing::info!("Popup window created");
     Ok(())
@@ -1613,9 +1671,11 @@ fn try_move_window(win: &tauri::Window, pos: Position) -> bool {
 fn position_popup_at_tray(app: &AppHandle, window: &tauri::webview::WebviewWindow) {
     if app.tray_by_id(TRAY_ICON_ID).is_none() {
         tracing::warn!("Tray icon not ready; skipping positioner move");
+        let _ = window.center();
         return;
     }
 
+    begin_popup_focus_guard();
     let win = window.as_ref().window().clone();
 
     if !has_monitor(&win) {
@@ -1623,7 +1683,8 @@ fn position_popup_at_tray(app: &AppHandle, window: &tauri::webview::WebviewWindo
         tracing::debug!("Popup has no monitor while hidden; showing to acquire monitor");
         let _ = window.show();
         if !has_monitor(&win) {
-            tracing::warn!("Popup monitor still not available; showing at current position");
+            tracing::warn!("Popup monitor still not available; centering popup instead");
+            let _ = window.center();
             return;
         }
     }
@@ -1635,7 +1696,8 @@ fn position_popup_at_tray(app: &AppHandle, window: &tauri::webview::WebviewWindo
 
     tracing::debug!("Falling back to TrayBottomCenter");
     if !try_move_window(&win, Position::TrayBottomCenter) {
-        tracing::warn!("All positioning attempts failed; showing popup at current position");
+        tracing::warn!("All positioning attempts failed; centering popup instead");
+        let _ = window.center();
     }
 }
 
@@ -1656,16 +1718,19 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
 
     if is_visible {
         tracing::info!("Hiding popup");
+        clear_popup_focus_guard();
         window.hide()?;
         return Ok(());
     }
 
+    begin_popup_focus_guard();
     position_popup_at_tray(app, &window);
 
     tracing::info!("Showing popup");
     if !window.is_visible().unwrap_or(false) {
         window.show()?;
     }
+    begin_popup_focus_guard();
     window.set_focus()?;
 
     Ok(())
@@ -1705,6 +1770,31 @@ mod tests {
             cost: None,
             identity: None,
             updated_at: updated_at.to_string(),
+            error: None,
+        }
+    }
+
+    fn sample_usage_windows(
+        primary: Option<f64>,
+        secondary: Option<f64>,
+        tertiary: Option<f64>,
+    ) -> UsageSnapshot {
+        let rate_window = |percent: f64| RateWindow {
+            used_percent: percent,
+            window_minutes: None,
+            resets_at: None,
+            reset_description: None,
+            label: None,
+        };
+
+        UsageSnapshot {
+            primary: primary.map(rate_window),
+            secondary: secondary.map(rate_window),
+            tertiary: tertiary.map(rate_window),
+            credits: None,
+            cost: None,
+            identity: None,
+            updated_at: chrono::Utc::now().to_rfc3339(),
             error: None,
         }
     }
@@ -1749,6 +1839,97 @@ mod tests {
             Some(81.0)
         );
         assert_eq!(state.primary_provider, Some(ProviderId::Codex));
+    }
+
+    #[test]
+    fn compute_render_state_respects_selected_window_mode() {
+        reset_tray_usage_state();
+        {
+            let mut usage_state = write_tray_usage_state();
+            usage_state.provider_usage = HashMap::from([
+                (
+                    ProviderId::Claude,
+                    sample_usage_windows(Some(55.0), Some(20.0), None),
+                ),
+                (
+                    ProviderId::Codex,
+                    sample_usage_windows(Some(15.0), Some(85.0), None),
+                ),
+            ]);
+        }
+
+        {
+            let mut display_state = write_tray_display_text_state();
+            display_state.percent_window_mode = TrayPercentWindowMode::Session;
+        }
+        let session_state = compute_render_state();
+        assert_eq!(session_state.primary_provider, Some(ProviderId::Claude));
+        assert_eq!(session_state.usage_rings.first().map(|ring| ring.percent), Some(55.0));
+
+        {
+            let mut display_state = write_tray_display_text_state();
+            display_state.percent_window_mode = TrayPercentWindowMode::Weekly;
+        }
+        let weekly_state = compute_render_state();
+        assert_eq!(weekly_state.primary_provider, Some(ProviderId::Codex));
+        assert_eq!(weekly_state.usage_rings.first().map(|ring| ring.percent), Some(85.0));
+    }
+
+    #[test]
+    fn format_tray_tooltip_respects_selected_window_mode() {
+        reset_tray_usage_state();
+        {
+            let mut usage_state = write_tray_usage_state();
+            usage_state.provider_usage = HashMap::from([
+                (
+                    ProviderId::Claude,
+                    sample_usage_windows(Some(55.0), Some(20.0), None),
+                ),
+                (
+                    ProviderId::Codex,
+                    sample_usage_windows(Some(15.0), Some(85.0), None),
+                ),
+            ]);
+        }
+
+        {
+            let mut display_state = write_tray_display_text_state();
+            display_state.percent_window_mode = TrayPercentWindowMode::Session;
+        }
+        let session_tooltip = format_tray_tooltip(&read_tray_usage_state());
+        assert!(session_tooltip.contains("Claude 55% used"));
+        assert!(session_tooltip.contains("Codex 15% used"));
+
+        {
+            let mut display_state = write_tray_display_text_state();
+            display_state.percent_window_mode = TrayPercentWindowMode::Weekly;
+        }
+        let weekly_tooltip = format_tray_tooltip(&read_tray_usage_state());
+        assert!(weekly_tooltip.contains("Codex 85% used"));
+        assert!(weekly_tooltip.contains("Claude 20% used"));
+    }
+
+    #[test]
+    fn compute_render_state_and_tooltip_respect_remaining_mode() {
+        reset_tray_usage_state();
+        {
+            let mut usage_state = write_tray_usage_state();
+            usage_state.provider_usage = HashMap::from([(
+                ProviderId::Codex,
+                sample_usage_windows(Some(10.0), Some(3.0), None),
+            )]);
+        }
+        {
+            let mut display_state = write_tray_display_text_state();
+            display_state.percent_window_mode = TrayPercentWindowMode::Session;
+            display_state.show_used = false;
+        }
+
+        let render_state = compute_render_state();
+        assert_eq!(render_state.usage_rings.first().map(|ring| ring.percent), Some(90.0));
+
+        let tooltip = format_tray_tooltip(&read_tray_usage_state());
+        assert!(tooltip.contains("Codex 90% remaining"));
     }
 
     #[test]
@@ -1884,8 +2065,8 @@ mod tests {
         let state = read_tray_usage_state();
         let tooltip = format_tray_tooltip(&state);
         assert!(tooltip.starts_with("IncuBar - AI Usage Tracker - "));
-        assert!(tooltip.contains("Codex 72%"));
-        assert!(tooltip.contains("Claude 12%"));
+        assert!(tooltip.contains("Codex 72% used"));
+        assert!(tooltip.contains("Claude 12% used"));
         assert!(tooltip.contains("Cursor error"));
     }
 

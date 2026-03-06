@@ -31,4 +31,16 @@ if (!settingsStoreFile.includes('isRecord(parsed)')) {
   throw new Error('Settings migration missing legacy settings validation.');
 }
 
+if (!settingsStoreFile.includes('localStorage.getItem(SETTINGS_STORAGE_KEY)')) {
+  throw new Error('Settings migration should read legacy defaults from the active IncuBar storage key.');
+}
+
+if (settingsStoreFile.includes("localStorage.getItem('settings-store')")) {
+  throw new Error('Settings migration still reads from the stale settings-store key.');
+}
+
+if (settingsStoreFile.includes("localStorage.setItem('settings-store'")) {
+  throw new Error('Settings migration still writes to the stale settings-store key.');
+}
+
 console.log('Settings persistence migration checks passed.');

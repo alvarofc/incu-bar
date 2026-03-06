@@ -46,7 +46,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
       return;
     }
     const timer = setTimeout(() => {
-      console.log('[PopupWindow] Initial loading timed out after 5s');
       setLoadingTimedOut(true);
     }, 5000);
     return () => clearTimeout(timer);
@@ -95,17 +94,6 @@ export function PopupWindow({ onOpenSettings }: PopupWindowProps) {
     }
     newlyEnabled.forEach((id) => handleRefreshProvider(id));
   }, [hasHydrated, enabledProviderIdsKey, handleRefreshAll, handleRefreshProvider, isRefreshing, isProvidersSynced]);
-
-  // Handle click outside to close the popup
-  useEffect(() => {
-    const handleBlur = async () => {
-      const win = getCurrentWindow();
-      await win.hide();
-    };
-
-    window.addEventListener('blur', handleBlur);
-    return () => window.removeEventListener('blur', handleBlur);
-  }, []);
 
   // Rehydrate settings when the popup becomes visible/focused
   useEffect(() => {
