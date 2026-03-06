@@ -25,6 +25,9 @@ dist-ssr
 
 # Local tooling
 .ralphy/
+.agents/
+.opencode/
+.tinyb
 opencode.json
 tasks.yaml
 TODO.md

@@ -148,6 +148,11 @@ export interface AppSettings {
   storeUsageHistory: boolean;
   pollProviderStatus: boolean;
   redactPersonalInfo: boolean;
+  employerReportingEnabled: boolean;
+  employerReportingGatewayUrl: string;
+  employerReportingEmployeeId: string;
+  employerReportingEmployeeEmail?: string;
+  employerReportingIncludeEmployeeEmail: boolean;
   cookieSources: Partial<Record<ProviderId, CookieSource>>;
   crashRecoveryAt?: string;
   debugMenuEnabled: boolean;

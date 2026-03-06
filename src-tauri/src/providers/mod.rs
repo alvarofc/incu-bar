@@ -32,6 +32,9 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::timeout;
 use tokio::sync::RwLock;
 
+use crate::storage::widget_snapshot;
+use crate::tray;
+
 /// Provider identifier enum
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -951,9 +954,17 @@ pub async fn start_refresh_loop(app: AppHandle) {
                             "usage-updated",
                             serde_json::json!({
                                 "providerId": provider_id,
-                                "usage": usage,
+                                "usage": usage.clone(),
                             }),
                         );
+                        if let Err(err) = widget_snapshot::write_widget_snapshot(provider_id, &usage)
+                        {
+                            tracing::warn!("Failed to write widget snapshot: {}", err);
+                        }
+                        if let Err(err) = tray::handle_usage_update(&app, provider_id, usage.clone())
+                        {
+                            tracing::warn!("Failed to update tray icon: {}", err);
+                        }
                         state.record_success(now);
                     }
                     Err(e) => {
@@ -971,9 +982,19 @@ pub async fn start_refresh_loop(app: AppHandle) {
                                 "usage-updated",
                                 serde_json::json!({
                                     "providerId": provider_id,
-                                    "usage": usage,
+                                    "usage": usage.clone(),
                                 }),
                             );
+                            if let Err(err) =
+                                widget_snapshot::write_widget_snapshot(provider_id, &usage)
+                            {
+                                tracing::warn!("Failed to write widget snapshot: {}", err);
+                            }
+                            if let Err(err) =
+                                tray::handle_usage_update(&app, provider_id, usage.clone())
+                            {
+                                tracing::warn!("Failed to update tray icon: {}", err);
+                            }
                         }
                     }
                 }

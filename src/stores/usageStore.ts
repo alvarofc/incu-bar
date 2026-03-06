@@ -70,6 +70,9 @@ if (!shouldStoreUsageHistory()) {
   storedUsageHistory = {};
 }
 
+let refreshAllInFlight: Promise<void> | null = null;
+let queuedRefreshAll = false;
+
 interface UsageStore {
   // State
   providers: Record<ProviderId, ProviderState>;
@@ -223,14 +226,17 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
 
   refreshProvider: async (id) => {
     const { setProviderLoading, setProviderUsage, setProviderError } = get();
-    console.log('[usageStore] refreshProvider - starting:', id);
     setProviderLoading(id, true);
 
     // Frontend timeout to ensure we don't hang indefinitely waiting for backend
     const REFRESH_TIMEOUT_MS = 30_000; // 30 seconds (backend has 10s status + 15s usage timeouts)
-    
+
+    let timeoutId: number | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Refresh timed out')), REFRESH_TIMEOUT_MS);
+      timeoutId = window.setTimeout(
+        () => reject(new Error('Refresh timed out')),
+        REFRESH_TIMEOUT_MS
+      );
     });
 
     try {
@@ -238,28 +244,41 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
         invoke<UsageSnapshot>('refresh_provider', { providerId: id }),
         timeoutPromise,
       ]);
-      console.log('[usageStore] refreshProvider - success:', id, usage);
       setProviderUsage(id, usage);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.log('[usageStore] refreshProvider - error:', id, message);
       setProviderError(id, message);
+    } finally {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
     }
   },
 
   refreshAllProviders: async () => {
-    const { providers, refreshProvider } = get();
-    set({ isRefreshing: true });
+    if (refreshAllInFlight) {
+      queuedRefreshAll = true;
+      return refreshAllInFlight;
+    }
 
-    const enabledProviders = Object.values(providers).filter((p) => p.enabled);
-    console.log('[usageStore] refreshAllProviders - enabled providers:', enabledProviders.map(p => p.id));
-    
-    const results = await Promise.allSettled(
-      enabledProviders.map((p) => refreshProvider(p.id))
-    );
-    console.log('[usageStore] refreshAllProviders - completed, results:', results);
+    refreshAllInFlight = (async () => {
+      do {
+        queuedRefreshAll = false;
+        set({ isRefreshing: true });
 
-    set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+        const { providers, refreshProvider } = get();
+        const enabledProviders = Object.values(providers).filter((p) => p.enabled);
+        try {
+          await Promise.allSettled(enabledProviders.map((p) => refreshProvider(p.id)));
+        } finally {
+          set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+        }
+      } while (queuedRefreshAll);
+    })().finally(() => {
+      refreshAllInFlight = null;
+    });
+
+    return refreshAllInFlight;
   },
 
   initializeProviders: (enabledIds) =>

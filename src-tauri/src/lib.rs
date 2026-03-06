@@ -8,6 +8,7 @@ pub mod commands;
 pub mod debug_settings;
 pub mod login;
 pub mod providers;
+pub mod reporting;
 pub mod storage;
 pub mod tray;
 
@@ -26,7 +27,7 @@ fn init_logging() {
         .with(tracing_subscriber::fmt::layer().with_writer(debug_settings::file_writer()))
         .with(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("incubar_tauri=debug".parse().unwrap()),
+                .add_directive("incubar_tauri=info".parse().unwrap()),
         )
         .init();
 }
@@ -109,6 +110,12 @@ pub fn run() {
             commands::set_debug_keep_cli_sessions_alive,
             commands::set_debug_random_blink,
             commands::set_redact_personal_info,
+            commands::get_employer_reporting_config,
+            commands::set_employer_reporting_config,
+            commands::set_employer_reporting_gateway_key,
+            commands::clear_employer_reporting_gateway_key,
+            commands::get_employer_reporting_status,
+            commands::send_employer_usage_report,
             commands::export_support_bundle,
             commands::open_settings_window,
             commands::start_login,
@@ -155,15 +162,29 @@ pub fn run() {
         }
     };
 
-    app.run(|_app_handle, event| {
+    app.run(|app_handle, event| {
         match event {
             tauri::RunEvent::ExitRequested { .. } => {
                 tracing::info!("App exit requested, shutting down background threads");
                 tray::request_shutdown();
+                if let Some(registry) = app_handle.try_state::<providers::ProviderRegistry>() {
+                    if let Err(err) = tauri::async_runtime::block_on(
+                        reporting::queue_close_report_once(app_handle, &registry),
+                    ) {
+                        tracing::warn!("Failed to queue close usage report: {}", err);
+                    }
+                }
             }
             tauri::RunEvent::Exit => {
                 tracing::info!("App exiting, shutting down background threads");
                 tray::request_shutdown();
+                if let Some(registry) = app_handle.try_state::<providers::ProviderRegistry>() {
+                    if let Err(err) = tauri::async_runtime::block_on(
+                        reporting::queue_close_report_once(app_handle, &registry),
+                    ) {
+                        tracing::warn!("Failed to queue close usage report: {}", err);
+                    }
+                }
             }
             _ => {}
         }

@@ -9,12 +9,16 @@ import type {
 } from '../lib/types';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { relaunch } from '@tauri-apps/plugin-process';
-import { check } from '@tauri-apps/plugin-updater';
 import type { ProviderId, CookieSource } from '../lib/types';
+import { runAppUpdate } from '../lib/appUpdater';
 import { PROVIDERS } from '../lib/providers';
 import { COOKIE_SOURCES, COOKIE_SOURCE_LABELS } from '../lib/cookieSources';
+import {
+  UPDATE_CHANNEL_DESCRIPTIONS,
+  UPDATE_CHANNEL_LIMITATION_NOTE,
+} from '../lib/updateChannel';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUsageStore } from '../stores/usageStore';
 import { ProviderIcon } from './ProviderIcons';
@@ -30,6 +34,25 @@ interface LoginResult {
   success: boolean;
   message: string;
   providerId: ProviderId;
+}
+
+interface EmployerReportSendResult {
+  sent: boolean;
+  queued: boolean;
+  reason: string;
+  message: string;
+  sentAt?: string;
+  queuedReports: number;
+}
+
+interface EmployerReportingStatus {
+  enabled: boolean;
+  tokenConfigured: boolean;
+  queuedReports: number;
+  lastSentAt?: string;
+  lastSendReason?: string;
+  lastError?: string;
+  nextDailySendAt?: string;
 }
 
 interface CopilotDeviceCode {
@@ -76,6 +99,15 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const storeUsageHistory = useSettingsStore((s) => s.storeUsageHistory);
   const pollProviderStatus = useSettingsStore((s) => s.pollProviderStatus);
   const redactPersonalInfo = useSettingsStore((s) => s.redactPersonalInfo);
+  const employerReportingEnabled = useSettingsStore((s) => s.employerReportingEnabled);
+  const employerReportingGatewayUrl = useSettingsStore((s) => s.employerReportingGatewayUrl);
+  const employerReportingEmployeeId = useSettingsStore((s) => s.employerReportingEmployeeId);
+  const employerReportingEmployeeEmail = useSettingsStore(
+    (s) => s.employerReportingEmployeeEmail
+  );
+  const employerReportingIncludeEmployeeEmail = useSettingsStore(
+    (s) => s.employerReportingIncludeEmployeeEmail
+  );
   const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
   const updateChannel = useSettingsStore((s) => s.updateChannel);
   const showNotifications = useSettingsStore((s) => s.showNotifications);
@@ -93,6 +125,17 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const hidePersonalInfo = useSettingsStore((s) => s.hidePersonalInfo);
   const setHidePersonalInfo = useSettingsStore((s) => s.setHidePersonalInfo);
   const setRedactPersonalInfo = useSettingsStore((s) => s.setRedactPersonalInfo);
+  const setEmployerReportingEnabled = useSettingsStore((s) => s.setEmployerReportingEnabled);
+  const setEmployerReportingGatewayUrl = useSettingsStore((s) => s.setEmployerReportingGatewayUrl);
+  const setEmployerReportingEmployeeId = useSettingsStore(
+    (s) => s.setEmployerReportingEmployeeId
+  );
+  const setEmployerReportingEmployeeEmail = useSettingsStore(
+    (s) => s.setEmployerReportingEmployeeEmail
+  );
+  const setEmployerReportingIncludeEmployeeEmail = useSettingsStore(
+    (s) => s.setEmployerReportingIncludeEmployeeEmail
+  );
   const debugDisableKeychainAccess = useSettingsStore((s) => s.debugDisableKeychainAccess);
   const installOrigin = useSettingsStore((s) => s.installOrigin);
   const setMenuBarDisplayTextEnabled = useSettingsStore((s) => s.setMenuBarDisplayTextEnabled);
@@ -106,6 +149,11 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
   const [supportExportPath, setSupportExportPath] = useState<string | null>(null);
   const [supportExporting, setSupportExporting] = useState(false);
   const [supportMessage, setSupportMessage] = useState<string | null>(null);
+  const [employerGatewayApiKey, setEmployerGatewayApiKey] = useState('');
+  const [employerReportingStatus, setEmployerReportingStatus] =
+    useState<EmployerReportingStatus | null>(null);
+  const [employerReportingBusy, setEmployerReportingBusy] = useState(false);
+  const [employerReportingMessage, setEmployerReportingMessage] = useState<string | null>(null);
   const [updateStatus, setUpdateStatus] = useState<'idle' | 'checking' | 'installing' | 'upToDate' | 'error'>(
     'idle'
   );
@@ -510,43 +558,31 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
     useSettingsStore.getState().setUpdateChannel(channel);
   }, []);
 
+  const handleCloseSettings = useCallback(async () => {
+    try {
+      const window = getCurrentWindow();
+      await window.close();
+    } catch (error) {
+      console.error('Failed to close settings window', error);
+    }
+  }, []);
+
   const updateInFlightRef = useRef(false);
 
   const handleCheckForUpdates = useCallback(async () => {
     if (updateInFlightRef.current) return;
     updateInFlightRef.current = true;
 
-    setUpdateStatus('checking');
-    setUpdateMessage('Checking for updates...');
     try {
-      const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
-      if (!update) {
-        setUpdateStatus('upToDate');
-        setUpdateMessage('No updates available.');
-        return;
-      }
-      setUpdateStatus('installing');
-      setUpdateMessage('Update found. Downloading and installing...');
-      await update.downloadAndInstall();
-      setUpdateMessage('Update installed. Relaunching...');
-      try {
-        // relaunch() fails in dev mode (no binary exists), skip it during development
-        if (import.meta.env.DEV) {
-          setUpdateStatus('upToDate');
-          setUpdateMessage('Update installed successfully. Restart the dev server to apply changes.');
-          return;
-        }
-        await relaunch();
-      } catch (relaunchError) {
-        // Update was installed successfully, but relaunch failed
-        setUpdateStatus('upToDate');
-        setUpdateMessage('Update installed successfully. Please restart the application to complete the update.');
-        return;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setUpdateStatus('error');
-      setUpdateMessage(`Update failed: ${message}`);
+      const result = await runAppUpdate({
+        channel: updateChannel,
+        onProgress: (state, message) => {
+          setUpdateStatus(state);
+          setUpdateMessage(message);
+        },
+      });
+      setUpdateStatus(result.status === 'error' || result.status === 'busy' ? 'error' : 'upToDate');
+      setUpdateMessage(result.message);
     } finally {
       updateInFlightRef.current = false;
     }
@@ -995,6 +1031,11 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
           storeUsageHistory: settings.storeUsageHistory,
           pollProviderStatus: settings.pollProviderStatus,
           redactPersonalInfo: settings.redactPersonalInfo,
+          employerReportingEnabled: settings.employerReportingEnabled,
+          employerReportingGatewayUrl: settings.employerReportingGatewayUrl,
+          employerReportingEmployeeId: settings.employerReportingEmployeeId,
+          employerReportingEmployeeEmail: settings.employerReportingEmployeeEmail,
+          employerReportingIncludeEmployeeEmail: settings.employerReportingIncludeEmployeeEmail,
           debugMenuEnabled: settings.debugMenuEnabled,
           debugFileLogging: settings.debugFileLogging,
           debugKeepCliSessionsAlive: settings.debugKeepCliSessionsAlive,
@@ -1015,6 +1056,85 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       setSupportExporting(false);
     }
   }, [supportExporting]);
+
+  const refreshEmployerReportingStatus = useCallback(async () => {
+    try {
+      const status = await invoke<EmployerReportingStatus>('get_employer_reporting_status');
+      setEmployerReportingStatus(status);
+    } catch (error) {
+      console.error('Failed to load employer reporting status:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshEmployerReportingStatus();
+  }, [refreshEmployerReportingStatus]);
+
+  const handleSaveEmployerGatewayKey = useCallback(async () => {
+    const apiKey = employerGatewayApiKey.trim();
+    if (!apiKey) {
+      setEmployerReportingMessage('Gateway API key cannot be empty.');
+      return;
+    }
+
+    setEmployerReportingBusy(true);
+    setEmployerReportingMessage(null);
+    try {
+      await invoke('set_employer_reporting_gateway_key', { apiKey });
+      setEmployerGatewayApiKey('');
+      setEmployerReportingMessage('Gateway API key saved.');
+      await refreshEmployerReportingStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEmployerReportingMessage(`Failed to save gateway API key: ${message}`);
+    } finally {
+      setEmployerReportingBusy(false);
+    }
+  }, [employerGatewayApiKey, refreshEmployerReportingStatus]);
+
+  const handleClearEmployerGatewayKey = useCallback(async () => {
+    setEmployerReportingBusy(true);
+    setEmployerReportingMessage(null);
+    try {
+      await invoke('clear_employer_reporting_gateway_key');
+      setEmployerReportingMessage('Gateway API key cleared.');
+      await refreshEmployerReportingStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEmployerReportingMessage(`Failed to clear gateway API key: ${message}`);
+    } finally {
+      setEmployerReportingBusy(false);
+    }
+  }, [refreshEmployerReportingStatus]);
+
+  const handleSendEmployerReportNow = useCallback(async () => {
+    setEmployerReportingBusy(true);
+    setEmployerReportingMessage(null);
+    try {
+      const result = await invoke<EmployerReportSendResult>('send_employer_usage_report', {
+        reason: 'manual',
+        force: true,
+      });
+      setEmployerReportingMessage(result.message);
+      await refreshEmployerReportingStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setEmployerReportingMessage(`Manual send failed: ${message}`);
+    } finally {
+      setEmployerReportingBusy(false);
+    }
+  }, [refreshEmployerReportingStatus]);
+
+  const formatIsoTimestamp = useCallback((value?: string) => {
+    if (!value) {
+      return 'Never';
+    }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      return value;
+    }
+    return parsed.toLocaleString();
+  }, []);
 
   const refreshIntervals = [
     { label: 'Manual', value: 0 },
@@ -1042,6 +1162,14 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
       {/* Header */}
       <header className={`flex items-center gap-3 border-b border-[var(--border-subtle)] ${headerPaddingClass}`}>
         <h1 className="text-[15px] font-semibold text-[var(--text-primary)]">Settings</h1>
+        <button
+          type="button"
+          onClick={handleCloseSettings}
+          className="ml-auto btn btn-ghost focus-ring text-[11px]"
+          data-testid="settings-close-button"
+        >
+          Close
+        </button>
       </header>
 
       {/* Content */}
@@ -1752,6 +1880,156 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
                   Status polling checks provider health pages and never sends your usage data.
                 </p>
               </div>
+              <div
+                className="space-y-2 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)] px-3 py-3"
+                data-testid="employer-reporting-settings"
+              >
+                <div>
+                  <div className="text-[13px] text-[var(--text-secondary)]">Employer Reporting</div>
+                  <p className="mt-1 text-[11px] text-[var(--text-quaternary)]">
+                    Sends normalized usage snapshots to your Cloudflare gateway on app open,
+                    app close, and once per day.
+                  </p>
+                </div>
+
+                <ToggleOption
+                  label="Enable Employer Reporting"
+                  enabled={employerReportingEnabled}
+                  onChange={setEmployerReportingEnabled}
+                />
+
+                <div className="space-y-2">
+                  <div>
+                    <label
+                      className="text-[11px] text-[var(--text-quaternary)]"
+                      htmlFor="employer-gateway-url"
+                    >
+                      Gateway endpoint
+                    </label>
+                    <input
+                      id="employer-gateway-url"
+                      type="url"
+                      value={employerReportingGatewayUrl}
+                      onChange={(event) => setEmployerReportingGatewayUrl(event.target.value)}
+                      placeholder="https://gateway.example.com/v1/usage-report"
+                      className="mt-1 w-full px-2 py-1.5 text-[12px] bg-[var(--bg-base)] rounded border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-[var(--text-quaternary)]" htmlFor="employer-id">
+                      Employee ID
+                    </label>
+                    <input
+                      id="employer-id"
+                      type="text"
+                      value={employerReportingEmployeeId}
+                      onChange={(event) => setEmployerReportingEmployeeId(event.target.value)}
+                      placeholder="e.g. E12345"
+                      className="mt-1 w-full px-2 py-1.5 text-[12px] bg-[var(--bg-base)] rounded border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                  </div>
+
+                  <ToggleOption
+                    label="Include employee email"
+                    enabled={employerReportingIncludeEmployeeEmail}
+                    onChange={setEmployerReportingIncludeEmployeeEmail}
+                  />
+
+                  {employerReportingIncludeEmployeeEmail && (
+                    <div>
+                      <label className="text-[11px] text-[var(--text-quaternary)]" htmlFor="employer-email">
+                        Employee email
+                      </label>
+                      <input
+                        id="employer-email"
+                        type="email"
+                        value={employerReportingEmployeeEmail ?? ''}
+                        onChange={(event) => setEmployerReportingEmployeeEmail(event.target.value)}
+                        placeholder="name@company.com"
+                        className="mt-1 w-full px-2 py-1.5 text-[12px] bg-[var(--bg-base)] rounded border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <label
+                      className="text-[11px] text-[var(--text-quaternary)]"
+                      htmlFor="employer-gateway-key"
+                    >
+                      Gateway API key
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="employer-gateway-key"
+                        type="password"
+                        value={employerGatewayApiKey}
+                        onChange={(event) => setEmployerGatewayApiKey(event.target.value)}
+                        placeholder="Paste gateway key"
+                        className="flex-1 px-2 py-1.5 text-[12px] bg-[var(--bg-base)] rounded border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-quaternary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleSaveEmployerGatewayKey}
+                        disabled={employerReportingBusy}
+                        className="btn btn-sm btn-primary focus-ring"
+                      >
+                        Save key
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearEmployerGatewayKey}
+                        disabled={employerReportingBusy}
+                        className="btn btn-sm btn-ghost focus-ring"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSendEmployerReportNow}
+                      disabled={employerReportingBusy}
+                      className="btn btn-sm btn-ghost focus-ring"
+                      data-testid="employer-reporting-send-now"
+                    >
+                      Send now
+                    </button>
+                    <span className="text-[11px] text-[var(--text-quaternary)]">
+                      Token configured: {employerReportingStatus?.tokenConfigured ? 'Yes' : 'No'}
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] text-[var(--text-quaternary)] space-y-1">
+                    <div>Queued reports: {employerReportingStatus?.queuedReports ?? 0}</div>
+                    <div>Last sent: {formatIsoTimestamp(employerReportingStatus?.lastSentAt)}</div>
+                    <div>Last reason: {employerReportingStatus?.lastSendReason ?? 'Never'}</div>
+                    <div>
+                      Next daily send: {formatIsoTimestamp(employerReportingStatus?.nextDailySendAt)}
+                    </div>
+                    {employerReportingStatus?.lastError && (
+                      <div className="text-[var(--accent-warning)] break-all">
+                        Last error: {employerReportingStatus.lastError}
+                      </div>
+                    )}
+                    {employerReportingMessage && (
+                      <div className="text-[var(--text-secondary)] break-all">
+                        {employerReportingMessage}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
               <ToggleOption label="Notifications" enabled={showNotifications} onChange={handleSetShowNotifications} />
               {showNotifications && (
                 <div className="space-y-1 pl-2" data-testid="notification-preferences">
@@ -1809,9 +2087,7 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
               <div>
                 <div className="text-[13px] text-[var(--text-secondary)]">Update Channel</div>
                 <div className="text-[11px] text-[var(--text-quaternary)]">
-                  {updateChannel === 'beta'
-                    ? 'Receive stable releases plus beta previews.'
-                    : 'Receive only stable, production-ready releases.'}
+                  {UPDATE_CHANNEL_DESCRIPTIONS[updateChannel]}
                 </div>
               </div>
               <select
@@ -1822,6 +2098,9 @@ export function SettingsPanel({ showTabs = true }: SettingsPanelProps) {
                 <option value="stable">Stable</option>
                 <option value="beta">Beta</option>
               </select>
+            </div>
+            <div className="px-3 py-2 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[11px] text-[var(--text-quaternary)]">
+              {UPDATE_CHANNEL_LIMITATION_NOTE}
             </div>
             <div className="flex items-center justify-between px-3 py-2.5 rounded-md bg-[var(--bg-surface)] border border-[var(--border-subtle)]">
               <div>

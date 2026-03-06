@@ -10,6 +10,7 @@ const requiredCleanup = [
   'void unlisten.then((fn) => fn()).catch(console.error);',
   'void unlistenRefresh.then((fn) => fn()).catch(console.error);',
   'void unlistenRefreshing.then((fn) => fn()).catch(console.error);',
+  'void unlistenRefreshFailure.then((fn) => fn()).catch(console.error);',
 ];
 
 for (const cleanup of requiredCleanup) {

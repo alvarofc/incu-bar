@@ -1,0 +1,56 @@
+DESCRIPTION >
+  Raw provider usage snapshots from IncuBar desktop clients, ingested through the Cloudflare reporting gateway.
+
+SCHEMA >
+  event_id String,
+  report_id String,
+  report_ts DateTime64(3),
+  send_reason LowCardinality(String),
+  schema_version UInt16,
+
+  tenant_id LowCardinality(String),
+  employee_id String,
+  employee_email Nullable(String),
+  app_install_id_hash String,
+  app_version String,
+  platform LowCardinality(String),
+
+  provider_id LowCardinality(String),
+  provider_enabled UInt8,
+  provider_plan Nullable(String),
+
+  primary_used_percent Nullable(Float32),
+  primary_remaining_percent Nullable(Float32),
+  primary_window_minutes Nullable(UInt32),
+  primary_resets_at Nullable(DateTime64(3)),
+
+  secondary_used_percent Nullable(Float32),
+  secondary_remaining_percent Nullable(Float32),
+  secondary_window_minutes Nullable(UInt32),
+  secondary_resets_at Nullable(DateTime64(3)),
+
+  tertiary_used_percent Nullable(Float32),
+  tertiary_remaining_percent Nullable(Float32),
+  tertiary_window_minutes Nullable(UInt32),
+  tertiary_resets_at Nullable(DateTime64(3)),
+
+  credits_remaining Nullable(Float64),
+  credits_total Nullable(Float64),
+  credits_unit Nullable(String),
+  credits_remaining_percent Nullable(Float32),
+
+  cost_today_amount_usd Nullable(Float64),
+  cost_today_tokens Nullable(UInt64),
+  cost_month_amount_usd Nullable(Float64),
+  cost_month_tokens Nullable(UInt64),
+  cost_currency Nullable(String),
+
+  snapshot_updated_at Nullable(DateTime64(3)),
+  fetch_error Nullable(String),
+
+  enabled_providers Array(String),
+  enabled_provider_count UInt8
+
+ENGINE "MergeTree"
+ENGINE_PARTITION_KEY "toYYYYMM(report_ts)"
+ENGINE_SORTING_KEY "tenant_id, employee_id, provider_id, report_ts, event_id"

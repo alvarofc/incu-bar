@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { sendNotification } from '@tauri-apps/plugin-notification';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
+import { runAppUpdate } from './lib/appUpdater';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
-import type { ProviderId, ProviderIncident, RefreshingEvent, UpdateChannel, UsageUpdateEvent } from './lib/types';
+import type {
+  ProviderId,
+  ProviderIncident,
+  RefreshingEvent,
+  UpdateChannel,
+  UsageSnapshot,
+  UsageUpdateEvent,
+} from './lib/types';
 import { parseUsageUpdateEvent } from './lib/eventValidation';
 import type {
   CreditsNotificationState,
@@ -37,9 +43,6 @@ function App() {
     () => new URLSearchParams(window.location.search).get('view') === 'settings',
     []
   );
-
-  // Debug: log which view we're rendering
-  console.log('[App] Rendering, isSettingsWindow:', isSettingsWindow, 'location.search:', window.location.search);
   const setProviderUsage = useUsageStore((s) => s.setProviderUsage);
   const setProviderStatus = useUsageStore((s) => s.setProviderStatus);
   const initializeProviders = useUsageStore((s) => s.initializeProviders);
@@ -60,6 +63,13 @@ function App() {
   );
   const debugRandomBlink = useSettingsStore((s) => s.debugRandomBlink);
   const redactPersonalInfo = useSettingsStore((s) => s.redactPersonalInfo);
+  const employerReportingEnabled = useSettingsStore((s) => s.employerReportingEnabled);
+  const employerReportingGatewayUrl = useSettingsStore((s) => s.employerReportingGatewayUrl);
+  const employerReportingEmployeeId = useSettingsStore((s) => s.employerReportingEmployeeId);
+  const employerReportingEmployeeEmail = useSettingsStore((s) => s.employerReportingEmployeeEmail);
+  const employerReportingIncludeEmployeeEmail = useSettingsStore(
+    (s) => s.employerReportingIncludeEmployeeEmail
+  );
   const initAutostart = useSettingsStore((s) => s.initAutostart);
   const setInstallOrigin = useSettingsStore((s) => s.setInstallOrigin);
   const initializedRef = useRef(false);
@@ -71,10 +81,10 @@ function App() {
   );
   const staleUsageNotificationRef = useRef(new Map<ProviderId, StaleUsageNotificationState>());
   const lastUpdateCheckChannelRef = useRef<UpdateChannel | null>(null);
+  const employerOpenReportSentRef = useRef(false);
 
   // Initialize enabled providers from settings (only once after hydration)
   useEffect(() => {
-    console.log('[App] Init effect, initializedRef:', initializedRef.current, 'hasHydrated:', hasHydrated, 'enabledProviders:', enabledProviders);
     // Wait for settings to hydrate from localStorage before initializing
     if (!hasHydrated) {
       return;
@@ -82,7 +92,6 @@ function App() {
     if (!initializedRef.current) {
       initializedRef.current = true;
       restoreSafeStateAfterCrash();
-      console.log('[App] Calling initializeProviders with:', enabledProviders);
       initializeProviders(enabledProviders);
       enabledProvidersRef.current = enabledProviders;
       // Sync autostart status from system
@@ -139,6 +148,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!hasHydrated || isSettingsWindow) {
+      return;
+    }
+
     if (!autoUpdateEnabled) {
       lastUpdateCheckChannelRef.current = null;
       return;
@@ -149,24 +162,19 @@ function App() {
     }
 
     const checkForUpdates = async () => {
-      lastUpdateCheckChannelRef.current = updateChannel;
-      try {
-        const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
-        if (!update) {
-          return;
-        }
-        await update.downloadAndInstall();
-        // relaunch() fails in dev mode (no binary exists), skip it during development
-        if (!import.meta.env.DEV) {
-          await relaunch();
-        }
-      } catch (error) {
-        console.warn('Auto-update check failed', error);
+      const result = await runAppUpdate({ channel: updateChannel });
+      if (result.status === 'busy') {
+        return;
       }
+      if (result.status === 'error') {
+        console.warn('Auto-update check failed', result.message);
+        return;
+      }
+      lastUpdateCheckChannelRef.current = updateChannel;
     };
 
     void checkForUpdates();
-  }, [autoUpdateEnabled, updateChannel]);
+  }, [autoUpdateEnabled, hasHydrated, isSettingsWindow, updateChannel]);
 
   useEffect(() => {
     invoke('set_debug_file_logging', { enabled: debugFileLogging }).catch(console.error);
@@ -186,6 +194,83 @@ function App() {
     invoke('set_redact_personal_info', { enabled: redactPersonalInfo }).catch(console.error);
   }, [redactPersonalInfo]);
 
+  useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
+    const payload = {
+      enabled: employerReportingEnabled,
+      gatewayUrl: employerReportingGatewayUrl,
+      employeeId: employerReportingEmployeeId,
+      employeeEmail:
+        employerReportingEmployeeEmail && employerReportingEmployeeEmail.trim().length > 0
+          ? employerReportingEmployeeEmail.trim()
+          : null,
+      includeEmployeeEmail: employerReportingIncludeEmployeeEmail,
+    };
+
+    invoke('set_employer_reporting_config', { config: payload }).catch((error) => {
+      console.error('Failed to sync employer reporting config:', error);
+    });
+  }, [
+    hasHydrated,
+    employerReportingEnabled,
+    employerReportingGatewayUrl,
+    employerReportingEmployeeId,
+    employerReportingEmployeeEmail,
+    employerReportingIncludeEmployeeEmail,
+  ]);
+
+  useEffect(() => {
+    if (!employerReportingEnabled) {
+      employerOpenReportSentRef.current = false;
+    }
+  }, [employerReportingEnabled]);
+
+  useEffect(() => {
+    if (!hasHydrated || isSettingsWindow || !employerReportingEnabled) {
+      return;
+    }
+
+    if (employerOpenReportSentRef.current) {
+      return;
+    }
+    employerOpenReportSentRef.current = true;
+
+    const timeoutId = window.setTimeout(() => {
+      invoke('send_employer_usage_report', {
+        reason: 'open',
+        force: false,
+      }).catch((error) => {
+        console.error('Failed to send open employer report:', error);
+      });
+    }, 12_000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [hasHydrated, isSettingsWindow, employerReportingEnabled]);
+
+  useEffect(() => {
+    if (!hasHydrated || isSettingsWindow || !employerReportingEnabled) {
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      invoke('send_employer_usage_report', {
+        reason: 'daily',
+        force: false,
+      }).catch((error) => {
+        console.error('Failed to send daily employer report:', error);
+      });
+    }, 24 * 60 * 60 * 1000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [hasHydrated, isSettingsWindow, employerReportingEnabled]);
+
   // Sync enabled providers when settings change (only after hydration)
   useEffect(() => {
     if (initializedRef.current && hasHydrated) {
@@ -198,11 +283,24 @@ function App() {
     if (isSettingsWindow) {
       return undefined;
     }
-    const syncFromSettings = (payload?: { enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }) => {
-      if (payload?.enabledProviders || payload?.providerOrder) {
+    const syncFromSettings = (payload?: {
+      enabledProviders?: ProviderId[];
+      providerOrder?: ProviderId[];
+      autoUpdateEnabled?: boolean;
+      updateChannel?: UpdateChannel;
+    }) => {
+      if (
+        payload?.enabledProviders
+        || payload?.providerOrder
+        || typeof payload?.autoUpdateEnabled === 'boolean'
+        || payload?.updateChannel
+      ) {
         useSettingsStore.setState({
           enabledProviders: payload?.enabledProviders ?? useSettingsStore.getState().enabledProviders,
           providerOrder: payload?.providerOrder ?? useSettingsStore.getState().providerOrder,
+          autoUpdateEnabled:
+            payload?.autoUpdateEnabled ?? useSettingsStore.getState().autoUpdateEnabled,
+          updateChannel: payload?.updateChannel ?? useSettingsStore.getState().updateChannel,
         });
       }
 
@@ -230,7 +328,12 @@ function App() {
       }
     };
 
-    const unlistenSettings = listen<{ enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }>(
+    const unlistenSettings = listen<{
+      enabledProviders?: ProviderId[];
+      providerOrder?: ProviderId[];
+      autoUpdateEnabled?: boolean;
+      updateChannel?: UpdateChannel;
+    }>(
       'settings-updated',
       (event) => {
         syncFromSettings(event.payload);
@@ -244,15 +347,16 @@ function App() {
 
   // Listen for usage updates from Rust backend
   useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
     const unlisten = listen<UsageUpdateEvent>('usage-updated', (event) => {
-      console.log('[App] Received usage-updated event:', event.payload);
       const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
       if (!parsedUsageUpdate) {
-        console.log('[App] Failed to parse usage-updated event');
         return;
       }
       const { providerId, usage } = parsedUsageUpdate;
-      console.log('[App] Setting provider usage:', providerId, usage);
       setProviderUsage(providerId, usage);
       const metadata = PROVIDERS[providerId];
       evaluateSessionNotifications({
@@ -285,9 +389,71 @@ function App() {
     return () => {
       void unlisten.then((fn) => fn()).catch(console.error);
     };
-  }, [setProviderUsage, showNotifications, notifySessionUsage, notifyCreditsLow, notifyRefreshFailure]);
+  }, [
+    isSettingsWindow,
+    notifyCreditsLow,
+    notifyRefreshFailure,
+    notifySessionUsage,
+    setProviderUsage,
+    showNotifications,
+  ]);
 
   useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const syncCachedUsage = async () => {
+      try {
+        const cachedUsage = await invoke<Partial<Record<ProviderId, UsageSnapshot>>>('get_all_usage');
+        if (!active) {
+          return;
+        }
+        Object.entries(cachedUsage).forEach(([providerId, usage]) => {
+          if (!usage) {
+            return;
+          }
+          setProviderUsage(providerId as ProviderId, usage);
+        });
+      } catch (error) {
+        console.error('Failed to sync cached provider usage:', error);
+      }
+    };
+
+    const handleFocus = () => {
+      void syncCachedUsage();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncCachedUsage();
+      }
+    };
+
+    void syncCachedUsage();
+
+    const intervalId = window.setInterval(() => {
+      void syncCachedUsage();
+    }, 30_000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isSettingsWindow, setProviderUsage]);
+
+  useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
     const unlistenRefresh = listen('refresh-requested', () => {
       useUsageStore.getState().refreshAllProviders();
     });
@@ -295,7 +461,7 @@ function App() {
     return () => {
       void unlistenRefresh.then((fn) => fn()).catch(console.error);
     };
-  }, []);
+  }, [isSettingsWindow]);
 
   useEffect(() => {
     const unlistenRefreshing = listen<RefreshingEvent>('refreshing-provider', (event) => {
@@ -311,6 +477,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
     const unlistenRefreshFailure = listen<UsageUpdateEvent>('refresh-failed', (event) => {
       const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
       if (!parsedUsageUpdate) return;
@@ -328,12 +498,12 @@ function App() {
     });
 
     return () => {
-      unlistenRefreshFailure.then((fn) => fn());
+      void unlistenRefreshFailure.then((fn) => fn()).catch(console.error);
     };
-  }, [showNotifications, notifyRefreshFailure]);
+  }, [isSettingsWindow, showNotifications, notifyRefreshFailure]);
 
   useEffect(() => {
-    if (refreshIntervalSeconds <= 0) return undefined;
+    if (isSettingsWindow || refreshIntervalSeconds <= 0) return undefined;
 
     const intervalMs = refreshIntervalSeconds * 1000;
     const intervalId = window.setInterval(() => {
@@ -357,11 +527,17 @@ function App() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [refreshIntervalSeconds, showNotifications, notifyStaleUsage]);
+  }, [isSettingsWindow, refreshIntervalSeconds, showNotifications, notifyStaleUsage]);
 
 
   useEffect(() => {
     let active = true;
+
+    if (isSettingsWindow) {
+      return () => {
+        active = false;
+      };
+    }
 
     if (!pollProviderStatus) {
       (Object.keys(PROVIDERS) as ProviderId[]).forEach((providerId) => {
@@ -406,7 +582,7 @@ function App() {
       active = false;
       window.clearInterval(interval);
     };
-  }, [pollProviderStatus, refreshIntervalSeconds, setProviderStatus]);
+  }, [isSettingsWindow, pollProviderStatus, refreshIntervalSeconds, setProviderStatus]);
 
   const handleOpenSettings = useCallback(async () => {
     try {

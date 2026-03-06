@@ -89,6 +89,13 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const getPersistedSettingsState = (value: unknown) => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return isRecord(value.state) ? value.state : value;
+};
+
 const mergeLegacySettingsDefaults = (settings: AppSettings, stored?: Record<string, unknown>) => {
   if (!stored) {
     return settings;
@@ -238,6 +245,11 @@ interface SettingsStore extends AppSettings {
   setStoreUsageHistory: (enabled: boolean) => void;
   setPollProviderStatus: (enabled: boolean) => void;
   setRedactPersonalInfo: (enabled: boolean) => void;
+  setEmployerReportingEnabled: (enabled: boolean) => void;
+  setEmployerReportingGatewayUrl: (url: string) => void;
+  setEmployerReportingEmployeeId: (employeeId: string) => void;
+  setEmployerReportingEmployeeEmail: (email: string) => void;
+  setEmployerReportingIncludeEmployeeEmail: (enabled: boolean) => void;
   setCookieSource: (providerId: ProviderId, source: CookieSource) => void;
   getCookieSource: (providerId: ProviderId) => CookieSource;
   resetToDefaults: () => void;
@@ -336,6 +348,19 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setRedactPersonalInfo: (enabled) => set({ redactPersonalInfo: enabled }),
 
+      setEmployerReportingEnabled: (enabled) => set({ employerReportingEnabled: enabled }),
+
+      setEmployerReportingGatewayUrl: (url) => set({ employerReportingGatewayUrl: url }),
+
+      setEmployerReportingEmployeeId: (employeeId) =>
+        set({ employerReportingEmployeeId: employeeId }),
+
+      setEmployerReportingEmployeeEmail: (email) =>
+        set({ employerReportingEmployeeEmail: email }),
+
+      setEmployerReportingIncludeEmployeeEmail: (enabled) =>
+        set({ employerReportingIncludeEmployeeEmail: enabled }),
+
       setDebugMenuEnabled: (enabled) => set({ debugMenuEnabled: enabled }),
 
       setDebugFileLogging: (enabled) => set({ debugFileLogging: enabled }),
@@ -352,12 +377,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setInstallOrigin: (origin) => set({ installOrigin: origin ?? undefined }),
 
-      setHasHydrated: (hydrated) => {
-        console.log('[settingsStore] setHasHydrated called with:', hydrated);
-        console.log('[settingsStore] Current hasHydrated before set:', get().hasHydrated);
-        set({ hasHydrated: hydrated });
-        console.log('[settingsStore] hasHydrated after set:', get().hasHydrated);
-      },
+      setHasHydrated: (hydrated) => set({ hasHydrated: hydrated }),
 
       setCookieSource: (providerId, source) =>
         set((state) => ({
@@ -400,9 +420,9 @@ export const useSettingsStore = create<SettingsStore>()(
         return rest;
       },
       merge: (persistedState, currentState) => {
-        const stored = persistedState as Partial<AppSettings> & {
+        const stored = getPersistedSettingsState(persistedState) as Partial<AppSettings> & {
           legacyDefaults?: Record<string, unknown>;
-        };
+        } | undefined;
         const baseState = currentState as SettingsStore;
         const mergedSettings = stored?.legacyDefaults
           ? mergeLegacySettingsDefaults({ ...baseState, ...(stored ?? {}) }, stored.legacyDefaults)
@@ -417,17 +437,15 @@ export const useSettingsStore = create<SettingsStore>()(
         };
       },
       onRehydrateStorage: () => {
-        console.log('[settingsStore] onRehydrateStorage: outer function called');
-        return (state, error) => {
-          console.log('[settingsStore] onRehydrateStorage: inner callback fired, state:', state?.enabledProviders, 'error:', error);
+        return (_state, error) => {
           if (error) {
-            console.error('[settingsStore] Hydration error:', error);
+            console.error('Hydration error:', error);
           }
           try {
             if (typeof localStorage === 'undefined') {
               return;
             }
-            const legacySettingsRaw = localStorage.getItem('settings-store');
+            const legacySettingsRaw = localStorage.getItem(SETTINGS_STORAGE_KEY);
             if (!legacySettingsRaw) {
               return;
             }
@@ -435,7 +453,10 @@ export const useSettingsStore = create<SettingsStore>()(
             if (!isRecord(parsed)) {
               return;
             }
-            const legacySettings = parsed;
+            const legacySettings = getPersistedSettingsState(parsed);
+            if (!legacySettings) {
+              return;
+            }
             if (legacySettings?.legacyDefaults || legacySettings?.legacyConfig) {
               return;
             }
@@ -443,7 +464,13 @@ export const useSettingsStore = create<SettingsStore>()(
               ...legacySettings,
               legacyDefaults: legacySettings,
             };
-            localStorage.setItem('settings-store', JSON.stringify(merged));
+            localStorage.setItem(
+              SETTINGS_STORAGE_KEY,
+              JSON.stringify({
+                ...(isRecord(parsed) ? parsed : {}),
+                state: merged,
+              })
+            );
           } catch (migrationError) {
             console.warn('Failed to migrate legacy settings defaults', migrationError);
           }
@@ -456,42 +483,52 @@ export const useSettingsStore = create<SettingsStore>()(
 // Use Zustand persist's onFinishHydration API to reliably set hasHydrated
 // Also check if hydration already happened (synchronous localStorage read)
 useSettingsStore.persist.onFinishHydration(() => {
-  console.log('[settingsStore] onFinishHydration callback - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
   // Ensure backend registry matches current settings on startup
   const enabledProviders = useSettingsStore.getState().enabledProviders;
   import('@tauri-apps/api/core')
     .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
     .catch((error) => {
-      console.warn('[settingsStore] Failed to sync enabled providers on hydration', error);
+      console.warn('Failed to sync enabled providers on hydration', error);
     });
 });
 
 // Check if hydration already completed synchronously before onFinishHydration was registered
 if (useSettingsStore.persist.hasHydrated()) {
-  console.log('[settingsStore] Already hydrated on module load - setting hasHydrated to true');
   useSettingsStore.setState({ hasHydrated: true });
   // Also sync providers since we missed the onFinishHydration callback
   const enabledProviders = useSettingsStore.getState().enabledProviders;
   import('@tauri-apps/api/core')
     .then(({ invoke }) => invoke('set_enabled_providers', { providerIds: enabledProviders }))
     .catch((error) => {
-      console.warn('[settingsStore] Failed to sync enabled providers on module load hydration', error);
+      console.warn('Failed to sync enabled providers on module load hydration', error);
     });
 }
 // Note: We don't unsubscribe because we only need this to fire once on app start
 
-// Cross-window sync: emit settings-updated event when enabledProviders or providerOrder changes
+// Cross-window sync: emit settings-updated when provider or updater preferences change
 // This is done via subscription so it works regardless of which action modified the state
 let lastEnabledProviders: string | null = null;
 let lastProviderOrder: string | null = null;
+let lastAutoUpdateEnabled: boolean | null = null;
+let lastUpdateChannel: UpdateChannel | null = null;
 
-const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder: ProviderId[]) => {
+const emitSettingsUpdated = async (
+  enabledProviders: ProviderId[],
+  providerOrder: ProviderId[],
+  autoUpdateEnabled: boolean,
+  updateChannel: UpdateChannel
+) => {
   const { invoke } = await import('@tauri-apps/api/core');
   try {
-    await invoke('broadcast_settings_updated', { enabledProviders, providerOrder });
+    await invoke('broadcast_settings_updated', {
+      enabledProviders,
+      providerOrder,
+      autoUpdateEnabled,
+      updateChannel,
+    });
   } catch (error) {
-    console.warn('[settingsStore] Failed to broadcast settings update', error);
+    console.warn('Failed to broadcast settings update', error);
   }
 };
 
@@ -503,28 +540,51 @@ useSettingsStore.subscribe((state, prevState) => {
   
   const currentEnabled = state.enabledProviders.join('|');
   const currentOrder = state.providerOrder.join('|');
+  const currentAutoUpdateEnabled = state.autoUpdateEnabled;
+  const currentUpdateChannel = state.updateChannel;
   const prevEnabled = prevState.enabledProviders.join('|');
   const prevOrder = prevState.providerOrder.join('|');
+  const prevAutoUpdateEnabled = prevState.autoUpdateEnabled;
+  const prevUpdateChannel = prevState.updateChannel;
   
   // Skip if nothing changed (also handles initial subscription call)
-  if (currentEnabled === prevEnabled && currentOrder === prevOrder) {
+  if (
+    currentEnabled === prevEnabled
+    && currentOrder === prevOrder
+    && currentAutoUpdateEnabled === prevAutoUpdateEnabled
+    && currentUpdateChannel === prevUpdateChannel
+  ) {
     return;
   }
   
   if (lastEnabledProviders === null) {
     lastEnabledProviders = prevEnabled;
     lastProviderOrder = prevOrder;
+    lastAutoUpdateEnabled = prevAutoUpdateEnabled;
+    lastUpdateChannel = prevUpdateChannel;
   }
 
   // Check if values actually changed from our tracked state
-  if (currentEnabled === lastEnabledProviders && currentOrder === lastProviderOrder) {
+  if (
+    currentEnabled === lastEnabledProviders
+    && currentOrder === lastProviderOrder
+    && currentAutoUpdateEnabled === lastAutoUpdateEnabled
+    && currentUpdateChannel === lastUpdateChannel
+  ) {
     return;
   }
 
   lastEnabledProviders = currentEnabled;
   lastProviderOrder = currentOrder;
+  lastAutoUpdateEnabled = currentAutoUpdateEnabled;
+  lastUpdateChannel = currentUpdateChannel;
 
-  void emitSettingsUpdated(state.enabledProviders, state.providerOrder);
+  void emitSettingsUpdated(
+    state.enabledProviders,
+    state.providerOrder,
+    state.autoUpdateEnabled,
+    state.updateChannel
+  );
 });
 
 // Selectors

@@ -3,10 +3,12 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const settingsPanelPath = path.join(root, 'src', 'components', 'SettingsPanel.tsx');
+const appUpdaterPath = path.join(root, 'src', 'lib', 'appUpdater.ts');
 const libPath = path.join(root, 'src-tauri', 'src', 'lib.rs');
 const cargoPath = path.join(root, 'src-tauri', 'Cargo.toml');
 
 const settingsPanelFile = fs.readFileSync(settingsPanelPath, 'utf-8');
+const appUpdaterFile = fs.readFileSync(appUpdaterPath, 'utf-8');
 const libFile = fs.readFileSync(libPath, 'utf-8');
 const cargoFile = fs.readFileSync(cargoPath, 'utf-8');
 
@@ -35,25 +37,33 @@ if (!settingsPanelFile.includes('Checking...') || !settingsPanelFile.includes('U
   throw new Error('SettingsPanel missing update button state labels.');
 }
 
-// Updater plugin integration checks
-if (!settingsPanelFile.includes("import { check } from '@tauri-apps/plugin-updater'")) {
-  throw new Error('SettingsPanel missing updater check import.');
+// Shared updater integration checks
+if (!settingsPanelFile.includes("import { runAppUpdate } from '../lib/appUpdater'")) {
+  throw new Error('SettingsPanel missing shared app updater import.');
 }
 
-if (!settingsPanelFile.includes("import { relaunch } from '@tauri-apps/plugin-process'")) {
-  throw new Error('SettingsPanel missing process relaunch import.');
+if (!settingsPanelFile.includes('await runAppUpdate(')) {
+  throw new Error('SettingsPanel missing shared updater invocation.');
 }
 
-if (!settingsPanelFile.includes('await check(')) {
-  throw new Error('SettingsPanel missing updater check invocation.');
+if (!appUpdaterFile.includes("import { check } from '@tauri-apps/plugin-updater'")) {
+  throw new Error('Shared updater missing updater check import.');
 }
 
-if (!settingsPanelFile.includes('await update.downloadAndInstall()')) {
-  throw new Error('SettingsPanel missing update download and install logic.');
+if (!appUpdaterFile.includes("import { relaunch } from '@tauri-apps/plugin-process'")) {
+  throw new Error('Shared updater missing process relaunch import.');
 }
 
-if (!settingsPanelFile.includes('await relaunch()')) {
-  throw new Error('SettingsPanel missing relaunch invocation.');
+if (!appUpdaterFile.includes('await check(')) {
+  throw new Error('Shared updater missing updater check invocation.');
+}
+
+if (!appUpdaterFile.includes('await update.downloadAndInstall()')) {
+  throw new Error('Shared updater missing update download and install logic.');
+}
+
+if (!appUpdaterFile.includes('await relaunch()')) {
+  throw new Error('Shared updater missing relaunch invocation.');
 }
 
 // Updater plugin backend checks

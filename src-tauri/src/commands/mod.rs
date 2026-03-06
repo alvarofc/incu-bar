@@ -10,6 +10,7 @@ use crate::browser_cookies::BrowserCookieSource;
 use crate::debug_settings;
 use crate::login::{self, AuthStatus, LoginResult};
 use crate::providers::{ProviderId, ProviderRegistry, ProviderStatus, UsageSnapshot};
+use crate::reporting;
 use crate::storage::install_origin;
 use crate::storage::widget_snapshot;
 use crate::tray;
@@ -437,6 +438,8 @@ pub async fn set_enabled_providers(
 struct SettingsUpdatedPayload {
     enabled_providers: Vec<ProviderId>,
     provider_order: Vec<ProviderId>,
+    auto_update_enabled: bool,
+    update_channel: String,
 }
 
 /// Broadcast settings updates to all windows and sync registry
@@ -444,6 +447,8 @@ struct SettingsUpdatedPayload {
 pub async fn broadcast_settings_updated(
     enabled_providers: Vec<ProviderId>,
     provider_order: Vec<ProviderId>,
+    auto_update_enabled: bool,
+    update_channel: String,
     registry: State<'_, ProviderRegistry>,
     app: AppHandle,
 ) -> Result<(), String> {
@@ -455,6 +460,8 @@ pub async fn broadcast_settings_updated(
     let payload = SettingsUpdatedPayload {
         enabled_providers,
         provider_order,
+        auto_update_enabled,
+        update_channel,
     };
     app.emit("settings-updated", payload)
         .map_err(|e| e.to_string())?;
@@ -604,6 +611,52 @@ pub async fn set_debug_random_blink(enabled: bool) -> Result<(), String> {
 pub async fn set_redact_personal_info(enabled: bool) -> Result<(), String> {
     debug_settings::set_redact_personal_info(enabled);
     Ok(())
+}
+
+#[command]
+pub async fn get_employer_reporting_config() -> Result<reporting::EmployerReportingConfig, String> {
+    reporting::load_reporting_config().map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn set_employer_reporting_config(
+    config: reporting::EmployerReportingConfig,
+) -> Result<reporting::EmployerReportingConfig, String> {
+    reporting::save_reporting_config(config).map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn set_employer_reporting_gateway_key(api_key: String) -> Result<(), String> {
+    reporting::store_gateway_key(&api_key).map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn clear_employer_reporting_gateway_key() -> Result<(), String> {
+    reporting::clear_gateway_key().map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn get_employer_reporting_status() -> Result<reporting::EmployerReportingStatus, String>
+{
+    reporting::get_reporting_status().map_err(|e| e.to_string())
+}
+
+#[command]
+pub async fn send_employer_usage_report(
+    reason: Option<String>,
+    force: Option<bool>,
+    registry: State<'_, ProviderRegistry>,
+    app: AppHandle,
+) -> Result<reporting::EmployerReportSendResult, String> {
+    let normalized_reason = reason
+        .as_deref()
+        .unwrap_or("manual")
+        .trim()
+        .to_string();
+    let force_send = force.unwrap_or(false);
+    reporting::send_usage_report(&app, &registry, &normalized_reason, force_send)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 /// Send a test notification
