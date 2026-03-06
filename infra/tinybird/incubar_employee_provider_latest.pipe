@@ -1,0 +1,25 @@
+DESCRIPTION >
+  Latest provider snapshot per tenant and employee.
+
+NODE latest_by_employee_provider
+SQL >
+  SELECT
+    tenant_id,
+    employee_id,
+    provider_id,
+    argMax(provider_enabled, report_ts) AS provider_enabled,
+    argMax(provider_plan, report_ts) AS provider_plan,
+    argMax(primary_used_percent, report_ts) AS primary_used_percent,
+    argMax(primary_remaining_percent, report_ts) AS primary_remaining_percent,
+    argMax(secondary_used_percent, report_ts) AS secondary_used_percent,
+    argMax(secondary_remaining_percent, report_ts) AS secondary_remaining_percent,
+    argMax(tertiary_used_percent, report_ts) AS tertiary_used_percent,
+    argMax(tertiary_remaining_percent, report_ts) AS tertiary_remaining_percent,
+    argMax(credits_remaining, report_ts) AS credits_remaining,
+    argMax(credits_total, report_ts) AS credits_total,
+    argMax(cost_today_amount_usd, report_ts) AS cost_today_amount_usd,
+    argMax(cost_month_amount_usd, report_ts) AS cost_month_amount_usd,
+    argMax(fetch_error, report_ts) AS fetch_error,
+    max(report_ts) AS last_report_ts
+  FROM incubar_usage_events
+  GROUP BY tenant_id, employee_id, provider_id

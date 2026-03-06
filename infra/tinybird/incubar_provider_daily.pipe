@@ -1,0 +1,33 @@
+DESCRIPTION >
+  Daily provider aggregates by tenant.
+
+NODE daily_provider_rollup
+SQL >
+  SELECT
+    tenant_id,
+    day,
+    provider_id,
+    count() AS active_employee_provider_pairs,
+    avgOrNull(primary_remaining_percent) AS avg_primary_remaining_percent,
+    avgOrNull(secondary_remaining_percent) AS avg_secondary_remaining_percent,
+    avgOrNull(tertiary_remaining_percent) AS avg_tertiary_remaining_percent,
+    sumOrNull(cost_today_amount_usd) AS total_cost_today_amount_usd,
+    sumOrNull(cost_month_amount_usd) AS total_cost_month_amount_usd,
+    countIf(fetch_error IS NOT NULL AND fetch_error != '') AS provider_errors
+  FROM
+  (
+    SELECT
+      tenant_id,
+      toDate(report_ts) AS day,
+      employee_id,
+      provider_id,
+      argMax(primary_remaining_percent, report_ts) AS primary_remaining_percent,
+      argMax(secondary_remaining_percent, report_ts) AS secondary_remaining_percent,
+      argMax(tertiary_remaining_percent, report_ts) AS tertiary_remaining_percent,
+      argMax(cost_today_amount_usd, report_ts) AS cost_today_amount_usd,
+      argMax(cost_month_amount_usd, report_ts) AS cost_month_amount_usd,
+      argMax(fetch_error, report_ts) AS fetch_error
+    FROM incubar_usage_events
+    GROUP BY tenant_id, day, employee_id, provider_id
+  )
+  GROUP BY tenant_id, day, provider_id

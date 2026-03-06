@@ -506,15 +506,27 @@ if (useSettingsStore.persist.hasHydrated()) {
 }
 // Note: We don't unsubscribe because we only need this to fire once on app start
 
-// Cross-window sync: emit settings-updated event when enabledProviders or providerOrder changes
+// Cross-window sync: emit settings-updated when provider or updater preferences change
 // This is done via subscription so it works regardless of which action modified the state
 let lastEnabledProviders: string | null = null;
 let lastProviderOrder: string | null = null;
+let lastAutoUpdateEnabled: boolean | null = null;
+let lastUpdateChannel: UpdateChannel | null = null;
 
-const emitSettingsUpdated = async (enabledProviders: ProviderId[], providerOrder: ProviderId[]) => {
+const emitSettingsUpdated = async (
+  enabledProviders: ProviderId[],
+  providerOrder: ProviderId[],
+  autoUpdateEnabled: boolean,
+  updateChannel: UpdateChannel
+) => {
   const { invoke } = await import('@tauri-apps/api/core');
   try {
-    await invoke('broadcast_settings_updated', { enabledProviders, providerOrder });
+    await invoke('broadcast_settings_updated', {
+      enabledProviders,
+      providerOrder,
+      autoUpdateEnabled,
+      updateChannel,
+    });
   } catch (error) {
     console.warn('Failed to broadcast settings update', error);
   }
@@ -528,28 +540,51 @@ useSettingsStore.subscribe((state, prevState) => {
   
   const currentEnabled = state.enabledProviders.join('|');
   const currentOrder = state.providerOrder.join('|');
+  const currentAutoUpdateEnabled = state.autoUpdateEnabled;
+  const currentUpdateChannel = state.updateChannel;
   const prevEnabled = prevState.enabledProviders.join('|');
   const prevOrder = prevState.providerOrder.join('|');
+  const prevAutoUpdateEnabled = prevState.autoUpdateEnabled;
+  const prevUpdateChannel = prevState.updateChannel;
   
   // Skip if nothing changed (also handles initial subscription call)
-  if (currentEnabled === prevEnabled && currentOrder === prevOrder) {
+  if (
+    currentEnabled === prevEnabled
+    && currentOrder === prevOrder
+    && currentAutoUpdateEnabled === prevAutoUpdateEnabled
+    && currentUpdateChannel === prevUpdateChannel
+  ) {
     return;
   }
   
   if (lastEnabledProviders === null) {
     lastEnabledProviders = prevEnabled;
     lastProviderOrder = prevOrder;
+    lastAutoUpdateEnabled = prevAutoUpdateEnabled;
+    lastUpdateChannel = prevUpdateChannel;
   }
 
   // Check if values actually changed from our tracked state
-  if (currentEnabled === lastEnabledProviders && currentOrder === lastProviderOrder) {
+  if (
+    currentEnabled === lastEnabledProviders
+    && currentOrder === lastProviderOrder
+    && currentAutoUpdateEnabled === lastAutoUpdateEnabled
+    && currentUpdateChannel === lastUpdateChannel
+  ) {
     return;
   }
 
   lastEnabledProviders = currentEnabled;
   lastProviderOrder = currentOrder;
+  lastAutoUpdateEnabled = currentAutoUpdateEnabled;
+  lastUpdateChannel = currentUpdateChannel;
 
-  void emitSettingsUpdated(state.enabledProviders, state.providerOrder);
+  void emitSettingsUpdated(
+    state.enabledProviders,
+    state.providerOrder,
+    state.autoUpdateEnabled,
+    state.updateChannel
+  );
 });
 
 // Selectors

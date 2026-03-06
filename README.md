@@ -30,6 +30,14 @@ Commands:
 - `bun install`
 - `bun run tauri build`
 
+## Employer Reporting Stack
+
+This repo includes a full reporting stack for employer analytics:
+
+- Cloudflare gateway worker: `infra/cloudflare-gateway/`
+- Tinybird datasource and pipes: `infra/tinybird/`
+- Browser dashboard (static): `infra/dashboard/`
+
 ## Release
 
 Create a GitHub Release with a `vX.Y.Z` tag. The release workflow builds installers for macOS (arm64 + x64), Windows (x64), and Linux (x64) and uploads them to the release.

@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
-import { check } from '@tauri-apps/plugin-updater';
-import { relaunch } from '@tauri-apps/plugin-process';
 import { sendNotification } from '@tauri-apps/plugin-notification';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { PopupWindow } from './components/PopupWindow';
 import { SettingsPanel } from './components/SettingsPanel';
+import { runAppUpdate } from './lib/appUpdater';
 import { useUsageStore } from './stores/usageStore';
 import { useSettingsStore } from './stores/settingsStore';
-import type { ProviderId, ProviderIncident, RefreshingEvent, UpdateChannel, UsageUpdateEvent } from './lib/types';
+import type {
+  ProviderId,
+  ProviderIncident,
+  RefreshingEvent,
+  UpdateChannel,
+  UsageSnapshot,
+  UsageUpdateEvent,
+} from './lib/types';
 import { parseUsageUpdateEvent } from './lib/eventValidation';
 import type {
   CreditsNotificationState,
@@ -142,7 +148,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (isSettingsWindow) {
+    if (!hasHydrated || isSettingsWindow) {
       return;
     }
 
@@ -156,24 +162,19 @@ function App() {
     }
 
     const checkForUpdates = async () => {
-      lastUpdateCheckChannelRef.current = updateChannel;
-      try {
-        const update = await check({ headers: { 'X-Update-Channel': updateChannel } });
-        if (!update) {
-          return;
-        }
-        await update.downloadAndInstall();
-        // relaunch() fails in dev mode (no binary exists), skip it during development
-        if (!import.meta.env.DEV) {
-          await relaunch();
-        }
-      } catch (error) {
-        console.warn('Auto-update check failed', error);
+      const result = await runAppUpdate({ channel: updateChannel });
+      if (result.status === 'busy') {
+        return;
       }
+      if (result.status === 'error') {
+        console.warn('Auto-update check failed', result.message);
+        return;
+      }
+      lastUpdateCheckChannelRef.current = updateChannel;
     };
 
     void checkForUpdates();
-  }, [autoUpdateEnabled, isSettingsWindow, updateChannel]);
+  }, [autoUpdateEnabled, hasHydrated, isSettingsWindow, updateChannel]);
 
   useEffect(() => {
     invoke('set_debug_file_logging', { enabled: debugFileLogging }).catch(console.error);
@@ -282,11 +283,24 @@ function App() {
     if (isSettingsWindow) {
       return undefined;
     }
-    const syncFromSettings = (payload?: { enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }) => {
-      if (payload?.enabledProviders || payload?.providerOrder) {
+    const syncFromSettings = (payload?: {
+      enabledProviders?: ProviderId[];
+      providerOrder?: ProviderId[];
+      autoUpdateEnabled?: boolean;
+      updateChannel?: UpdateChannel;
+    }) => {
+      if (
+        payload?.enabledProviders
+        || payload?.providerOrder
+        || typeof payload?.autoUpdateEnabled === 'boolean'
+        || payload?.updateChannel
+      ) {
         useSettingsStore.setState({
           enabledProviders: payload?.enabledProviders ?? useSettingsStore.getState().enabledProviders,
           providerOrder: payload?.providerOrder ?? useSettingsStore.getState().providerOrder,
+          autoUpdateEnabled:
+            payload?.autoUpdateEnabled ?? useSettingsStore.getState().autoUpdateEnabled,
+          updateChannel: payload?.updateChannel ?? useSettingsStore.getState().updateChannel,
         });
       }
 
@@ -314,7 +328,12 @@ function App() {
       }
     };
 
-    const unlistenSettings = listen<{ enabledProviders?: ProviderId[]; providerOrder?: ProviderId[] }>(
+    const unlistenSettings = listen<{
+      enabledProviders?: ProviderId[];
+      providerOrder?: ProviderId[];
+      autoUpdateEnabled?: boolean;
+      updateChannel?: UpdateChannel;
+    }>(
       'settings-updated',
       (event) => {
         syncFromSettings(event.payload);
@@ -378,6 +397,57 @@ function App() {
     setProviderUsage,
     showNotifications,
   ]);
+
+  useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
+    let active = true;
+
+    const syncCachedUsage = async () => {
+      try {
+        const cachedUsage = await invoke<Partial<Record<ProviderId, UsageSnapshot>>>('get_all_usage');
+        if (!active) {
+          return;
+        }
+        Object.entries(cachedUsage).forEach(([providerId, usage]) => {
+          if (!usage) {
+            return;
+          }
+          setProviderUsage(providerId as ProviderId, usage);
+        });
+      } catch (error) {
+        console.error('Failed to sync cached provider usage:', error);
+      }
+    };
+
+    const handleFocus = () => {
+      void syncCachedUsage();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void syncCachedUsage();
+      }
+    };
+
+    void syncCachedUsage();
+
+    const intervalId = window.setInterval(() => {
+      void syncCachedUsage();
+    }, 30_000);
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isSettingsWindow, setProviderUsage]);
 
   useEffect(() => {
     if (isSettingsWindow) {
