@@ -35,6 +35,10 @@ if (!settingsStoreFile.includes('localStorage.getItem(SETTINGS_STORAGE_KEY)')) {
   throw new Error('Settings migration should read legacy defaults from the active IncuBar storage key.');
 }
 
+if (!settingsStoreFile.includes('state: merged')) {
+  throw new Error('Settings migration should persist legacy defaults inside the Zustand state wrapper.');
+}
+
 if (settingsStoreFile.includes("localStorage.getItem('settings-store')")) {
   throw new Error('Settings migration still reads from the stale settings-store key.');
 }

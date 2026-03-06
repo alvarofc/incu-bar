@@ -22,6 +22,10 @@ if (!menuCardFile.includes('Updated {lastUpdatedText}')) {
   throw new Error('MenuCard missing updated timestamp label.');
 }
 
+if (!menuCardFile.includes('setInterval(() =>') || !menuCardFile.includes('30_000')) {
+  throw new Error('MenuCard missing timer to refresh relative timestamp labels.');
+}
+
 if (!menuCardFile.includes('Status {statusLine}')) {
   throw new Error('MenuCard missing status line output.');
 }

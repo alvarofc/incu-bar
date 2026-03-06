@@ -70,6 +70,9 @@ if (!shouldStoreUsageHistory()) {
   storedUsageHistory = {};
 }
 
+let refreshAllInFlight: Promise<void> | null = null;
+let queuedRefreshAll = false;
+
 interface UsageStore {
   // State
   providers: Record<ProviderId, ProviderState>;
@@ -253,18 +256,29 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
   },
 
   refreshAllProviders: async () => {
-    const { providers, refreshProvider, isRefreshing } = get();
-    if (isRefreshing) {
-      return;
+    if (refreshAllInFlight) {
+      queuedRefreshAll = true;
+      return refreshAllInFlight;
     }
-    set({ isRefreshing: true });
 
-    const enabledProviders = Object.values(providers).filter((p) => p.enabled);
-    try {
-      await Promise.allSettled(enabledProviders.map((p) => refreshProvider(p.id)));
-    } finally {
-      set({ isRefreshing: false, lastGlobalRefresh: new Date() });
-    }
+    refreshAllInFlight = (async () => {
+      do {
+        queuedRefreshAll = false;
+        set({ isRefreshing: true });
+
+        const { providers, refreshProvider } = get();
+        const enabledProviders = Object.values(providers).filter((p) => p.enabled);
+        try {
+          await Promise.allSettled(enabledProviders.map((p) => refreshProvider(p.id)));
+        } finally {
+          set({ isRefreshing: false, lastGlobalRefresh: new Date() });
+        }
+      } while (queuedRefreshAll);
+    })().finally(() => {
+      refreshAllInFlight = null;
+    });
+
+    return refreshAllInFlight;
   },
 
   initializeProviders: (enabledIds) =>

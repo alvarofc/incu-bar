@@ -58,9 +58,8 @@ tauri-plugin-global-shortcut = "2"
 tauri = { version = "2", features = ["test", "tray-icon", "image-png"] }
 
 [profile.dev]
-debug = 0
+debug = 1
 codegen-units = 256
-
 
 
 

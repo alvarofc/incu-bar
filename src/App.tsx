@@ -263,7 +263,7 @@ function App() {
       }).catch((error) => {
         console.error('Failed to send daily employer report:', error);
       });
-    }, 60 * 60 * 1000);
+    }, 24 * 60 * 60 * 1000);
 
     return () => {
       window.clearInterval(intervalId);
@@ -328,6 +328,10 @@ function App() {
 
   // Listen for usage updates from Rust backend
   useEffect(() => {
+    if (isSettingsWindow) {
+      return undefined;
+    }
+
     const unlisten = listen<UsageUpdateEvent>('usage-updated', (event) => {
       const parsedUsageUpdate = parseUsageUpdateEvent(event.payload);
       if (!parsedUsageUpdate) {

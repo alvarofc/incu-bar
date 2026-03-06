@@ -1,5 +1,5 @@
 [build]
-rustc-wrapper = "/usr/local/bin/sccache"
+rustc-wrapper = "sccache"
 
 [env]
-SCCACHE_DIR = { value = ".sccache", relative = true }
+SCCACHE_DIR = { value = "../.sccache", relative = true }

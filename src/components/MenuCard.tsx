@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import { RefreshCw, AlertCircle, Loader2, ExternalLink } from 'lucide-react';
 import { ProgressBar } from './ProgressBar';
@@ -24,6 +24,7 @@ export function MenuCard({ provider }: MenuCardProps) {
   const resetTimeDisplayMode = useSettingsStore((s) => s.resetTimeDisplayMode);
   const refreshIntervalSeconds = useSettingsStore((s) => s.refreshIntervalSeconds);
   const hidePersonalInfo = useSettingsStore((s) => s.hidePersonalInfo);
+  const [, setRelativeTimeTick] = useState(0);
 
   const metadata = PROVIDERS[provider.id];
   const { usage, isLoading, lastError, status } = provider;
@@ -33,6 +34,16 @@ export function MenuCard({ provider }: MenuCardProps) {
   const handleRefresh = useCallback(() => {
     useUsageStore.getState().refreshProvider(provider.id);
   }, [provider.id]);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      setRelativeTimeTick((tick) => tick + 1);
+    }, 30_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   const lastUpdatedText = usage?.updatedAt
     ? formatDistanceToNow(new Date(usage.updatedAt), { addSuffix: true })

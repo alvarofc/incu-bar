@@ -89,6 +89,13 @@ const normalizeLegacyProviderId = (raw: string): ProviderId =>
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const getPersistedSettingsState = (value: unknown) => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return isRecord(value.state) ? value.state : value;
+};
+
 const mergeLegacySettingsDefaults = (settings: AppSettings, stored?: Record<string, unknown>) => {
   if (!stored) {
     return settings;
@@ -413,9 +420,9 @@ export const useSettingsStore = create<SettingsStore>()(
         return rest;
       },
       merge: (persistedState, currentState) => {
-        const stored = persistedState as Partial<AppSettings> & {
+        const stored = getPersistedSettingsState(persistedState) as Partial<AppSettings> & {
           legacyDefaults?: Record<string, unknown>;
-        };
+        } | undefined;
         const baseState = currentState as SettingsStore;
         const mergedSettings = stored?.legacyDefaults
           ? mergeLegacySettingsDefaults({ ...baseState, ...(stored ?? {}) }, stored.legacyDefaults)
@@ -446,7 +453,10 @@ export const useSettingsStore = create<SettingsStore>()(
             if (!isRecord(parsed)) {
               return;
             }
-            const legacySettings = parsed;
+            const legacySettings = getPersistedSettingsState(parsed);
+            if (!legacySettings) {
+              return;
+            }
             if (legacySettings?.legacyDefaults || legacySettings?.legacyConfig) {
               return;
             }
@@ -454,7 +464,13 @@ export const useSettingsStore = create<SettingsStore>()(
               ...legacySettings,
               legacyDefaults: legacySettings,
             };
-            localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(merged));
+            localStorage.setItem(
+              SETTINGS_STORAGE_KEY,
+              JSON.stringify({
+                ...(isRecord(parsed) ? parsed : {}),
+                state: merged,
+              })
+            );
           } catch (migrationError) {
             console.warn('Failed to migrate legacy settings defaults', migrationError);
           }

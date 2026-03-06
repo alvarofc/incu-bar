@@ -1675,7 +1675,6 @@ fn position_popup_at_tray(app: &AppHandle, window: &tauri::webview::WebviewWindo
         return;
     }
 
-    begin_popup_focus_guard();
     let win = window.as_ref().window().clone();
 
     if !has_monitor(&win) {
@@ -1730,7 +1729,6 @@ fn toggle_popup(app: &AppHandle) -> Result<()> {
     if !window.is_visible().unwrap_or(false) {
         window.show()?;
     }
-    begin_popup_focus_guard();
     window.set_focus()?;
 
     Ok(())
@@ -1742,8 +1740,10 @@ mod tests {
         advance_animation_phase, animation_interval, animation_should_continue, animation_tick_ms,
         compute_render_state, format_tray_tooltip, palette_for_theme, read_tray_usage_state,
         render_tray_icon, reset_tray_usage_state, should_start_animation_thread,
-        sort_usage_rings, write_tray_usage_state, TrayRenderState, TrayStatus, UsageRing,
-        BLINKING_ANIMATION_TICK_MS, ICON_SIZE, LOADING_ANIMATION_TICK_MS, STALE_THRESHOLD_SECS,
+        sort_usage_rings, write_tray_display_text_state, write_tray_usage_state,
+        TrayPercentWindowMode, TrayRenderState, TrayStatus, UsageRing,
+        BLINKING_ANIMATION_TICK_MS, ICON_SIZE, LOADING_ANIMATION_TICK_MS,
+        STALE_THRESHOLD_SECS,
     };
     use crate::providers::{ProviderId, RateWindow, UsageSnapshot};
     use std::collections::HashMap;
